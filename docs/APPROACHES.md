@@ -4,21 +4,19 @@ For teammates. Start here to understand the pipeline, responsibilities, and open
 
 ## How the current files fit together
 
-
 We are building one pipeline in stages:
 
-1. **Read original data — `dataset.py`.** Tran's reader selects cases from a supplied partition and returns the goal, six ordered history images, depths, times, label, and tracing identifiers. It preserves original images. Code exists; functional testing is pending.
+1. **Read original data — `dataset.py`.** Tran's reader selects cases from a supplied partition and returns the goal, six ordered history images, depths, times, label, and tracing identifiers. It preserves original images. Six synthetic tests and one real-case decode passed on Perlmutter; see the Group 2 milestone for evidence and limits.
 2. **Prepare model inputs — not implemented.** Choose image preparation and convert images into numerical tensors. Origin's dataset outline included this stage by proposing stacked frames in a PyTorch Dataset. Our reader deliberately starts earlier so we can inspect the data before selecting model-specific preprocessing.
 3. **Extract visual features — `cnn.py` outline only.** A future encoder turns prepared images into useful numerical features. ResNet-18 is a proposal, not a selected model. Goal/history fusion and temporal prediction remain undecided.
 
 These are compatible stages, not competing loaders. Origin's `dataset.py` was TODO-only: it proposed `(frames, depth_history, label)` without implementing loading or clarifying the separate goal and time offsets. Our reader makes those roles explicit and returns a dictionary of raw inputs. Build later model preparation on that reader; agree on interface changes before implementation.
 
-`data_inspect.ipynb` is an optional interactive notebook for understanding the data between reading and model preparation. It combines explanations, executable Python cells, and visual results. Currently its code cells are empty. Future inspection should reuse the reader to display cases and examine image detail, depth, and timing on Perlmutter. Sensitive notebook outputs must stay there.
+`data_inspect.ipynb` is an optional interactive notebook for understanding the data between reading and model preparation. It combines explanations, executable Python cells, and visual results. The owner successfully displayed a goal and six history frames using cells entered on Perlmutter. The shared notebook now includes reusable, output-free loading and history-display cells based on those snippets; other analysis sections remain placeholders. Sensitive notebook outputs must stay on Perlmutter.
 
 The tradeoff is intentional: raw reading is easier to inspect and reuse now, but it is not ready to feed directly into a CNN or ViT. Tensor conversion, model-specific preprocessing, and batching still need agreement and implementation.
 
 ## Team proposal — supplied by project owner
-
 
 - [Group 1 — Andrew and Suhani](grp1/PROGRESS.md): CNN–GRU, CNN–LSTM, and current-input baseline. Group-specific plans and progress live there.
 - [Group 2 — Tran and Sabrina](grp2/PROGRESS.md): ViT–GRU and CNN–temporal attention. Group-specific plans and progress live there.
@@ -34,7 +32,6 @@ The first loader preserves original images and metadata. Batching, image resizin
 Before model integration, agree on input preparation, goal/history fusion, depth/time use, and batching. Then agree on the supplied split reporting protocol, metrics, and model selection. We have not selected a five-fold cross-validation protocol. Reuse shared components where appropriate rather than implementing separate data readers for each architecture.
 
 ## Research objective and prior observations
-
 
 The project owner describes an open-ended exploration of approaches not yet tried by the prior experimenters. The objective is a specialized smaller model with higher accuracy than the baseline and lower decision latency than the tested frontier model. The architecture proposal below is a starting plan, not a restriction on alternatives.
 
@@ -52,8 +49,8 @@ Suggested comparison practice, pending team agreement: use matching held-out par
 
 - 2026-10-30 — **Data readiness:** basic dataset checks passed in owner-run Perlmutter commands. Evidence and remaining limits are in [DATASET.md](DATASET.md). No dataset changes; do not repeat completed validation without a concrete reason.
 - 2026-10-30 — **Image-reading environment:** the owner loaded `pytorch/2.13.0` and confirmed Python 3.12.13 and Pillow 12.3.0. The module changed CUDA 13.2 to 13.0 and GCC 14 to 13.2. No installation was needed. Full ML compatibility, GPU execution, and team adoption remain open. NERSC documents its provided modules as the easiest [PyTorch starting route](https://docs.nersc.gov/machinelearning/pytorch/).
-- 2026-10-30 — **Collaboration and reconciliation:** separated group progress, clarified how the incoming outlines fit the raw reader, and organized human versus AI documentation. Fetched origin and fast-forwarded the laptop branch to `77947cd`; backed-up local reader, CNN outline, and notebook were restored unchanged. Origin's commit is now part of local history; our reconciled changes remain uncommitted. No new commit or push was made. Group implementation progress belongs in the corresponding group log.
+- 2026-10-30 — **Collaboration and reconciliation:** separated group progress and clarified how the incoming outlines fit the raw reader. Fetched origin and fast-forwarded the laptop branch to `77947cd`; backed-up local reader, CNN outline, and notebook were restored unchanged for review. Origin's commit is part of local history. Current implementation, verification, and handoff status are recorded in [Group 2 progress](grp2/PROGRESS.md).
 
 ## Next milestone
 
-Verify that the reader loads one case correctly on Perlmutter, then use the notebook for visual inspection before agreeing on model preprocessing. See [LOADER.md](LOADER.md) for usage and [Group 2 progress](grp2/PROGRESS.md) for current verification limits. No confirmed code handoff to Perlmutter has occurred yet.
+The goal and six history images now display successfully in the Perlmutter notebook. Next, assess wire/target visibility and image/metadata meaning before agreeing on model preprocessing. Display success alone does not establish semantic correctness. See [LOADER.md](LOADER.md) for usage and [Group 2 progress](grp2/PROGRESS.md) for completed milestones and verification limits.

@@ -35,7 +35,7 @@ Image size, mode, and pixels are preserved. Images are decoded on request, not a
 
 ## Scope of the first version
 
-Request cases individually with `cases[0]`, `cases[1]`, and so on. This is a simple reader, not yet a PyTorch `DataLoader`: batching, worker processes, model preprocessing, and tensor stacking are deferred until one-case loading is demonstrated. No cases are shuffled.
+Request cases individually with `cases[0]`, `cases[1]`, and so on. One-case loading and notebook display have been demonstrated on Perlmutter. This is a simple reader, not yet a PyTorch `DataLoader`: batching, worker processes, model preprocessing, and tensor stacking remain deferred. No cases are shuffled.
 
 ## Local checks — laptop, invented data only
 
@@ -47,7 +47,7 @@ With Pillow available in the chosen local interpreter, run from the repository r
 python3 -m unittest discover -s tests -v
 ```
 
-The checks cover record selection, goal/history ordering, metadata alignment, original pixels/mode/size (including color), and failure on unsafe or unreadable paths. They do not establish real-data correctness on Perlmutter. As of the initial laptop review, image-loading tests have not run because the laptop interpreter lacks Pillow; syntax checks alone are not functional tests.
+The checks cover record selection, goal/history ordering, metadata alignment, original pixels/mode/size (including color), and failure on unsafe or unreadable paths. All six passed in owner-run Perlmutter execution at `9221135`; one real case also decoded successfully. See the [Group 2 milestone](grp2/PROGRESS.md) for results and limits. This does not establish visual correctness or full-dataset decoding.
 
 ## Real-data handoff — Perlmutter only
 
@@ -59,6 +59,12 @@ Once the code is present, use an environment where `python3` can import Pillow. 
 python3 dataset.py --split-position 0 --partition train --count 1
 ```
 
-This decodes one selected case through the new loader and reports image sizes/modes and metadata lengths. It does not repeat full dataset validation, choose an evaluation protocol, or display sensitive records. Successful output should report seven images, six depths, and six time offsets. Expected original dimensions are `(1065, 1050)`; image modes have not yet been established. The split position is an inspection example, not an evaluation decision.
+This decodes one selected case through the new loader and reports image sizes/modes and metadata lengths. It does not repeat full dataset validation, choose an evaluation protocol, or display sensitive records. Successful output should report seven images, six depths, and six time offsets. Original dimensions are `(1065, 1050)`; the inspected case returned RGB images. Other cases' modes have not been checked through this reader. The split position is an inspection example, not an evaluation decision.
 
-The summary does not prove visual correctness. Visual inspection on Perlmutter is a subsequent step; do not copy images or sensitive errors off the system. Model-ready preprocessing and evaluation remain undecided.
+The owner also displayed the goal and six history images in the Perlmutter notebook. Successful decoding/display does not prove visual or semantic correctness; those assessments remain open. Do not copy images or sensitive errors off the system. Model-ready preprocessing and evaluation remain undecided.
+
+## Display the images — notebook cells on Perlmutter
+
+Open `data_inspect.ipynb` in SSH-connected VS Code and select the Python interpreter from the existing `pytorch/2.13.0` module. Run **Load data**, then **Sample plots**. The first cell displays the separate goal; the second displays the six ordered history images with depth/time annotations. Paste/run Python inside notebook cells, not the Bash terminal.
+
+The notebook uses the same raw reader and portable scratch layout. It applies no preprocessing. The shared file contains no saved outputs; clear outputs before committing and keep sensitive visual results on Perlmutter. Remaining notebook sections are inspection prompts, not implemented analyses.

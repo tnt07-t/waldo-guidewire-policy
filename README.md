@@ -9,8 +9,8 @@ The approach is open-ended: explore specialized smaller models that exceed the b
 - [Documentation guide](docs/README.md): reading order for teammates and a separate entry point for AI agents.
 - [Dataset](docs/DATASET.md): schema, restrictions, and preprocessing/split verification.
 - [Approaches](docs/APPROACHES.md): team proposal, dependencies, decisions, shared working/logging process, and where to resume.
-- [Raw case loader](docs/LOADER.md): first implementation and usage; functional verification is pending. No preprocessing or model code.
-- Planning scaffolds from origin: `cnn.py` outlines a possible frame encoder; `data_inspect.ipynb` organizes Perlmutter-only inspection. Neither implements or approves a model or preprocessing choice.
+- [Raw case loader](docs/LOADER.md): usage; six synthetic tests, one real-case decode, and goal/history display passed on Perlmutter. Visual/semantic assessment remains open. No preprocessing or model code.
+- `cnn.py` remains a model-planning outline. `data_inspect.ipynb` includes original-image inspection cells, with no saved outputs. Neither selects model preprocessing.
 - Group progress: [Group 1 — Andrew and Suhani](docs/grp1/PROGRESS.md) and [Group 2 — Tran and Sabrina](docs/grp2/PROGRESS.md). Shared contracts stay in the approach notes; each group records its own plans and outcomes.
 
 The official rubric has not been supplied. Team proposals and unapproved suggestions are not course requirements.
@@ -73,4 +73,4 @@ Teammates and AI assistants should start with the [documentation guide](docs/REA
 - Before parallel implementation, agree on input/output interfaces, preprocessing, and evaluation. Individual ownership is still open.
 - Keep sensitive data and derived sensitive artifacts on Perlmutter. Never put credentials in documentation.
 
-The repository includes shared notes, group progress directories, a first raw-case reader (`dataset.py`), and synthetic loader tests. Functional loader verification is pending; no model implementation has begun here.
+The repository includes shared notes, group progress directories, a raw-case reader (`dataset.py`), and synthetic loader tests. The first Perlmutter loading milestone passed; visual inspection and model preparation are next. No model implementation has begun here.
