@@ -1,6 +1,8 @@
 # DINOv2 preparation and feature trial
 
-`preprocessing.py` prepares images for the initial `vit_small_patch14_dinov2.lvd142m` trial. `vit.py` now implements inference-only extraction; actual pretrained-model execution on Perlmutter remains unverified. Training resolution, freezing policy, and batch size remain undecided.
+`preprocessing.py` prepares images for the initial `vit_small_patch14_dinov2.lvd142m` trial. `vit.py` implements inference-only extraction; owner-run one-case pretrained CPU extraction passed on Perlmutter, with separate `[384]` goal and `[6,384]` history outputs, all finite. Two-case CPU extraction also passed: `[2,384]` goal and `[2,6,384]` history outputs matched individually encoded cases for image chunk sizes 1 and 2 (`rtol=1e-4`, `atol=1e-5`). GPU execution and inference memory/runtime measurement remain pending. Training resolution, freezing policy, and batch size remain undecided.
+
+The first pretrained check used the existing scratch venv in a Perlmutter terminal, two CPU threads, one image per encoder call, and a three-minute process limit. Public weights downloaded successfully despite an unauthenticated HF Hub warning; no token was needed for this run. No training or feature saving occurred. The notebook path below is an alternative; its kernel selection remains unconfirmed. NERSC permits very small login-node tests; larger or prolonged work belongs on compute nodes. See [progress](PROGRESS.md) for evidence and limits.
 
 The trial uses 518×518 inputs: convert to RGB, resize the entire image proportionally with Pillow bicubic interpolation, and center it on a padded square. For 1065×1050 images, the resized image is 518×511 with 3 pixels above and 4 below. Nothing is cropped; shrinking can still reduce wire visibility.
 
@@ -60,25 +62,25 @@ These are one-case tensors, without a case-batch dimension. The raw `case` remai
 
 ## Encoder dependencies — Perlmutter terminal
 
-Preparation tests and initial preview inspection have passed as recorded in progress. Do not repeat them without a relevant change. In the same terminal with the existing PyTorch module active, check the remaining library imports:
+Preparation tests and initial preview inspection have passed. The base module has torch 2.13.0+cu130 and torchvision 0.28.0+cu130 but lacks timm. The owner installed timm 1.0.30 in a separate scratch venv created with `--system-site-packages`, and confirmed its import. In the original terminal, `$vit_env` holds its generated path. Keep the module loaded and use that venv explicitly:
 
 ```sh
-python3 -c 'import timm, torchvision; print("timm", timm.__version__, "torchvision", torchvision.__version__)'
+"$vit_env/bin/python" -c 'import timm, torchvision; print("timm", timm.__version__, "torchvision", torchvision.__version__)'
 ```
 
-This reads no images, downloads no weights, and uses no GPU. If an import fails, record the non-sensitive error and resolve environment compatibility before the encoder run; do not blindly upgrade the module's PyTorch. No particular timm version has been verified remotely yet.
+This reads no images, downloads no weights, and uses no GPU. If an import fails, record the non-sensitive error and resolve environment compatibility before the encoder run; do not blindly upgrade the module's PyTorch. Timm 1.0.30 import passed; actual checkpoint execution remains unverified. If the terminal variable is lost, locate the existing scratch venv and verify it instead of reinstalling. Exact generated paths belong in private notes.
 
 The encoder tests use an invented model, so they need only the already-used torch/Pillow environment:
 
 ```sh
-python3 -m unittest discover -s tests -p 'test_vit.py' -v
+"$vit_env/bin/python" -m unittest discover -s tests -p 'test_vit.py' -v
 ```
 
 ## One-case pretrained extraction — Perlmutter notebook
 
 After an authorized code handoff, add a new cell below the successful preview cell. Preserve the remote notebook and outputs on Perlmutter before pulling new code. The laptop does not have those new cells.
 
-The actual extraction loads public pretrained weights through timm, and processes image tensors locally. It does not call an external inference service. Weight download/cache access must work on Perlmutter. Use an allocated compute session or GPU-backed notebook for this encoder trial; no scheduler allocation is created by this code. CPU execution is supported but can be slower. The notebook kernel must provide the same compatible packages as the checked terminal.
+The actual extraction loads public pretrained weights through timm, and processes image tensors locally. It does not call an external inference service. Weight download/cache access must work on Perlmutter. Use an allocated compute session or GPU-backed notebook for this encoder trial; no scheduler allocation is created by this code. CPU execution is supported but can be slower. The notebook kernel must use the scratch venv, not only the original module interpreter. Kernel registration/selection and an allocated compute session have not been confirmed. Arrange those before running this cell; selecting a kernel alone does not allocate a GPU.
 
 ```python
 import os
