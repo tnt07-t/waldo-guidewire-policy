@@ -22,6 +22,7 @@ class PreprocessingTests(unittest.TestCase):
         self.assertEqual(image.tobytes(), before)
 
     def test_all_four_edges_survive_landscape_and_portrait_resize(self):
+        # Colored borders test cropping, not real thin-wire visibility.
         for size in ((112, 56), (56, 112)):
             with self.subTest(size=size):
                 image = Image.new("RGB", size)
@@ -58,6 +59,7 @@ class PreprocessingTests(unittest.TestCase):
         self.assertEqual(gray.mode, "L")
 
     def test_case_order_metadata_separation_and_repeatability(self):
+        # Distinct history brightness and a red goal reveal ordering/mixing errors.
         case = {
             "goal": Image.new("RGB", (14, 14), (255, 0, 0)),
             "history": [Image.new("RGB", (14, 14), (i * 30,) * 3) for i in range(6)],

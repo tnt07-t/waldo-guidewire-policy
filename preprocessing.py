@@ -42,10 +42,12 @@ class DINOv2Preprocessor:
         width, height = rgb.size
         if width <= 0 or height <= 0:
             raise ValueError("image dimensions must be positive")
+        # Fit the longer side to the square; one shared scale preserves shape.
         scale = self.size / max(width, height)
         resized_size = (max(1, round(width * scale)),
                         max(1, round(height * scale)))
         resized = rgb.resize(resized_size, resample=Image.Resampling.BICUBIC)
+        # Center without cropping. An odd leftover pixel goes right or below.
         left = (self.size - resized_size[0]) // 2
         top = (self.size - resized_size[1]) // 2
         preview = Image.new("RGB", (self.size, self.size), self.padding_rgb)
@@ -53,6 +55,7 @@ class DINOv2Preprocessor:
 
         # A writable byte copy avoids sharing storage with the Pillow image.
         pixels = torch.frombuffer(bytearray(preview.tobytes()), dtype=torch.uint8)
+        # Pillow stores [height,width,RGB]; PyTorch expects [RGB,height,width].
         pixels = pixels.reshape(self.size, self.size, 3).permute(2, 0, 1)
         tensor = (pixels.to(torch.float32).div(255) - self.mean) / self.std
         return {
@@ -77,6 +80,7 @@ class DINOv2Preprocessor:
             raise ValueError("Expected six aligned history images, depths, and times")
         goal = self.prepare_image(case["goal"])
         history = [self.prepare_image(frame) for frame in case["history"]]
+        # Copy metadata to keep the raw case independent of prepared outputs.
         prepared = {key: deepcopy(value) for key, value in case.items()
                     if key not in ("goal", "history")}
         prepared.update({

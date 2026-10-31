@@ -15,6 +15,7 @@ class DatasetTests(unittest.TestCase):
         self.temp = tempfile.TemporaryDirectory()
         self.addCleanup(self.temp.cleanup)
         self.root = Path(self.temp.name)
+        # Distinct pixel values reveal wrong case selection or frame ordering.
         records = []
         for row in range(3):
             paths = []
@@ -32,6 +33,7 @@ class DatasetTests(unittest.TestCase):
             })
         (self.root / "cases.jsonl").write_text(
             "".join(json.dumps(record) + "\n" for record in records), encoding="utf-8")
+        # Nonsequential rows and fold numbers catch split-index confusion.
         (self.root / "splits.json").write_text(json.dumps([
             {"fold": 42, "train": [2, 0], "validation": [1], "test": []},
             {"fold": 99, "train": [1], "validation": [], "test": [0, 2]},

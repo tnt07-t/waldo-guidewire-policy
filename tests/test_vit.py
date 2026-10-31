@@ -11,6 +11,7 @@ from preprocessing import CHECKPOINT, MEAN, STD
 from vit import DINOv2Encoder
 
 
+# Echo image markers as features to test wiring without real weights.
 class InventedBackbone(torch.nn.Module):
     num_features = 384
 
@@ -28,6 +29,7 @@ class InventedBackbone(torch.nn.Module):
 
 
 def invented_inputs(batch=1):
+    # Separate goal/history markers expose mixing or reordering across cases.
     goal = torch.arange(batch, dtype=torch.float32).add(100)
     history = torch.arange(batch * 6, dtype=torch.float32).reshape(batch, 6)
     return (goal[:, None, None, None].expand(-1, 3, 518, 518),
@@ -51,6 +53,7 @@ class EncoderTests(unittest.TestCase):
     def test_two_cases_chunking_matches_individual_encoding(self):
         encoder = DINOv2Encoder(backbone=InventedBackbone())
         goals, histories = invented_inputs(2)
+        # Uneven chunks exercise the final partial group and case reconstruction.
         grouped = encoder.encode(goals, histories, image_chunk_size=5)
         self.assertEqual(grouped["history_features"].shape, (2, 6, 384))
         for i in range(2):
@@ -88,6 +91,7 @@ class EncoderTests(unittest.TestCase):
             return InventedBackbone()
         stub = SimpleNamespace(create_model=create_model,
                                data=SimpleNamespace(resolve_model_data_config=lambda _: config))
+        # Mock the loader, not evidence of actual checkpoint compatibility.
         with patch.dict(sys.modules, {"timm": stub}):
             DINOv2Encoder()
             self.assertEqual(calls, [(CHECKPOINT, {"pretrained": True, "num_classes": 0})])

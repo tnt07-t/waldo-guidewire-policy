@@ -41,6 +41,7 @@ class GuidewireDataset:
         self.split_position = split_position
         self.partition = partition
         self.fold = splits[split_position]["fold"]
+        # Partition entries are row positions in cases.jsonl, not case IDs.
         self.indices = tuple(splits[split_position][partition])
         if any(type(i) is not int or not 0 <= i < len(self.records)
                for i in self.indices):
@@ -53,6 +54,7 @@ class GuidewireDataset:
         relative_path = Path(relative_path)
         if relative_path.is_absolute():
             raise ValueError("Image paths must be relative to the dataset root")
+        # Resolve .. and symlinks before checking that the file stays inside root.
         path = (self.root / relative_path).resolve()
         try:
             path.relative_to(self.root)
@@ -81,6 +83,7 @@ class GuidewireDataset:
         time = record["history_offsets_s"]
         if len(depth) != 6 or len(time) != 6:
             raise ValueError("Expected six aligned depths and time offsets")
+        # paths[0] is the marked goal; paths[1:] are oldest-to-newest history.
         images = [self._read_image(path, row_index) for path in paths]
         return {
             "goal": images[0],
