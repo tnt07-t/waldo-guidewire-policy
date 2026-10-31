@@ -53,7 +53,7 @@ Owner-reported first-record type inspection matches the listed fields: `case_id`
 
 ## Preprocessing and splits
 
-No model preprocessing or evaluation protocol has been approved or implemented. Owner-reported structural inspection confirms `splits.json` is a list of five objects, each with `fold` (integer), `train`, `validation`, and `test` (lists).
+The initial DINOv2 preparation trial is documented in [APPROACHES.md](APPROACHES.md); final training preprocessing and the evaluation protocol remain open. Owner-reported structural inspection confirms `splits.json` is a list of five objects, each with `fold` (integer), `train`, `validation`, and `test` (lists).
 
 Partition sizes by object position (not the uninspected `fold` value):
 
