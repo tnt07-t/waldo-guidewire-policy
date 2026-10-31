@@ -10,7 +10,7 @@ The approach is open-ended: explore specialized smaller models that exceed the b
 - [Dataset](docs/DATASET.md): schema, restrictions, and preprocessing/split verification.
 - [Approaches](docs/APPROACHES.md): team proposal, dependencies, decisions, shared working/logging process, and where to resume.
 - [Raw case loader](docs/LOADER.md): usage; six synthetic tests, one real-case decode, and goal/history display passed on Perlmutter. Visual/semantic assessment remains open; the raw reader itself applies no preprocessing.
-- [Initial ViT preparation](docs/grp2/VIT_TRIAL.md): full-view DINOv2 input tensors and previews; owner-run real-data checks are next.
+- [Initial ViT preparation](docs/grp2/VIT_TRIAL.md): full-view DINOv2 tensors, previews, and inference-only encoder; one-case pretrained execution on Perlmutter is next.
 - `cnn.py` remains a model-planning outline. `data_inspect.ipynb` includes original-image inspection cells, with no saved outputs. Neither selects model preprocessing.
 - Group progress: [Group 1 — Andrew and Suhani](docs/grp1/PROGRESS.md) and [Group 2 — Tran and Sabrina](docs/grp2/PROGRESS.md). Shared contracts stay in the approach notes; each group records its own plans and outcomes.
 
@@ -74,4 +74,4 @@ Teammates and AI assistants should start with the [documentation guide](docs/REA
 - Before parallel implementation, agree on input/output interfaces, preprocessing, and evaluation. Individual ownership is still open.
 - Keep sensitive data and derived sensitive artifacts on Perlmutter. Never put credentials in documentation.
 
-The repository includes shared notes, group progress directories, a raw-case reader (`dataset.py`), and synthetic loader tests. The first Perlmutter loading milestone passed; visual inspection and model preparation are next. DINOv2 image preparation is implemented separately; encoder implementation remains pending.
+The repository includes shared notes, group progress directories, a raw-case reader (`dataset.py`), and synthetic loader tests. The first Perlmutter loading milestone passed; visual inspection and model preparation are next. DINOv2 preparation and inference-only extraction are implemented separately; actual pretrained-model execution remains pending.

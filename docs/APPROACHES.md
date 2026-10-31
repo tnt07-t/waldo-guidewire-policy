@@ -8,13 +8,13 @@ We are building one pipeline in stages:
 
 1. **Read original data — `dataset.py`.** Tran's reader selects cases from a supplied partition and returns the goal, six ordered history images, depths, times, label, and tracing identifiers. It preserves original images. Six synthetic tests and one real-case decode passed on Perlmutter; see the Group 2 milestone for evidence and limits.
 2. **Prepare model inputs — `preprocessing.py`.** The first DINOv2 preparation layer converts full-view RGB images into normalized tensors with separate goal/history previews; real-data verification is pending. Origin's dataset outline included this stage by proposing stacked frames in a PyTorch Dataset. Our reader deliberately starts earlier so we can inspect the data before selecting model-specific preprocessing.
-3. **Extract visual features — `cnn.py` outline only.** A future encoder turns prepared images into useful numerical features. ResNet-18 is a proposal, not a selected model. Goal/history fusion and temporal prediction remain undecided.
+3. **Extract visual features — `vit.py`.** Inference-only DINOv2 extraction is implemented locally, with separate goal/history summary vectors. Actual pretrained execution on Perlmutter is pending. `cnn.py` remains a separate CNN outline. Goal/history fusion and temporal prediction remain undecided.
 
 These are compatible stages, not competing loaders. Origin's `dataset.py` was TODO-only: it proposed `(frames, depth_history, label)` without implementing loading or clarifying the separate goal and time offsets. Our reader makes those roles explicit and returns a dictionary of raw inputs. Build later model preparation on that reader; agree on interface changes before implementation.
 
 `data_inspect.ipynb` is an optional interactive notebook for understanding the data between reading and model preparation. It combines explanations, executable Python cells, and visual results. The owner successfully displayed a goal and six history frames using cells entered on Perlmutter. The shared notebook now includes reusable, output-free loading and history-display cells based on those snippets; other analysis sections remain placeholders. Sensitive notebook outputs must stay on Perlmutter.
 
-The tradeoff is intentional: raw reading is easier to inspect and reuse now, but it is not ready to feed directly into a CNN or ViT. The separate preparation layer now supplies one-case tensors for the DINOv2 trial. Encoder integration and case batching remain pending.
+The tradeoff is intentional: raw reading is easier to inspect and reuse now, but it is not ready to feed directly into a CNN or ViT. The separate preparation layer now supplies one-case tensors for the DINOv2 trial. Encoder inference and case-batch bookkeeping are implemented; real pretrained-model verification remains pending.
 
 ## Team proposal — supplied by project owner
 
@@ -27,7 +27,7 @@ Friday task assignments and the Sunday CNN target are recorded in the group logs
 
 ## What is decided and what is still open
 
-The first loader preserves original images and metadata. Tran has approved trying the initial ViT preparation described below. The first preparation layer is implemented; encoder code remains pending. The configuration below is a bounded trial, not a team-wide training decision.
+The first loader preserves original images and metadata. Tran has approved trying the initial ViT preparation described below. Preparation and inference-only encoder code are implemented; actual pretrained-model verification remains pending. The configuration below is a bounded trial, not a team-wide training decision.
 
 Before model integration, agree on input preparation, goal/history fusion, depth/time use, and batching. Then agree on the supplied split reporting protocol, metrics, and model selection. We have not selected a five-fold cross-validation protocol. Reuse shared components where appropriate rather than implementing separate data readers for each architecture.
 
@@ -37,14 +37,14 @@ Before model integration, agree on input preparation, goal/history fusion, depth
 
 **Starting preparation:** preserve the full field of view (no cropping), retain RGB including the red goal marker, convert images to floating-point tensors, use the selected checkpoint's documented pixel scaling/normalization, and start without random augmentation. Keep original files unchanged and preparation separate from the raw reader. Preserve the separate goal and chronological history, along with aligned depth/time metadata; labels and identifiers are not encoder inputs. This is an initial experiment, not a team-wide preprocessing contract.
 
-**First concrete trial (2026-10-31):** following the candidate discussion, Tran requested the first implementation step for DINOv2 Small/14 (`vit_small_patch14_dinov2.lvd142m`), using its 518×518 input size, proportional bicubic resize, centered mean-color padding, and documented scaling/normalization. This preserves the full field of view. `preprocessing.py` implements preparation only; the planned encoder uses timm, with remote compatibility still to check. See [preparation usage](grp2/VIT_TRIAL.md). The first encoder check will use inference only and one image at a time. No need to compare all candidate models or sweep resolutions before establishing this path.
+**First concrete trial (2026-10-31):** following the candidate discussion, Tran requested the first implementation step for DINOv2 Small/14 (`vit_small_patch14_dinov2.lvd142m`), using its 518×518 input size, proportional bicubic resize, centered mean-color padding, and documented scaling/normalization. This preserves the full field of view. `preprocessing.py` handles preparation; `vit.py` loads the pretrained encoder through timm, with remote compatibility still to check. See [preparation usage](grp2/VIT_TRIAL.md). The first encoder check will use inference only and one image at a time. No need to compare all candidate models or sweep resolutions before establishing this path.
 
-**Still open:** final training resolution/preparation, trainable versus frozen encoder layers, training batch size, depth/time scaling and use, goal/history fusion, and evaluation protocol. The dataset's original 1065×1050 resolution remains the inspection reference. Real-image visibility after resizing is unverified. Neither 224×224 nor original-resolution training has been selected.
+**Still open:** final training resolution/preparation, trainable versus frozen encoder layers, training batch size, depth/time scaling and use, goal/history fusion, and evaluation protocol. The dataset's original 1065×1050 resolution remains the inspection reference. Tran reported that the inspected prepared previews look fine and similar but smaller; dataset-wide visibility remains unverified. Neither 224×224 nor original-resolution training has been selected.
 
 **Implementation and verification sequence:**
 
 1. Check remaining PyTorch/timm compatibility on Perlmutter; do not repeat completed Python/Pillow setup. The candidate discussion is complete for choosing the first trial; no multi-model sweep is required now.
-2. Add explicit model-input preparation on top of `GuidewireDataset` and a ViT feature encoder, without implementing the GRU or action classifier yet. `preprocessing.py` is implemented with its one-case interface documented in the preparation guide; `vit.py` is the next planned component. Keep sensitive outputs on Perlmutter and use invented inputs for laptop checks.
+2. Add explicit model-input preparation on top of `GuidewireDataset` and a ViT feature encoder, without implementing the GRU or action classifier yet. `preprocessing.py` is implemented with its one-case interface documented in the preparation guide; `vit.py` now supplies separate 384-value goal/history summaries, with synthetic bookkeeping checks only so far. Keep sensitive outputs on Perlmutter and use invented inputs for laptop checks.
 3. On Perlmutter, inspect candidate prepared training images against originals for wire-tip and target visibility. Run one real case through the encoder in inference mode, checking shapes, finite features, ordering, and separate goal handling. No action-accuracy claim follows from feature extraction working.
 4. Add/test a small batch, then measure GPU inference memory and runtime. Choose training batch size later using the complete model and freezing policy; inference memory alone is insufficient. Batch size 1 is a smoke check, not a final training choice. Decide encoder freezing and complete model interfaces before training integration.
 
@@ -72,4 +72,4 @@ Suggested comparison practice, pending team agreement: use matching held-out par
 
 ## Next milestone
 
-The goal and six history images display successfully, and Tran has reported initial visibility/order observations in the Group 2 log. Next: inspect the implemented DINOv2 preparation on one training case, then implement one-case feature extraction under the trial above. Full metadata semantics and dataset-wide visual correctness remain unverified. See [LOADER.md](LOADER.md) for raw reader usage and [Group 2 progress](grp2/PROGRESS.md) for evidence and limits.
+The goal and six history images display successfully, and Tran has reported initial visibility/order observations in the Group 2 log. Initial one-case preparation previews were reported suitable by Tran. Next: check remote timm compatibility, then verify one-case pretrained extraction before a small batch. Full metadata semantics and dataset-wide visual correctness remain unverified. See [LOADER.md](LOADER.md) for raw reader usage and [Group 2 progress](grp2/PROGRESS.md) for evidence and limits.
