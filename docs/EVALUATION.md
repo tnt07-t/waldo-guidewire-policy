@@ -6,6 +6,10 @@ Sabrina requested implementation of the immediate frozen-encoder evaluation mile
 
 `evaluation.py` trains small, L2-regularized logistic classifiers on fixed image features. This separates visual representation quality from sequence-model complexity. DINOv2 uses its current 384-value class-token summary; ResNet-18 uses its 512-value pooled summary. Both use the existing RGB, full-view, padded 518-square preparation, retain their pretrained weights, and encode the goal separately. This is a controlled shared-input comparison, not a claim that this resolution is optimal for either architecture.
 
+**What is frozen and what learns:** ResNet-18 in `cnn.py` is unchanged by this evaluation: its pretrained weights remain frozen and BatchNorm stays in evaluation mode. Images are encoded under inference mode; detached NumPy features go to a separate scikit-learn logistic-regression classifier in `evaluation.py`. Only that classifier's coefficients/intercept and training-set scaling statistics are fitted. No trainable classification head is added inside the CNN, and no gradient flows back to it. DINOv2 weights also remain unchanged. High training balanced accuracy describes the probe's fit, not encoder fine-tuning. The probe is an evaluation baseline, not the eventual GRU policy.
+
+**Current preference confirmed by Sabrina:** keep the CNN frozen for the coming experiments. Fine-tuning entries below are possible future research directions, not the next planned action or implemented changes. Continue frozen-feature evaluation first.
+
 ## Experiments implemented
 
 | Experiment | Information supplied | Diagnostic question |
@@ -37,6 +41,10 @@ First make this implementation available in the Perlmutter clone through the nor
 
 ```sh
 # Existing Perlmutter environment; DATA_DIR must already point to your scratch copy.
+export HF_HOME="${PSCRATCH:?}/waldo-cache/huggingface"
+export HF_HUB_CACHE="$HF_HOME/hub"
+export TORCH_HOME="$PSCRATCH/waldo-cache/torch"
+mkdir -p "$HF_HUB_CACHE" "$TORCH_HOME"
 python -m pip show scikit-learn numpy Pillow timm torch torchvision
 python -m unittest discover -s tests -v
 
@@ -51,6 +59,20 @@ python evaluation.py \
 
 The runner requires data/output beneath personal `$PSCRATCH`, rejects existing output directories, and has no test-evaluation option. It holds train/validation features in memory for reuse across heads; it does not save a persistent feature cache or model checkpoint. Public pretrained weights may download; no image upload is performed.
 
+### Compute allocation and cache troubleshooting
+
+The current shared interactive queue required 32 CPU cores per GPU in Sabrina's run; a four-core request was rejected. Request matching resources in allocation and job step, using your available GPU account. Paste each command on one line; backslashes only work when immediately followed by a newline.
+
+```sh
+salloc --account=YOUR_GPU_ACCOUNT --constraint=gpu --qos=shared_interactive --nodes=1 --ntasks=1 --cpus-per-task=32 --gpus=1 --time=01:00:00
+# After allocation is granted:
+srun --ntasks=1 --cpus-per-task=32 --gpus=1 --pty bash -i
+```
+
+Restore the module, scratch venv, DATA_DIR and cache exports in the resulting compute shell. CUDA availability and A100-SXM4-80GB visibility were confirmed in Sabrina's allocation. This alone does not verify pretrained inference.
+
+The first evaluation attempt failed during DINOv2 weight download with `OSError: [Errno 524]` at `fcntl.flock`, before feature extraction. The default HF cache is usually in home; NERSC documents unsupported home-directory flock on compute nodes and recommends HF caches in scratch. Set the explicit scratch cache exports above before starting a fresh Python process. This remedy is proposed pending a successful retry; the traceback did not show the resolved cache location. Do not disable locks or delete existing caches. The unauthenticated HF warning is separate from the observed locking error. [NERSC cache guidance](https://docs.nersc.gov/machinelearning/launchers/), [home locking limitation](https://docs.nersc.gov/connect/vscode/), [HF cache variables](https://huggingface.co/docs/huggingface_hub/en/package_reference/environment_variables).
+
 Outputs, all kept on Perlmutter:
 
 - `summary.md`: comparison table with train/validation balanced accuracy and recalls, followed by automatic paired input-design score differences and investigation prompts. These prompts describe hypotheses, not established causes or statistical significance.
@@ -60,6 +82,39 @@ Outputs, all kept on Perlmutter:
 `--benchmark` adds five warm-ups and 20 synchronized repetitions of one in-memory training case for each encoder. It times two images (goal + latest frame), one image per encoder call; reports median/p95 preparation, encoding, total and CUDA peak allocation. Encoding includes CPU-to-device transfer. It excludes disk loading, classifier, metadata, and history averaging. Both backbones can be resident, so total peak allocation includes both; it is not isolated model memory. This component timing is useful for initial comparison, not the final full-policy batch-one latency benchmark. Repeated same-case timing is a controlled microbenchmark, not workload-wide p95.
 
 ## Turn results into the next experiment
+
+### First development results — owner-reported, 2026-11-01
+
+Sabrina supplied the split-position-0 summary from the completed A100-SXM4-80GB run. These are validation-selected development results, not final held-out-test estimates. Exact code/version provenance and episode intervals have not yet been reviewed from the full report.
+
+| Experiment | Train BA | Validation BA | Retract recall | Advance recall |
+|---|---:|---:|---:|---:|
+| majority | .500 | .500 | .000 | 1.000 |
+| metadata | .580 | .547 | .529 | .565 |
+| DINOv2 latest | .997 | .458 | .265 | .652 |
+| DINOv2 goal only | .805 | .609 | .588 | .630 |
+| DINOv2 latest + goal | .963 | .570 | .618 | .522 |
+| DINOv2 latest + goal + metadata | 1.000 | .570 | .618 | .522 |
+| DINOv2 mean history + goal | .940 | .540 | .559 | .522 |
+| ResNet latest | .807 | .536 | .441 | .630 |
+| ResNet goal only | .787 | .513 | .353 | .674 |
+| ResNet latest + goal | 1.000 | .547 | .441 | .652 |
+| ResNet latest + goal + metadata | .909 | .514 | .441 | .587 |
+| ResNet mean history + goal | 1.000 | .540 | .471 | .609 |
+
+**Interpretation:** large train/validation gaps show that these fitted classifiers generalize poorly on this partition. They do not establish that the pretrained encoders inherently cannot represent guidewires. DINOv2 goal-only has the largest observed validation BA (.609); adding latest-image features reduces it to .570. This motivates testing nuisance/reference shortcuts, weak linear goal/frame interaction, and overly flexible fits. Goal-only is not evidence of leakage or proof that the red marker alone explains the label: the whole reference includes anatomy and potentially wire context. Metadata adds no rounded validation BA to DINOv2; identical rounded recalls do not prove identical case predictions. Mean pooling does not improve either latest+goal baseline in this run; this does not test whether temporal order is useful.
+
+**Component benchmark:** five warm-ups and 20 repetitions of the same training case, two images per case and one image per encoder call. DINOv2 median preparation/encoding/total: 29.17/17.66/46.83 ms; total p95 46.96 ms. ResNet: 29.23/4.65/33.87 ms; total p95 34.24 ms. DINOv2 encoding was about 3.8 times slower, while total measured time was about 1.38 times slower because preparation dominates ResNet. Both models were resident: baseline allocated bytes 141,832,192; measured peaks 170,201,088 (DINOv2) and 183,196,672 (ResNet). These are shared-residency allocator peaks, not individual model footprints. Neither the timing nor its p95 represents full-policy or workload-wide latency.
+
+**Prioritized follow-up proposals:**
+
+1. Inspect the existing episode-bootstrap intervals, confusion matrices and per-C scores before interpreting small differences. Review matched errors privately; retain the current run as baseline evidence.
+2. Keep encoders frozen. Test a bounded stronger-regularization range (for example C=0.0001, 0.001, 0.01) and optionally train-only dimensionality reduction. Prefer grouped inner training splits for choosing expanded hyperparameters; repeating validation selection increases optimism. Both encoders have hundreds of features against 267 training cases; concatenation doubles image feature width. Full-data cached features are not persisted by the current runner, so a repeat currently re-extracts them.
+3. Investigate goal/reference dependence and current-frame detail on Perlmutter: inspect representative training images after resize, then goal/frame difference or product fusion with regularization and a pooled-patch alternative. Change one factor at a time; optional wrong-goal/marker-removal controls require a separately specified implementation and must preserve traceability.
+4. If frozen features remain weak after those checks, compare limited last-block fine-tuning at a small backbone learning rate against the regularized frozen baseline, using the same split/input/head and comparable search budget. Fine-tuning is not the first response to near-perfect training and weak validation.
+5. Retain the static and mean-history baselines when adding a GRU; judge sequence modeling with matched inputs rather than attributing any gain automatically to temporal order.
+
+No follow-up sweep, feature cache, alternate pooling/fusion, fine-tuning or GRU has been implemented by this results review. First read the existing uncertainty/error evidence; propose a bounded change next.
 
 | Observation to investigate | Possible explanation, not established cause | Next bounded experiment |
 |---|---|---|
@@ -78,7 +133,18 @@ Suggested error-review worksheet, private on Perlmutter: model disagreements, tr
 
 ## Verification and remaining work
 
-All 23 invented-data tests pass locally, including seven new evaluation checks; environment details and limits are recorded in [Group 2 progress](grp2/PROGRESS.md). CLI help and whitespace checks pass. No real-data classifier results, GPU timings, fine-tuning gains, or ViT limitations have been established by this new milestone yet. Next: run the command in the existing Perlmutter environment, review private artifacts, and record aggregate results and the next hypothesis here. Do not invent results or repeat completed basic data validation.
+**Latest owner-reported run:** the split-position-0 CUDA evaluation with both encoders and `--benchmark` completed after the scratch-cache exports. The aggregate scores and component timings were supplied and reviewed above. Detailed episode intervals, per-C scores and matched private predictions remain to review; no statistically supported encoder ranking or final-test claim is established.
+
+All 23 invented-data tests pass locally, including seven new evaluation checks. Sabrina also reported all 23 passed on Perlmutter in 1.780 seconds. The first real-data development classification and encoder component timing run is complete; fine-tuning and GRU remain unimplemented. Environment evidence and limits are recorded in [Group 2 progress](grp2/PROGRESS.md). CLI help and whitespace checks pass locally. Do not repeat the completed baseline merely to resume work.
+
+## Teammate handoff — resume here
+
+- Branch: `static-evaluation`. Evaluation implementation starts at `5ddb566`; this documentation handoff records the subsequent owner-run evidence. Exact Perlmutter run HEAD was not captured; inspect its `metrics.json` before attributing results to an exact revision.
+- Completed: frozen-encoder probes, 23 passing synthetic tests locally and on Perlmutter, one split-0 A100 development run, aggregate score/timing review, scratch-cache recovery guidance. CNN/ViT weights were not updated; `cnn.py` and `vit.py` are unchanged by this milestone.
+- Private evidence remains under each owner's scratch run directory, including `metrics.json` and `validation_predictions.private.json`. The reported run used relative scratch path `waldo-evaluation/dev-static-01`. These files are not in GitHub, and other accounts may not have access. Aggregate findings are recorded above.
+- First next task: review existing episode uncertainty, confusion matrices and regularization candidates, then inspect matched errors on Perlmutter. Keep the encoders frozen. Agree on a bounded stronger-regularization/fusion experiment before adding complexity; use episode-grouped inner training validation for an expanded search where feasible.
+- Still open: five-split final reporting policy, detailed spatial/reference diagnostics, full-policy latency, and GRU integration. No final-test predictions, new weight updates or follow-up experiment are included in this handoff.
+- End sessions by leaving the `srun` shell and then the `salloc` shell to release the GPU. Closing a terminal is not a substitute for checking the job ended. Scratch results survive release of the allocation but remain subject to normal scratch retention policy.
 
 ## Method references
 

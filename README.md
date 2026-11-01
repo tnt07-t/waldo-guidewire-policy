@@ -10,9 +10,9 @@ The approach is open-ended: explore specialized smaller models that exceed the b
 - [Dataset](docs/DATASET.md): schema, restrictions, and preprocessing/split verification.
 - [Approaches](docs/APPROACHES.md): team proposal, dependencies, decisions, shared working/logging process, and where to resume.
 - [Raw case loader](docs/LOADER.md): usage; six synthetic tests, one real-case decode, and goal/history display passed on Perlmutter. Visual/semantic assessment remains open; the raw reader itself applies no preprocessing.
-- [Initial ViT preparation](docs/grp2/VIT_TRIAL.md): full-view DINOv2 tensors and inference-only encoder; one/two-case pretrained CPU checks passed on Perlmutter. GPU checks remain open.
-- `cnn.py` implements a frozen pretrained ResNet-18 feature encoder (512 values/image). It reuses full-view preprocessing; real execution evidence has not been recorded here. `data_inspect.ipynb` includes original-image inspection cells with no saved outputs.
-- [Before-GRU evaluation](docs/EVALUATION.md): `evaluation.py` compares frozen ResNet/DINOv2 linear probes, majority/metadata baselines, goal/history ablations, class metrics, uncertainty and private error review. Real-data evaluation is pending.
+- [Initial ViT preparation](docs/grp2/VIT_TRIAL.md): full-view DINOv2 tensors and inference-only encoder; initial CPU checks and the first GPU development evaluation passed on Perlmutter.
+- `cnn.py` implements a frozen pretrained ResNet-18 feature encoder (512 values/image). Its first GPU evaluation is recorded in the evaluation guide; only a separate logistic-regression probe was trained. `data_inspect.ipynb` includes original-image inspection cells with no saved outputs.
+- [Before-GRU evaluation](docs/EVALUATION.md): first split-0 GPU run completed; aggregate results show large training/validation gaps. The guide records all comparisons, component timing, caveats and improvement hypotheses. No final-test evaluation or fine-tuning has been done.
 - Group progress: [Group 1 — Andrew and Suhani](docs/grp1/PROGRESS.md) and [Group 2 — Tran and Sabrina](docs/grp2/PROGRESS.md). Shared contracts stay in the approach notes; each group records its own plans and outcomes.
 
 The official rubric has not been supplied. Team proposals and unapproved suggestions are not course requirements.
@@ -75,4 +75,4 @@ Teammates and AI assistants should start with the [documentation guide](docs/REA
 - Before parallel implementation, agree on input/output interfaces, preprocessing, and evaluation. Individual ownership is still open.
 - Keep sensitive data and derived sensitive artifacts on Perlmutter. Never put credentials in documentation.
 
-The repository includes raw loading, full-view preparation, frozen image encoders, and the before-GRU evaluation runner. DINOv2 CPU extraction passed for inspected cases; the new classifier comparisons still require a Perlmutter compute run. No GRU or fine-tuning is implemented. See the evaluation guide for the next commands and the group logs for verification evidence.
+The repository includes raw loading, full-view preparation, frozen image encoders, and the before-GRU evaluation runner. The first Perlmutter GPU classifier comparison completed; reviewing uncertainty and matched errors is next before a bounded regularization/representation experiment. No GRU or fine-tuning is implemented. See the evaluation guide for results and the group logs for verification evidence.

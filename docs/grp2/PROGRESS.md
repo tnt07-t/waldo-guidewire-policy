@@ -11,17 +11,49 @@ These are team proposals, not confirmed course requirements. Friday task ownersh
 
 ## Current status and next steps
 
-**Update — 2026-11-01:** Sabrina authorized implementation of the immediate before-GRU evaluation milestone and ongoing documentation. `evaluation.py` now compares frozen ResNet/DINOv2 features with regularized linear heads, majority/metadata baselines and goal/history input ablations. [EVALUATION.md](../EVALUATION.md) records the development protocol, run commands, evidence limits and improvement hypotheses. Earlier statements below that classifier work was not authorized describe the prior stage and are superseded for these frozen probes. GRU and encoder fine-tuning remain outside this implementation. Real-data classifier runs and GPU measurements remain pending.
+**Latest aggregate findings:** the first split-0 results have now been supplied. DINOv2 goal-only has the highest observed validation BA (.609); DINOv2 latest+goal is .570 and ResNet latest+goal .547, with large train/validation gaps. Static encoder component medians are 46.83 ms total for DINOv2 and 33.87 ms for ResNet; classifier/disk IO are excluded. See EVALUATION.md for the canonical results, caveats and prioritized follow-up hypotheses. No statistically supported encoder ranking or final-test result is established; existing episode intervals and matched errors are next to inspect.
+
+**Handoff:** implementation is on `static-evaluation`; the aggregate review and [teammate resume checklist](../EVALUATION.md#teammate-handoff--resume-here) document what is complete and what to inspect next. Keep CNN/ViT frozen. Private uncertainty/error evidence is next; no baseline rerun is needed just to resume.
+
+**Update — 2026-11-01:** Sabrina authorized the before-GRU evaluation milestone and ongoing documentation. `evaluation.py` compares fixed ResNet/DINOv2 features using separate regularized linear probes. Implementation, synthetic verification and the first real development run are complete. Earlier pending-execution or limited-authorization statements in dated entries describe historical stages. GRU and encoder fine-tuning remain outside this implementation.
 
 Owner-reported schedule (2026-10-30): Friday — Tran sets up data loading; Sabrina works on models (specific model and deliverable unconfirmed). Tran is now starting ViT preparation/feature extraction for ViT–GRU. Remaining ownership and the Sunday deliverable remain open. The raw-loading milestone is complete for the checks below; complete policy implementation and training have not begun.
 
 The first raw-case reader passed six synthetic tests and decoded one real training case on Perlmutter at `9221135` (owner-reported). The owner confirmed that both the goal and six history frames display in the Perlmutter notebook, with history depth/time annotations. This confirms display execution, not visual/semantic correctness. Preparation and inference-only encoder code are implemented locally. Synthetic preparation tests passed on Perlmutter and initial previews were reported suitable; actual pretrained CPU extraction and two-case grouping checks also passed. Basic dataset validation has already passed as recorded in the dataset notes; do not repeat it without a concrete reason.
 
-The initial preparation trial and staged implementation plan are in [APPROACHES.md](../APPROACHES.md#initial-vit-preparation-trial). Owner-run pretrained CPU extraction now passes for one case and two-case individual/grouped comparisons, including image chunk sizes 1 and 2. Next: obtain compute-access details for GPU verification and inference memory/runtime measurement; agree on remaining interfaces before full model integration. Preparation usage is in [VIT_TRIAL.md](VIT_TRIAL.md). No GRU or training is implemented.
+The initial preparation trial is in [APPROACHES.md](../APPROACHES.md#initial-vit-preparation-trial), with preparation usage in [VIT_TRIAL.md](VIT_TRIAL.md). One/two-case CPU extraction and the later GPU development evaluation completed. Only the separate evaluation classifiers were trained; no GRU or encoder training is implemented. Remaining model interfaces and final evaluation policy need agreement.
 
-Tran has now reported initial visual observations: the wire is usually visible and within the image edges, the goal target is marked with a red circle, and the history order appears sensible. Inspection coverage is unspecified; these observations do not establish full-dataset correctness or metadata alignment. DINOv2 Small/14 is the first trial candidate; final model selection remains open. Initial preparation previews were reported suitable; one-case and two-case CPU encoder checks passed. GPU verification remains pending.
+Tran's initial visual observations: wire usually visible within image edges, red-circle goal target, and sensible history order. Inspection coverage is unspecified; these observations do not establish full-dataset correctness or metadata alignment. DINOv2 Small/14 remains the trial candidate; final model selection remains open despite the completed first GPU evaluation.
 
 ## Progress log
+
+### 2026-11-01 — Frozen backbone versus evaluation classifier clarified
+
+Sabrina confirmed the CNN should remain frozen for the coming experiments. Explicitly documented that evaluation fits a separate logistic-regression probe and train-only scaler on detached features; it does not modify `cnn.py`, update ResNet weights or BatchNorm statistics, or backpropagate into either image encoder. Fine-tuning remains a possible future research direction, not the next planned implementation. The current accuracy gaps describe probe generalization; no encoder was trained in this milestone.
+
+### 2026-11-01 — First aggregate accuracy and component timing review
+
+Sabrina supplied the generated summary and encoder benchmark. Recorded the full 12-experiment BA/recall comparison and component timings once in EVALUATION.md. Main evidence: large train/validation gaps; goal-only DINOv2 above its latest+goal baseline; metadata and mean pooling did not improve rounded DINOv2 validation BA. DINOv2 encoding is approximately 3.8 times slower than ResNet at the shared 518-square preparation, but preparation reduces the measured total-time ratio to approximately 1.38. Single-case repeated timings exclude classifier/disk IO and shared-residency memory cannot rank isolated model sizes.
+
+Proposed next order: inspect existing intervals/confusions/per-C scores and private matched errors; then a bounded stronger-regularization experiment with frozen encoders; investigate reference dependence, fusion and small-detail representation before limited fine-tuning. No new experiment was launched or model changed in this review. All real case-level artifacts remain on Perlmutter.
+
+### 2026-11-01 — First before-GRU evaluation completed on GPU
+
+After setting scratch HF/Torch cache locations, Sabrina reported successful DINOv2 and ResNet weight downloads and the runner's completion message for split position 0, both encoders, CUDA and `--benchmark`. The preceding allocation check identified an A100-SXM4-80GB. This establishes owner-reported completion of the development run; scores, confusion matrices, uncertainty intervals, code/version provenance and component timings have not yet been reviewed. No superiority, fine-tuning gain, full-policy latency, or final-test result is claimed.
+
+Next: inspect the aggregate summary and encoder component benchmark on Perlmutter, retain private case-level predictions there, and record aggregate findings and a bounded follow-up hypothesis. Scratch-cache recovery succeeded for this run. These new documentation entries remain local until a later Git handoff.
+
+### 2026-11-01 — GPU visible; first evaluation blocked by cache locking
+
+Sabrina confirmed CUDA availability and NVIDIA A100-SXM4-80GB visibility in an allocated compute shell. The shared interactive queue required 32 CPU cores for one GPU; the initial four-core request was rejected. The evaluation command then failed while constructing DINOv2, at HF model-download cache `fcntl.flock`, with `OSError: [Errno 524]`. No feature extraction, classifiers, accuracy results or benchmark measurements completed. An unauthenticated HF warning preceded the exception but does not identify its cause.
+
+Proposed recovery: explicitly place HF and Torch weight caches in personal scratch and rerun in a fresh Python process within the existing allocation. NERSC documents home-mount flock limitations and recommends scratch HF caches; the failing resolved cache path was not printed, so the diagnosis remains provisional. Recovery success is not yet reported. Portable commands and sources are in EVALUATION.md; no code or dependency change is needed for this retry.
+
+### 2026-11-01 — Evaluation code transferred; Perlmutter tests passed
+
+Sabrina confirmed a clean Perlmutter checkout of `static-evaluation` tracking `origin/static-evaluation`, with the evaluation script and requirements present. The prior local dataset-ignore commit was preserved on a backup branch before switching. The module environment reports Python 3.12.13; dependency discovery found torch, torchvision, scikit-learn, Pillow and NumPy, with timm initially absent. A dedicated personal scratch venv reuses system packages; its dry run proposed only timm 1.0.30. Following installation/test instructions, Sabrina reported all 23 synthetic tests passed in 1.780 seconds. The full installed-version inventory and exact remote commit were not supplied.
+
+This verifies the synthetic suite on Sabrina's Perlmutter setup, not real-data classifier execution or pretrained GPU inference. Next: confirm the job account, allocate one GPU, verify CUDA in that allocation, and run the documented evaluation with artifacts retained on Perlmutter. This entry is a local documentation update; it has not automatically propagated to the remote clone.
 
 ### 2026-11-01 — Before-GRU evaluation implementation
 
