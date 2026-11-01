@@ -11,6 +11,8 @@ These are team proposals, not confirmed course requirements. Friday task ownersh
 
 ## Current status and next steps
 
+**Update — 2026-11-01:** Sabrina authorized implementation of the immediate before-GRU evaluation milestone and ongoing documentation. `evaluation.py` now compares frozen ResNet/DINOv2 features with regularized linear heads, majority/metadata baselines and goal/history input ablations. [EVALUATION.md](../EVALUATION.md) records the development protocol, run commands, evidence limits and improvement hypotheses. Earlier statements below that classifier work was not authorized describe the prior stage and are superseded for these frozen probes. GRU and encoder fine-tuning remain outside this implementation. Real-data classifier runs and GPU measurements remain pending.
+
 Owner-reported schedule (2026-10-30): Friday — Tran sets up data loading; Sabrina works on models (specific model and deliverable unconfirmed). Tran is now starting ViT preparation/feature extraction for ViT–GRU. Remaining ownership and the Sunday deliverable remain open. The raw-loading milestone is complete for the checks below; complete policy implementation and training have not begun.
 
 The first raw-case reader passed six synthetic tests and decoded one real training case on Perlmutter at `9221135` (owner-reported). The owner confirmed that both the goal and six history frames display in the Perlmutter notebook, with history depth/time annotations. This confirms display execution, not visual/semantic correctness. Preparation and inference-only encoder code are implemented locally. Synthetic preparation tests passed on Perlmutter and initial previews were reported suitable; actual pretrained CPU extraction and two-case grouping checks also passed. Basic dataset validation has already passed as recorded in the dataset notes; do not repeat it without a concrete reason.
@@ -20,6 +22,12 @@ The initial preparation trial and staged implementation plan are in [APPROACHES.
 Tran has now reported initial visual observations: the wire is usually visible and within the image edges, the goal target is marked with a red circle, and the history order appears sensible. Inspection coverage is unspecified; these observations do not establish full-dataset correctness or metadata alignment. DINOv2 Small/14 is the first trial candidate; final model selection remains open. Initial preparation previews were reported suitable; one-case and two-case CPU encoder checks passed. GPU verification remains pending.
 
 ## Progress log
+
+### 2026-11-01 — Before-GRU evaluation implementation
+
+Pulled upstream main to `023d125` (including frozen ResNet-18). Added a local development evaluation runner with train-only feature scaling, class-balanced logistic regression, validation C selection, fixed threshold, per-class/confusion/probability metrics, episode-bootstrap intervals, and private aligned predictions for error review. Goal-only/latest-only/goal-plus-latest/metadata/mean-history comparisons distinguish potential context, temporal and representation limitations. Optional synchronized static encoder component timing is explicitly separated from full-policy latency. Existing loader, preprocessing and encoder code is unchanged. Dependencies are documented separately; no real features or datasets were downloaded.
+
+**Verification:** all 23 synthetic tests passed locally (six loader, five preprocessing, five encoder and seven evaluation tests), using Python 3.9.13, torch 2.8.0, NumPy 2.0.2, scikit-learn 1.6.1 and Pillow 11.3.0. Evaluation checks cover majority-class metric behavior, row/episode leakage rejection, train-only scaling and regularization tie handling, goal/latest/history feature roles, episode resampling, full invented-array comparisons, collection bookkeeping and static benchmark image selection. CLI help and `git diff --check` passed. Dependencies were installed in an isolated project venv reusing existing system packages; the first test launch occurred before installation completed and failed dependency imports, then all checks passed after installation. No real weights or data were used. Real Perlmutter classification, GPU timing and improvements from fine-tuning remain unmeasured. Changes are local and uncommitted; no GitHub push or remote code execution has occurred.
 
 ### 2026-10-31 — Pretrained feature extraction verified on CPU
 
@@ -47,11 +55,11 @@ Goal and six chronological history images displayed successfully in the remote n
 
 ## Next decisions — discussion before implementation
 
-The current CPU extraction milestone is complete. No command or immediate GPU allocation is needed to discuss the next model stage. Explain and agree on these choices before coding:
+The CPU extraction milestone is complete. The new frozen-probe development defaults and rationale are in EVALUATION.md. The following remain integration questions for a later temporal/fine-tuning model, rather than blockers to the newly authorized probes:
 
 1. Keep pretrained ViT weights fixed initially, or fine-tune them?
 2. How should the separate goal features combine with the six history features?
 3. How should aligned depth/time values enter the model and be scaled?
 4. Which development split, validation metrics, and model-selection procedure should the team use?
 
-Suggested starting designs remain proposals, not approvals. GPU verification and memory/runtime measurement can follow when access details are available. GRU, action head, complete training, full feature caching, and dataset-wide extraction are not implemented or newly authorized. Friday's owner-reported assignment was Tran on loading and Sabrina on models; remaining model ownership and the Sunday deliverable still need clarification.
+The new linear action heads are authorized for this evaluation milestone; GRU, full encoder training and persistent feature caching are not implemented. Fine-tuning and architecture changes remain proposed follow-ups requiring a concrete design based on evaluation evidence. GPU verification can follow when compute access is available. Remaining architecture ownership is still open.

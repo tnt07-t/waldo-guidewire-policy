@@ -14,9 +14,9 @@ These are team proposals, not confirmed course requirements. Individual ownershi
 
 Owner-reported schedule (2026-10-30): Friday — Suhani and Andrew work on CNNs and understanding the data. By Sunday (2026-11-01) — aim to have the CNN work done or finalizing. This is a target, not a completion report.
 
-No Group 1 implementation or experiment results have been reported in this workspace. Basic dataset validation has already passed as recorded in the dataset notes; do not repeat it without a concrete reason.
+Upstream commit `023d125` implements the frozen ResNet-18 encoder in `cnn.py`: 512 features/image, separate goal/history calls, retained default maxpool, frozen backbone and evaluation-mode BatchNorm. No real-data execution or accuracy result for this implementation is recorded here. Basic dataset validation has already passed; do not repeat it without a concrete reason.
 
-Before implementation, agree on the shared environment and contracts, clarify the frame-map pairing and current-input baseline, and assign individual owners. No model implementation is currently authorized.
+Sabrina authorized the shared before-GRU evaluation milestone on 2026-11-01. [EVALUATION.md](../EVALUATION.md) describes the controlled ResNet/DINOv2 comparisons and diagnostic ablations. The new probes do not implement Group 1 GRU/LSTM models or change their ownership; remaining team contracts still need agreement.
 
 ## Progress log
 
