@@ -11,15 +11,23 @@ These are team proposals, not confirmed course requirements. Friday task ownersh
 
 ## Current status and next steps
 
-Owner-reported schedule (2026-10-30): Friday — Tran sets up data loading; Sabrina works on models (specific model and deliverable unconfirmed). Tran is now starting ViT preparation/feature extraction for ViT–GRU. Remaining ownership and the Sunday deliverable remain open. The raw-loading milestone is complete for the checks below; complete policy implementation and training have not begun.
+Owner-reported schedule (2026-10-30): Friday — Tran sets up data loading; Sabrina works on models (specific model and deliverable unconfirmed). Tran subsequently completed initial ViT preparation and pretrained CPU feature-extraction checks for ViT–GRU. This schedule is historical; it does not confirm Sabrina’s deliverable or final architecture ownership. The raw-loading milestone is complete for the checks below; complete policy implementation and training have not begun.
 
 The first raw-case reader passed six synthetic tests and decoded one real training case on Perlmutter at `9221135` (owner-reported). The owner confirmed that both the goal and six history frames display in the Perlmutter notebook, with history depth/time annotations. This confirms display execution, not visual/semantic correctness. Preparation and inference-only encoder code are implemented locally. Synthetic preparation tests passed on Perlmutter and initial previews were reported suitable; actual pretrained CPU extraction and two-case grouping checks also passed. Basic dataset validation has already passed as recorded in the dataset notes; do not repeat it without a concrete reason.
 
-The initial preparation trial and staged implementation plan are in [APPROACHES.md](../APPROACHES.md#initial-vit-preparation-trial). Owner-run pretrained CPU extraction now passes for one case and two-case individual/grouped comparisons, including image chunk sizes 1 and 2. Next: obtain compute-access details for GPU verification and inference memory/runtime measurement; agree on remaining interfaces before full model integration. Preparation usage is in [VIT_TRIAL.md](VIT_TRIAL.md). No GRU or training is implemented.
+The initial preparation trial and staged implementation plan are in [APPROACHES.md](../APPROACHES.md#initial-vit-preparation-trial). Owner-run pretrained CPU extraction now passes for one case and two-case individual/grouped comparisons, including image chunk sizes 1 and 2. Immediate next step: run the bounded marker/wire feature-sensitivity workflow in [ViT diagnostics](VIT_DIAGNOSTICS.md) on Perlmutter, then discuss and agree on the model/interface and evaluation choices below. Obtain Group 2 compute-access details for subsequent GPU verification and inference memory/runtime measurement. Preparation usage is in [VIT_TRIAL.md](VIT_TRIAL.md). No GRU or training is implemented.
 
 Tran has now reported initial visual observations: the wire is usually visible and within the image edges, the goal target is marked with a red circle, and the history order appears sensible. Inspection coverage is unspecified; these observations do not establish full-dataset correctness or metadata alignment. DINOv2 Small/14 is the first trial candidate; final model selection remains open. Initial preparation previews were reported suitable; one-case and two-case CPU encoder checks passed. GPU verification remains pending.
 
 ## Progress log
+
+### 2026-11-02 — ViT diagnostic workflow prepared; remote execution pending
+
+At Tran's request, added output-free V1–V6 cells to `data_inspect.ipynb` and the [step-by-step guide](VIT_DIAGNOSTICS.md). The workflow compares marked/clean goal summaries, checks repeat-image differences, and compares manually selected wire-tip occlusions with three controls on a few training cases. Existing notebook cells and local cell IDs were preserved. No encoder or training implementation changed. Local notebook/Python structural checks passed; PyTorch is unavailable in the inspected laptop interpreter, so pretrained execution and real-image results remain unverified. No files were transferred, committed or pushed. Preserve the remote notebook before an authorized handoff. This bounded diagnostic pass is now the immediate next step; subsequent model decisions remain below.
+
+### 2026-11-02 — Documentation reconciled with completed CPU milestone
+
+Reviewed overall and Group 2 notes against the recorded October 31 results. Updated README, shared approach status, and ViT trial instructions to remove superseded claims that preparation, timm compatibility, or pretrained CPU extraction were still pending. No new model execution or data verification occurred. The immediate next step remains the design discussion below; GPU verification/performance measurement and complete-policy implementation remain outstanding. Group 1's separate CNN GPU diagnostics do not establish Group 2 GPU readiness. Code, notebook edits, and dataset restrictions are unchanged.
 
 ### 2026-10-31 — Pretrained feature extraction verified on CPU
 
@@ -47,11 +55,12 @@ Goal and six chronological history images displayed successfully in the remote n
 
 ## Next decisions — discussion before implementation
 
-The current CPU extraction milestone is complete. No command or immediate GPU allocation is needed to discuss the next model stage. Explain and agree on these choices before coding:
+The current CPU extraction milestone is complete. The requested diagnostic pass precedes implementation; model design can still be discussed without an allocation. Explain and agree on these choices before coding:
 
 1. Keep pretrained ViT weights fixed initially, or fine-tune them?
 2. How should the separate goal features combine with the six history features?
 3. How should aligned depth/time values enter the model and be scaled?
-4. Which development split, validation metrics, and model-selection procedure should the team use?
+4. Which development split, validation metrics, and model-selection procedure should the team use? Agree on the five supplied splits’ reporting protocol and reserve test results for final evaluation.
+5. Who owns ViT–GRU versus CNN–temporal attention, and the shared training/evaluation code? Sabrina’s specific deliverable remains unconfirmed.
 
 Suggested starting designs remain proposals, not approvals. GPU verification and memory/runtime measurement can follow when access details are available. GRU, action head, complete training, full feature caching, and dataset-wide extraction are not implemented or newly authorized. Friday's owner-reported assignment was Tran on loading and Sabrina on models; remaining model ownership and the Sunday deliverable still need clarification.

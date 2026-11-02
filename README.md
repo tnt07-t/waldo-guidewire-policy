@@ -11,7 +11,7 @@ The approach is open-ended: explore specialized smaller models that exceed the b
 - [Approaches](docs/APPROACHES.md): team proposal, dependencies, decisions, shared working/logging process, and where to resume.
 - [Raw case loader](docs/LOADER.md): usage; six synthetic tests, one real-case decode, and goal/history display passed on Perlmutter. Visual/semantic assessment remains open; the raw reader itself applies no preprocessing.
 - [Initial ViT preparation](docs/grp2/VIT_TRIAL.md): full-view DINOv2 tensors, previews, and inference-only encoder; owner-run pretrained CPU checks are recorded in Group 2 progress.
-- [CNN encoder trial](docs/grp1/cnn.md): frozen ResNet-18 frame features in `cnn.py`; owner-run one-case Perlmutter smoke check passed.
+- [CNN encoder trial](docs/grp1/CNN.md): frozen ResNet-18 frame features in `cnn.py`; owner-run one-case Perlmutter smoke check passed.
 - [CNN 512-d diagnostics](docs/grp1/CNN_DIAGNOSTICS.md): separate occlusion/motion probes on the vectors a GRU would see; owner-run one-case GPU diagnostics passed. `data_inspect.ipynb` includes original-image inspection cells, with no saved outputs.
 - Group progress: [Group 1 — Andrew and Suhani](docs/grp1/PROGRESS.md) and [Group 2 — Tran and Sabrina](docs/grp2/PROGRESS.md). Shared contracts stay in the approach notes; each group records its own plans and outcomes.
 
@@ -64,7 +64,7 @@ test -d "$DATA_DIR" && printf 'Dataset directory exists\n'
 
 ## Environment status
 
-The owner confirmed Python 3.12.13 and Pillow 12.3.0 after loading the candidate `pytorch/2.13.0` module on Perlmutter. This establishes the raw reader's image dependency; full ML compatibility and team-wide adoption remain open. See the approach notes for evidence and next steps. Do not repeat the completed environment inventory or basic dataset validation.
+The owner confirmed Python 3.12.13 and Pillow 12.3.0 after loading the candidate `pytorch/2.13.0` module on Perlmutter. Subsequent Group 2 checks verified pretrained DINOv2 CPU extraction using a scratch venv with timm 1.0.30; Group 1 reports a one-case CNN GPU diagnostic run. Group 2 GPU verification and team-wide environment adoption remain open. See the approach notes for evidence and next steps. Do not repeat the completed environment inventory or basic dataset validation.
 
 ## Lightweight collaboration
 
@@ -75,4 +75,4 @@ Teammates and AI assistants should start with the [documentation guide](docs/REA
 - Before parallel implementation, agree on input/output interfaces, preprocessing, and evaluation. Individual ownership is still open.
 - Keep sensitive data and derived sensitive artifacts on Perlmutter. Never put credentials in documentation.
 
-The repository includes shared notes, group progress directories, a raw-case reader (`dataset.py`), and synthetic loader tests. The first Perlmutter loading milestone passed; visual inspection and model preparation are next. DINOv2 preparation and inference-only extraction are implemented separately; actual pretrained-model execution remains pending.
+The repository includes shared notes, group progress directories, a raw-case reader (`dataset.py`), and synthetic loader tests. Raw loading, initial preparation previews, and pretrained DINOv2 CPU extraction for one and two cases have passed owner-run checks on Perlmutter. Next for Group 2: run the bounded [ViT feature diagnostics](docs/grp2/VIT_DIAGNOSTICS.md), then agree on temporal-model interfaces and training/evaluation design. GPU verification and inference memory/runtime measurement remain pending. No complete action policy or comparative accuracy/latency result is recorded.

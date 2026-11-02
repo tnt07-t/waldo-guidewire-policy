@@ -58,7 +58,7 @@ Inspect wire-tip and red-target visibility, all edges, and sensible history orde
 - `previews`: separate goal and six history RGB images, exactly matching the pixels used for tensor conversion.
 - `preparation`: checkpoint name, size, interpolation, padding color, normalization, and separate goal/history geometry. Dimensions are `(width, height)`; padding is `(left, top, right, bottom)`.
 
-These are one-case tensors, without a case-batch dimension. The raw `case` remains unchanged. The next encoder should receive only the goal/history tensors, with one image at a time for the first inference check. Smaller synthetic sizes are supported when divisible by 14; changing a real trial size requires a corresponding encoder configuration and another visibility check.
+These are one-case tensors, without a case-batch dimension. The raw `case` remains unchanged. The implemented encoder receives only the goal/history tensors; the completed first inference check used one image at a time. Smaller synthetic sizes are supported when divisible by 14; changing a real trial size requires a corresponding encoder configuration and another visibility check.
 
 ## Encoder dependencies — Perlmutter terminal
 
@@ -68,7 +68,7 @@ Preparation tests and initial preview inspection have passed. The base module ha
 "$vit_env/bin/python" -c 'import timm, torchvision; print("timm", timm.__version__, "torchvision", torchvision.__version__)'
 ```
 
-This reads no images, downloads no weights, and uses no GPU. If an import fails, record the non-sensitive error and resolve environment compatibility before the encoder run; do not blindly upgrade the module's PyTorch. Timm 1.0.30 import passed; actual checkpoint execution remains unverified. If the terminal variable is lost, locate the existing scratch venv and verify it instead of reinstalling. Exact generated paths belong in private notes.
+This reads no images, downloads no weights, and uses no GPU. If an import fails, record the non-sensitive error and resolve environment compatibility before the encoder run; do not blindly upgrade the module's PyTorch. Timm 1.0.30 import and actual pretrained checkpoint execution passed on CPU for one and two cases; GPU execution remains unverified. If the terminal variable is lost, locate the existing scratch venv and verify it instead of reinstalling. Exact generated paths belong in private notes.
 
 The encoder tests use an invented model, so they need only the already-used torch/Pillow environment:
 
@@ -105,8 +105,12 @@ print("One-case feature shapes and finite-value checks passed.")
 
 These are whole-image summary vectors, using the checkpoint's own class-token pooling as in its [feature extraction example](https://huggingface.co/timm/vit_small_patch14_dinov2.lvd142m). Only image tensors are passed into the encoder. No labels, identifiers, depth, or time enter it. No parameter updates or feature files are produced. A valid feature vector is not evidence of action accuracy or wire localization. This wrapper is intentionally inference-only and must not be used unchanged as a trainable component later.
 
-## Small-batch follow-up — only after the one-case run passes
+## Small-batch reference — CPU checks completed
 
-The encoder also accepts goals `[B,3,518,518]` and histories `[B,6,3,518,518]`, returning `[B,384]` and `[B,6,384]`. Start with two training cases. Compare batched results against each case encoded individually with `torch.testing.assert_close`; inspect discrepancies rather than requiring bitwise equality. The default image chunk is one even when B is two, so case grouping does not silently raise GPU workload. An explicit `image_chunk_size=2` can then test processing images together; this is not a training batch-size decision.
+The encoder also accepts goals `[B,3,518,518]` and histories `[B,6,3,518,518]`, returning `[B,384]` and `[B,6,384]`. The owner-run two-training-case CPU check has passed; the following describes that verification for reference, not a request to repeat it. Compare batched results against each case encoded individually with `torch.testing.assert_close`; inspect discrepancies rather than requiring bitwise equality. The default image chunk is one even when B is two, so case grouping does not silently raise GPU workload. An explicit `image_chunk_size=2` can then test processing images together; this is not a training batch-size decision.
 
 Do not run a dataset-wide feature sweep. Report only permitted shape/check results, device, software versions, and memory/runtime aggregates. Keep actual feature values and all sensitive outputs on Perlmutter. For later timing, warm up the model, synchronize CUDA around measurements, and separate preprocessing, weight loading, and encoder runtime. No GPU latency or memory measurement has been made yet.
+
+## Next bounded check
+
+The [ViT diagnostic walkthrough](VIT_DIAGNOSTICS.md) and notebook cells V1–V6 test marker/wire-region sensitivity in the existing summaries before temporal-model integration. These new cells have not been executed on Perlmutter; the earlier successful CPU extraction checks remain valid within their recorded scope.
