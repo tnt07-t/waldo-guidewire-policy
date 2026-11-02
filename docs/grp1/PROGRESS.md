@@ -18,13 +18,17 @@ The frozen ResNet-18 frame encoder in `cnn.py` is implemented locally (commit `0
 
 Owner-run Perlmutter one-case encoder verification passed (2026-11-02): the `cnn.py` smoke check completed successfully. Exact printed device, remote HEAD, and optional flags were not supplied; do not repeat the completed default check without a code/data change or concrete concern.
 
-`cnn_diagnostics.py` adds separate 512-d probes—history grid occlusion, goal-marker vs control occlusion, and motion math on the history feature sequence—so a later GRU’s actual inputs can be judged without changing `cnn.py`. Owner-run Perlmutter unit tests and one-case GPU diagnostics passed (2026-11-02); permitted aggregates are below and in [CNN_DIAGNOSTICS.md](CNN_DIAGNOSTICS.md). GRU/LSTM, depth/time fusion, the current-input baseline, training, and evaluation are not implemented. Basic dataset validation has already passed as recorded in the dataset notes; do not repeat it without a concrete reason.
+`cnn_diagnostics.py` adds separate 512-d probes—history **occlusion sensitivity** (not wire detection), goal **marker-region perturbation** vs translated controls (edits before prep), and **temporal feature variation** vs aligned depth (magnitude association only)—so a later GRU’s inputs can be judged without changing `cnn.py`. Diagnostics were corrected after the first owner GPU run (uint8 red overflow, control design, wording, temporal correlation). Ten invented-input regression tests passed locally (tool-verified). A re-run on Perlmutter with overlays is needed before treating marker/occlusion aggregates as current. GRU/LSTM, depth/time fusion, the current-input baseline, training, and evaluation are not implemented. Basic dataset validation has already passed as recorded in the dataset notes; do not repeat it without a concrete reason.
 
-**Immediate next steps:** visually confirm that occlusion argmax regions align with the wire on prepared previews (still unverified); optionally repeat diagnostics on a second case; then agree on temporal model (GRU vs LSTM), depth/time use, and goal fusion before implementing the next stage.
+**Immediate next steps:** re-run fixed `cnn_diagnostics.py` on Perlmutter with `--output-dir`; inspect mask/heatmap overlays on the machine; then agree on temporal model (GRU vs LSTM), depth/time use, and goal fusion before implementing the next stage.
 
 ## Progress log
 
-### 2026-11-02 — One-case GPU diagnostics passed (owner-run)
+### 2026-11-02 — Diagnostics correctness fixes (local)
+
+Updated `cnn_diagnostics.py` / tests / docs without changing `cnn.py` encoder behavior. Fixes: int16 red-mask arithmetic on pre-normalization RGB; empty-mask `unavailable`; multi translated same-shape controls with shared pre-prep replacement; rename to occlusion sensitivity with padding exclusion and original-frame heatmaps; temporal report of signed and absolute depth steps with abs-only correlation and explicit non-claims. Tool-verified: ten invented-input tests OK. Real-case GPU re-run pending. No staging/commit/push.
+
+### 2026-11-02 — One-case GPU diagnostics passed (owner-run; pre-fix code)
 
 Owner-run on Perlmutter with `pytorch/2.13.0`. Invented-input `test_cnn_diagnostics.py`: five tests OK on the login node and again under `srun` on a shared-interactive GPU allocation. An initial diagnostics attempt failed because the scratch dataset copy lacked `cases.jsonl`; after setting `DATA_DIR` to the shared studentdata `shorthorizon2` tree (files present), the real-case run completed on GPU. Public ResNet-18 weights downloaded to the scratch Torch Hub cache. No features or images were saved.
 
@@ -34,7 +38,7 @@ Owner-run on Perlmutter with `pytorch/2.13.0`. Invented-input `test_cnn_diagnost
 - Goal marker: `12465` marker pixels; marker L2 `3.965` vs control `1.344`; marker/control `2.95`. Goal-vs-history L2 mean `2.897`, min `2.437`.
 - Motion (feature math only): mean step L2 `2.474`; first–last L2 `2.931`; first–last cosine distance `0.012`; wire_score first–last delta `-0.016`; feature–depth step corr `-0.226`.
 
-**Reading:** goal-marker and non-flat history features look usable for a GRU trial; wire localization via argmax and depth-aligned motion remain weak/unconfirmed. Not action-accuracy evidence. Do not repeat this completed one-case GPU check without a code/data change or a second-case comparison.
+**Reading (pre-fix code only):** goal-marker and non-flat history features looked usable for a GRU trial, with caveats on argmax≠verified wire and weak depth association. Not action-accuracy evidence. Numbers predate the uint8/control/temporal fixes above—re-run before citing them.
 
 ### 2026-11-02 — 512-d feature diagnostics added (local)
 
