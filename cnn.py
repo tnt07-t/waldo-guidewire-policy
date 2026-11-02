@@ -25,8 +25,6 @@ Remaining work:
   consider layer3 only if validation results justify it.
 """
 
-"""Frozen ResNet-18 encoder using the existing shared preprocessing."""
-
 import argparse
 import os
 
@@ -53,8 +51,8 @@ class FrameEncoder(nn.Module):
         # Keep the final average-pooling layer.
         self.backbone.fc = nn.Identity()
 
-        # Optional experiment: preserve larger internal feature maps.
-        # uuseful bc guidewire small
+        # Optional: skip early downsampling so thin wire detail lasts longer
+        # in the feature maps. Default keeps the standard ResNet-18 stem.
         if remove_maxpool:
             self.backbone.maxpool = nn.Identity()
 
