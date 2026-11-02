@@ -1,6 +1,6 @@
 # Group 1 — Andrew and Suhani
 
-Read the [shared approach notes](../APPROACHES.md), [dataset notes](../DATASET.md), and [project README](../../README.md) before continuing. This file holds Group 1 plans, progress, and permitted aggregate results. Shared environment, preprocessing, interfaces, and evaluation decisions belong in the approach notes. Encoder design notes and Perlmutter smoke-check commands are in [cnn.md](cnn.md).
+Read the [shared approach notes](../APPROACHES.md), [dataset notes](../DATASET.md), and [project README](../../README.md) before continuing. This file holds Group 1 plans, progress, and permitted aggregate results. Shared environment, preprocessing, interfaces, and evaluation decisions belong in the approach notes. Encoder design notes are in [cnn.md](cnn.md); 512-d GRU-readiness probes are in [CNN_DIAGNOSTICS.md](CNN_DIAGNOSTICS.md).
 
 ## Proposed scope — supplied by project owner
 
@@ -16,11 +16,31 @@ Owner-reported schedule (2026-10-30): Friday — Suhani and Andrew work on CNNs 
 
 The frozen ResNet-18 frame encoder in `cnn.py` is implemented locally (commit `023d125`): ImageNet-pretrained backbone, 512-d pooled features, shared weights for separate goal and six-frame history encoding, fully frozen BatchNorm-safe eval behavior, and optional max-pool removal. It reuses `DINOv2Preprocessor` for RGB/full-view resize/pad and ImageNet normalization; that module's DINOv2 checkpoint label does not name this CNN. Backbone choice rationale and Perlmutter test commands are in [cnn.md](cnn.md).
 
-Owner-run Perlmutter one-case encoder verification passed (2026-11-02): the `cnn.py` smoke check completed successfully. Exact printed device, remote HEAD, and optional flags were not supplied; do not repeat the completed default check without a code/data change or concrete concern. GRU/LSTM, depth/time fusion, the current-input baseline, training, and evaluation are not implemented. Basic dataset validation has already passed as recorded in the dataset notes; do not repeat it without a concrete reason.
+Owner-run Perlmutter one-case encoder verification passed (2026-11-02): the `cnn.py` smoke check completed successfully. Exact printed device, remote HEAD, and optional flags were not supplied; do not repeat the completed default check without a code/data change or concrete concern.
 
-**Immediate next steps:** inspect prepared previews for wire/target visibility; then agree on temporal model (GRU vs LSTM), depth/time use, and goal fusion before implementing the next stage.
+`cnn_diagnostics.py` adds separate 512-d probes—history grid occlusion, goal-marker vs control occlusion, and motion math on the history feature sequence—so a later GRU’s actual inputs can be judged without changing `cnn.py`. Owner-run Perlmutter unit tests and one-case GPU diagnostics passed (2026-11-02); permitted aggregates are below and in [CNN_DIAGNOSTICS.md](CNN_DIAGNOSTICS.md). GRU/LSTM, depth/time fusion, the current-input baseline, training, and evaluation are not implemented. Basic dataset validation has already passed as recorded in the dataset notes; do not repeat it without a concrete reason.
+
+**Immediate next steps:** visually confirm that occlusion argmax regions align with the wire on prepared previews (still unverified); optionally repeat diagnostics on a second case; then agree on temporal model (GRU vs LSTM), depth/time use, and goal fusion before implementing the next stage.
 
 ## Progress log
+
+### 2026-11-02 — One-case GPU diagnostics passed (owner-run)
+
+Owner-run on Perlmutter with `pytorch/2.13.0`. Invented-input `test_cnn_diagnostics.py`: five tests OK on the login node and again under `srun` on a shared-interactive GPU allocation. An initial diagnostics attempt failed because the scratch dataset copy lacked `cases.jsonl`; after setting `DATA_DIR` to the shared studentdata `shorthorizon2` tree (files present), the real-case run completed on GPU. Public ResNet-18 weights downloaded to the scratch Torch Hub cache. No features or images were saved.
+
+**One training case** (`--split-position 0 --partition train --case-index 0`), device `cuda`, shapes `(6, 512)` / `(512,)`:
+
+- Wire occlusion: score_range `0.246`, score_std `0.078`; per-frame max/median about `1.62`–`1.76`; max L2 about `3.02`–`3.27`. Argmax center often `(0.357, 0.643)` (frame 2 at `(0.500, 0.214)`). Structured sensitivity, but argmax≠wire until preview overlay confirms it.
+- Goal marker: `12465` marker pixels; marker L2 `3.965` vs control `1.344`; marker/control `2.95`. Goal-vs-history L2 mean `2.897`, min `2.437`.
+- Motion (feature math only): mean step L2 `2.474`; first–last L2 `2.931`; first–last cosine distance `0.012`; wire_score first–last delta `-0.016`; feature–depth step corr `-0.226`.
+
+**Reading:** goal-marker and non-flat history features look usable for a GRU trial; wire localization via argmax and depth-aligned motion remain weak/unconfirmed. Not action-accuracy evidence. Do not repeat this completed one-case GPU check without a code/data change or a second-case comparison.
+
+### 2026-11-02 — 512-d feature diagnostics added (local)
+
+Implemented `cnn_diagnostics.py` and `tests/test_cnn_diagnostics.py` outside `cnn.py`. Probes score only pooled 512-d outputs: grid occlusion on history frames, red-marker vs equal-area control occlusion on the goal, and direction-style aggregates computed from the history feature sequence / wire scores (optional depth-step correlation). Usage notes are in [CNN_DIAGNOSTICS.md](CNN_DIAGNOSTICS.md).
+
+**Verification:** five invented-input unit tests passed locally (tool-verified; Python 3.9, torch 2.2.2) and later owner-run on Perlmutter. No training or feature saving.
 
 ### 2026-11-02 — One-case Perlmutter encoder check passed
 

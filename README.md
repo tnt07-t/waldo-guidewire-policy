@@ -11,7 +11,8 @@ The approach is open-ended: explore specialized smaller models that exceed the b
 - [Approaches](docs/APPROACHES.md): team proposal, dependencies, decisions, shared working/logging process, and where to resume.
 - [Raw case loader](docs/LOADER.md): usage; six synthetic tests, one real-case decode, and goal/history display passed on Perlmutter. Visual/semantic assessment remains open; the raw reader itself applies no preprocessing.
 - [Initial ViT preparation](docs/grp2/VIT_TRIAL.md): full-view DINOv2 tensors, previews, and inference-only encoder; owner-run pretrained CPU checks are recorded in Group 2 progress.
-- [CNN encoder trial](docs/grp1/cnn.md): frozen ResNet-18 frame features in `cnn.py`; owner-run one-case Perlmutter smoke check passed. `data_inspect.ipynb` includes original-image inspection cells, with no saved outputs.
+- [CNN encoder trial](docs/grp1/cnn.md): frozen ResNet-18 frame features in `cnn.py`; owner-run one-case Perlmutter smoke check passed.
+- [CNN 512-d diagnostics](docs/grp1/CNN_DIAGNOSTICS.md): separate occlusion/motion probes on the vectors a GRU would see; owner-run one-case GPU diagnostics passed. `data_inspect.ipynb` includes original-image inspection cells, with no saved outputs.
 - Group progress: [Group 1 — Andrew and Suhani](docs/grp1/PROGRESS.md) and [Group 2 — Tran and Sabrina](docs/grp2/PROGRESS.md). Shared contracts stay in the approach notes; each group records its own plans and outcomes.
 
 The official rubric has not been supplied. Team proposals and unapproved suggestions are not course requirements.
