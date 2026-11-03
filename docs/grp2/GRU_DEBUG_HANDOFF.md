@@ -1,8 +1,8 @@
 # ViT–GRU debugging setup and teammate handoff
 
-## Current state — 2026-11-02
+## Current state — 2026-11-03
 
-Tran requested implementation of the planned eight-case setup. The code now exists on local `tran/vit-gru-debug`, based on `0f77490`; remote publication and real-data execution remain pending. Shared documentation stays in the original checkout on `main`. The separate sibling checkout `waldo-guidewire-policy-vit-gru-debug` holds code. Main's documentation does not automatically appear on the separate debug branch; read the current notes in the main checkout until the branches are explicitly synchronized.
+Tran requested implementation of the planned eight-case setup. The code now exists on local `tran/vit-gru-debug`, based on `0f77490`; publication and the first real eight-case GPU debugging check are complete. The run passed at `b9d1bdf`; see [results and the current session handoff](PROGRESS.md#session-handoff--2026-11-03). The commands below describe the completed check, not a request to repeat it. Shared documentation stays in the original checkout on `main`. The separate sibling checkout `waldo-guidewire-policy-vit-gru-debug` holds code. Main's documentation does not automatically appear on the separate debug branch; read the current notes in the main checkout until the branches are explicitly synchronized.
 
 | File | Role |
 |---|---|
@@ -11,7 +11,7 @@ Tran requested implementation of the planned eight-case setup. The code now exis
 | `tests/test_vit_gru.py` | Synthetic wiring, gradients, freezing, selection/scaling and timeout checks |
 | `evaluation.py`, `tests/test_evaluation.py` | Unchanged copies of the static evaluation at `070328f`; later comparison utilities |
 
-Existing `dataset.py`, `preprocessing.py`, `vit.py` and the notebook are unchanged. No new project configuration/instruction files were added. Real data, features and outputs remain on Perlmutter. Current test evidence and Git state are recorded in [PROGRESS.md](PROGRESS.md#session-handoff--2026-11-02).
+Existing `dataset.py`, `preprocessing.py`, `vit.py` and the notebook are unchanged. No new project configuration/instruction files were added. Real data, features and outputs remain on Perlmutter. Current test evidence and Git state are recorded in [PROGRESS.md](PROGRESS.md#session-handoff--2026-11-03).
 
 ## Implemented experiment
 
@@ -34,7 +34,7 @@ Existing `dataset.py`, `preprocessing.py`, `vit.py` and the notebook are unchang
 
 ## Before transferring code
 
-The new work is local; a remote `git pull` cannot retrieve it until an authorized push. Check `git log -3 --oneline` and `git status --short` in both checkouts for the exact local revisions and any remaining changes. The intended commit scopes are shared documentation on main, imported static evaluation on the debug branch, and the GRU runner/tests on the debug branch. Ask Tran immediately before committing; publishing or synchronizing branches requires explicit authorization. This guide does not itself authorize those actions.
+The tiny setup and full-training runner/tests are published on `tran/vit-gru-debug`; the full-training implementation is recorded at `69fd063`. Shared November 3 results and handoff updates are published on main and reconciled into `static-evaluation`. Check the active checkout's Git log/status before updating Perlmutter. The full-training implementation has not yet been confirmed available in the remote compute checkout. Preserve notebook edits before synchronization; publication does not itself start training.
 
 Before any future pull that could affect the remote notebook, save it in the notebook UI and preserve an independent copy **on Perlmutter**. From the Perlmutter repository directory:
 
@@ -111,3 +111,38 @@ Exit 0 means the bounded loop completed with at least one checked update. It doe
 5. Expand to the planned four-model comparison later. Keep test partitions reserved and agree on the five supplied splits' reporting protocol before final evaluation. End-to-end latency must include preparation, encoding and the head; the tiny runner's training/extraction timing is not decision latency.
 
 Tiny fitting does not establish generalization, goal use, visual-history benefit or optimal actions. Full training, expanded comparisons, persistent feature caches and fine-tuning remain outside this setup milestone.
+
+## Full-training setup — 2026-11-03
+
+The separately implemented `vit_gru_train.py` uses the [agreed settings](GRU_TRIAL.md#agreed-first-full-training-setup--2026-11-03). Code/tests are published at `69fd063` on `tran/vit-gru-debug`; shared documentation updates are published on main. Setup passed local checks; no real full run or GPU allocation has occurred. The old eight-case commands above are historical and must not be rerun.
+
+Before allocation, run in the debug worktree's existing environment (laptop synthetic inputs only, or Perlmutter):
+
+```sh
+python -B -m unittest discover -s tests -v
+python -B vit_gru_train.py --help
+```
+
+The new tests check actual loss reduction and fresh initialization, partial batches, validation isolation, known confusion counts, training-only scaling, episode separation, tied-checkpoint retention/early stopping, prediction-preserving reload, nonfinite inputs, work/time/storage limits, and invented PNGs through the real loader/preprocessor with an injected encoder. No pretrained download or real data is used.
+
+For a separately initiated real run, first preserve remote notebook work, update the Perlmutter checkout to the published `69fd063` through an authorized update, and verify imports/version and synthetic tests before requesting GPU time, then confirm the shell is on an allocated Perlmutter compute node. Reuse the existing environment/cache instructions; no new installation is required. The runner requires `SLURM_JOB_ID`, `PSCRATCH`, a valid `DATA_DIR` under scratch, and a new output directory outside the dataset. Fixed public CLI limits cannot be increased.
+
+```sh
+python -B vit_gru_train.py \
+  --device cuda \
+  --output-dir "$PSCRATCH/waldo-gru-training/split0-seed0-01"
+```
+
+Use at most the agreed 15-minute allocation and release it immediately after success, failure or timeout; the worker supervisor does not cancel the Slurm allocation. Do not automatically retry. All output stays on Perlmutter: `run_context.json`, `history.json`, `summary.json`, `best.pt`, `latest.pt`. Public weight cache storage is separate from the 20 MiB run-output cap; reuse the existing cache. No persistent image-feature cache is created.
+
+Reload on Perlmutter in the same code environment:
+
+```python
+from vit_gru_train import load_checkpoint
+head, saved = load_checkpoint(output_dir / "best.pt", device="cuda")
+scales = saved["context"]["metadata_scale_depth_time"]
+```
+
+`output_dir` is a `pathlib.Path` to the private run. The loaded head expects the same prepared frozen features and metadata divided by the saved scales. This API loads for evaluation, not continued training. The runner already checks reloaded best-checkpoint predictions against the saved in-memory reference.
+
+Report only permitted aggregates: actual revision/dirty state, stop reason, completed epochs/updates, best epoch and validation metrics, extraction/process timing, peak CUDA allocated bytes, encoder unchanged and reload verification. Keep complete reports, row indices, scales and weights private. A successful run is development evidence, not proof of temporal usefulness or decision latency; test remains reserved.
