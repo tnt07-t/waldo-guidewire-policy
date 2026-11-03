@@ -4,9 +4,9 @@
 
 **Implemented locally — 2026-11-02:** Tran requested setup of the agreed frozen ViT + one-layer, 64-unit GRU + goal + aligned depth/time debugging path. `vit_gru.py`, `vit_gru_debug.py` and synthetic tests now exist in the separate `tran/vit-gru-debug` worktree. The implementation uses the split-0 selection, uncentered training-only scales and bounded optimizer settings below. All 44 local synthetic tests passed, including 11 new GRU checks. No real eight-case run or full training has occurred; this is not a final architecture choice.
 
-Read [GRU_DEBUG_HANDOFF.md](GRU_DEBUG_HANDOFF.md) for exact commands, test expectations, report fields, Sabrina's steps and later experiment boundaries. Code is local to the debug branch and shared documentation stays on main; remote publication remains pending. Check each worktree's Git log/status for exact revisions. No remote notebook or dataset was changed. Further manual masking is not required.
+Read [GRU_DEBUG_HANDOFF.md](GRU_DEBUG_HANDOFF.md) for exact commands, test expectations, report fields, the static-evaluation steps and later experiment boundaries. Code is local to the debug branch and shared documentation stays on main; remote publication remains pending. Check each worktree's Git log/status for exact revisions. No remote notebook or dataset was changed. Further manual masking is not required.
 
-**Existing work reused:** Sabrina's `static-evaluation` at `070328f` contains frozen-feature logistic probes, including latest image + goal + all historical depth/time values. Its module and tests are copied unchanged into the debug worktree; [EVALUATION.md](../EVALUATION.md) records her reported split-0 GPU run. The tiny GRU runner is separate: scikit-learn fitting and validation-selected regularization do not train a PyTorch GRU. Sabrina's scaler centers/scales individual columns; the GRU divides by one training-derived scale per metadata channel without centering. Agree on the full comparison protocol before treating results as matched.
+**Existing work reused:** the static-evaluation `static-evaluation` at `070328f` contains frozen-feature logistic probes, including latest image + goal + all historical depth/time values. Its module and tests are copied unchanged into the debug worktree; [EVALUATION.md](../EVALUATION.md) records her reported split-0 GPU run. The tiny GRU runner is separate: scikit-learn fitting and validation-selected regularization do not train a PyTorch GRU. the static-evaluation scaler centers/scales individual columns; the GRU divides by one training-derived scale per metadata channel without centering. Agree on the full comparison protocol before treating results as matched.
 
 **Agreed sequencing:** first run the eight-case combined-input GRU check only. Start fresh for later full training/validation, compare 64 versus 128 there and prioritize the existing latest-image + goal + matching historical-metadata baseline before expanding comparisons. Full-training schedules, tuning budgets, caching and final evaluation are not authorized by the setup request.
 
@@ -20,7 +20,7 @@ Prefer a manageable one-layer GRU before adding architectural complexity. Tran a
 
 ## Comparison baselines and later alternatives
 
-A baseline is a reference model used to assess whether a more complex model improves results. Sabrina's static evaluation already implements latest-image + goal classifiers with and without historical metadata. Reuse these for the later comparison after agreeing on a matched protocol; a new nonlinear classifier would be a separate proposed change. These probes are not the previously reported benchmark model or its reported approximately 82% result, whose attribution/setup remain unresolved in [APPROACHES.md](../APPROACHES.md). Coordinate with Group 1's current-input baseline before duplicating work. The following four-model design remains a later experiment; only the combined-input, 64-unit GRU debugging implementation is ready.
+A baseline is a reference model used to assess whether a more complex model improves results. The static evaluation already implements latest-image + goal classifiers with and without historical metadata. Reuse these for the later comparison after agreeing on a matched protocol; a new nonlinear classifier would be a separate proposed change. These probes are not the previously reported benchmark model or its reported approximately 82% result, whose attribution/setup remain unresolved in [APPROACHES.md](../APPROACHES.md). Coordinate with Group 1's current-input baseline before duplicating work. The following four-model design remains a later experiment; only the combined-input, 64-unit GRU debugging implementation is ready.
 
 Proposed later comparisons, all using the same frozen image encoder and goal reference:
 
@@ -111,10 +111,10 @@ Dataset-wide extraction/caching is not authorized by this proposal. Discuss whet
 
 ## Implementation and verification sequence
 
-1. **Complete locally:** separate head and bounded entry point on `tran/vit-gru-debug`; existing loader/preprocessor/encoder unchanged; 44 synthetic tests pass. Sabrina's published static work was inspected and reused. Coordinate any unpublished overlap before parallel extensions.
+1. **Complete locally:** separate head and bounded entry point on `tran/vit-gru-debug`; existing loader/preprocessor/encoder unchanged; 44 synthetic tests pass. the static-evaluation published static work was inspected and reused. Coordinate any unpublished overlap before parallel extensions.
 2. **Next:** review/share the code through an explicitly authorized handoff, preserve remote notebook edits before updating a Perlmutter clone, then follow [the test/run guide](GRU_DEBUG_HANDOFF.md). Code is not yet published; a pull alone cannot retrieve it.
 3. **Pending on Perlmutter:** one eight-case learning check within the implemented caps. Keep private selection/scales and all derived artifacts there; record permitted aggregate evidence in Group 2 progress.
-4. **Later, separately scoped:** fresh full training with validation-only selection; compare widths and Sabrina's matched-metadata latest-image baseline before expanding experiments. Agree on full-training budgets, checkpoint selection, seeds and latency measurement. Never tune on test results.
+4. **Later, separately scoped:** fresh full training with validation-only selection; compare widths and the static-evaluation matched-metadata latest-image baseline before expanding experiments. Agree on full-training budgets, checkpoint selection, seeds and latency measurement. Never tune on test results.
 
 ## Freeze versus fine-tune
 

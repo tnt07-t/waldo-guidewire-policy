@@ -9,8 +9,8 @@ The approach is open-ended: explore specialized smaller models that exceed the b
 - [Documentation guide](docs/README.md): reading order for teammates and a separate entry point for AI agents.
 - [Dataset](docs/DATASET.md): schema, restrictions, and preprocessing/split verification.
 - [Approaches](docs/APPROACHES.md): team proposal, dependencies, decisions, shared working/logging process, and where to resume.
-- [ViT–GRU debugging handoff](docs/grp2/GRU_DEBUG_HANDOFF.md): implemented eight-case setup, testing commands, Sabrina's steps and remaining Perlmutter verification. Code is local to the separate debug worktree; shared notes stay on main.
-- [Static evaluation](docs/EVALUATION.md): Sabrina's frozen-feature classifiers and reported development results; evaluation code/tests are imported into the separate `tran/vit-gru-debug` worktree for reuse.
+- [ViT–GRU debugging handoff](docs/grp2/GRU_DEBUG_HANDOFF.md): implemented eight-case setup, testing commands, the static-evaluation steps and remaining Perlmutter verification. Code is local to the separate debug worktree; shared notes stay on main.
+- [Static evaluation](docs/EVALUATION.md): frozen-feature classifiers and reported development results; evaluation code/tests are imported into the separate `tran/vit-gru-debug` worktree for reuse.
 - [Raw case loader](docs/LOADER.md): usage; six synthetic tests, one real-case decode, and goal/history display passed on Perlmutter. Visual/semantic assessment remains open; the raw reader itself applies no preprocessing.
 - [Initial ViT preparation](docs/grp2/VIT_TRIAL.md): full-view DINOv2 tensors and inference-only encoder; initial CPU checks and the first GPU development evaluation passed on Perlmutter.
 - `cnn.py` implements a frozen pretrained ResNet-18 feature encoder (512 values/image). Its first GPU evaluation is recorded in the evaluation guide; only a separate logistic-regression probe was trained. `data_inspect.ipynb` includes original-image inspection cells with no saved outputs.
@@ -18,7 +18,7 @@ The approach is open-ended: explore specialized smaller models that exceed the b
 - [ViT feature diagnostics](docs/grp2/VIT_DIAGNOSTICS.md): bounded inspection of whether extracted ViT features look usable before temporal-model work.
 - [CNN encoder trial](docs/grp1/CNN.md): frozen ResNet-18 frame features in `cnn.py`; owner-run one-case Perlmutter smoke check passed.
 - [CNN 512-d diagnostics](docs/grp1/CNN_DIAGNOSTICS.md): separate occlusion/marker/temporal probes on the vectors a GRU would see; owner-run one-case GPU diagnostics passed, then correctness fixes were applied (Perlmutter re-run pending). `data_inspect.ipynb` includes original-image inspection cells, with no saved outputs.
-- Group progress: [Group 1 — Andrew and Suhani](docs/grp1/PROGRESS.md) and [Group 2 — Tran and Sabrina](docs/grp2/PROGRESS.md). Shared contracts stay in the approach notes; each group records its own plans and outcomes.
+- Group progress: [Group 1 — Andrew and Suhani](docs/grp1/PROGRESS.md) and [Group 2 — Transformer models](docs/grp2/PROGRESS.md). Shared contracts stay in the approach notes; each group records its own plans and outcomes.
 
 The official rubric has not been supplied. Team proposals and unapproved suggestions are not course requirements.
 
@@ -69,7 +69,13 @@ test -d "$DATA_DIR" && printf 'Dataset directory exists\n'
 
 ## Environment status
 
-The owner confirmed Python 3.12.13 and Pillow 12.3.0 after loading the candidate `pytorch/2.13.0` module on Perlmutter. Subsequent Group 2 checks verified pretrained DINOv2 CPU extraction using a scratch venv with timm 1.0.30; Group 1 reports a one-case CNN GPU diagnostic run. Tran's GPU path and team-wide environment adoption remain open; Sabrina separately reports a completed GPU static evaluation. See the approach notes for evidence and next steps. Do not repeat the completed environment inventory or basic dataset validation.
+**CNN–attention development update (2026-11-03):** bounded eight-case learning
+passed on an A100; the first full split-0 comparison returned validation BA
+.597 for latest MLP, .601 for mean-history MLP and .500 for attention. Latest
+MLP remains the provisional efficient reference; no final model is selected.
+See [attention experiment results and next steps](docs/grp2/ATTENTION_EXPERIMENTS.md).
+
+The owner confirmed Python 3.12.13 and Pillow 12.3.0 after loading the candidate `pytorch/2.13.0` module on Perlmutter. Subsequent Group 2 checks verified pretrained DINOv2 CPU extraction using a scratch venv with timm 1.0.30; Group 1 reports a one-case CNN GPU diagnostic run. Tran's GPU path and team-wide environment adoption remain open; the project owner separately reports a completed GPU static evaluation. See the approach notes for evidence and next steps. Do not repeat the completed environment inventory or basic dataset validation.
 
 ## Project Environment Setup
 Setup the conda environment for the project
@@ -97,4 +103,4 @@ Teammates and AI assistants should start with the [documentation guide](docs/REA
 - Before parallel implementation, agree on input/output interfaces, preprocessing, and evaluation. Individual ownership is still open.
 - Keep sensitive data and derived sensitive artifacts on Perlmutter. Never put credentials in documentation.
 
-The repository includes shared notes, group progress directories, a raw-case reader (`dataset.py`), and synthetic loader tests. Raw loading, initial preparation previews, and pretrained DINOv2 CPU extraction for one and two cases have passed owner-run checks on Perlmutter. Group 2 ran a one-frame feature-sensitivity check; its inconclusive task-level result is recorded in the group log. The [frozen ViT–GRU debugging setup](docs/grp2/GRU_DEBUG_HANDOFF.md) is now implemented in the separate debug worktree and passed all 44 synthetic tests. Next: an authorized code handoff, then the bounded eight-training-case Perlmutter check. Notebook CUDA availability is confirmed; explicit diagnostic device and inference memory/runtime measurements remain unreported. Sabrina's separate static development results are recorded in the evaluation reference; they do not establish GRU performance or full-policy comparative latency.
+The repository includes shared notes, group progress directories, a raw-case reader (`dataset.py`), and synthetic loader tests. Raw loading, initial preparation previews, and pretrained DINOv2 CPU extraction for one and two cases have passed owner-run checks on Perlmutter. Group 2 ran a one-frame feature-sensitivity check; its inconclusive task-level result is recorded in the group log. The [frozen ViT–GRU debugging setup](docs/grp2/GRU_DEBUG_HANDOFF.md) is now implemented in the separate debug worktree and passed all 44 synthetic tests. Next: an authorized code handoff, then the bounded eight-training-case Perlmutter check. Notebook CUDA availability is confirmed; explicit diagnostic device and inference memory/runtime measurements remain unreported. Separate static development results are recorded in the evaluation reference; they do not establish GRU performance or full-policy comparative latency.

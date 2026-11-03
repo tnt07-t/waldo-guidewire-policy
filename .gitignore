@@ -11,6 +11,7 @@ cases.jsonl
 manifest.json
 splits.json
 validation_predictions.private.json
+attention-setup.zip
 
 # personal training docs
 docs/andrew

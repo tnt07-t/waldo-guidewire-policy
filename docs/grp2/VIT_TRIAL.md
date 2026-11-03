@@ -115,4 +115,4 @@ Do not run a dataset-wide feature sweep. Report only permitted shape/check resul
 
 ## Current follow-up
 
-Tran ran the [ViT diagnostic workflow](VIT_DIAGNOSTICS.md); the one-frame masking measurements and their limits are in [progress](PROGRESS.md). Additional manual masking is not required. The [frozen ViT–GRU setup](GRU_TRIAL.md) is now implemented and synthetically tested in the separate debug worktree. Follow the [debugging/Sabrina handoff](GRU_DEBUG_HANDOFF.md) for the first bounded Perlmutter run; real GRU training results remain pending.
+Tran ran the [ViT diagnostic workflow](VIT_DIAGNOSTICS.md); the one-frame masking measurements and their limits are in [progress](PROGRESS.md). Additional manual masking is not required. The [frozen ViT–GRU setup](GRU_TRIAL.md) is now implemented and synthetically tested in the separate debug worktree. Follow the [debugging/The project owner handoff](GRU_DEBUG_HANDOFF.md) for the first bounded Perlmutter run; real GRU training results remain pending.

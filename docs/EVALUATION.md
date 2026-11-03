@@ -1,16 +1,16 @@
 # Before-GRU evaluation milestone
 
-**Historical main-branch import context — 2026-11-02:** this reference was copied from Sabrina's `static-evaluation` branch at `070328f`. Its reported results and historical handoff below describe her work. Tran's separate `tran/vit-gru-debug` worktree now contains unchanged copies of `evaluation.py` and its tests; shared documentation remains on main. The original branch's dependency list is [requirements-eval.txt](https://github.com/tnt07-t/waldo-guidewire-policy/blob/070328fa11f1ed914771c140bfd1aae09d4fd6bb/requirements-eval.txt); it was not copied into main or the debug worktree. Importing this reference does not authorize rerunning its full-partition commands. Follow the [current Group 2 handoff](grp2/PROGRESS.md#session-handoff--2026-11-02) and [bounded GRU plan](grp2/GRU_TRIAL.md) for Tran's next work.
+**Historical main-branch import context — 2026-11-02:** this reference was copied from the static-evaluation `static-evaluation` branch at `070328f`. Its reported results and historical handoff below describe her work. Tran's separate `tran/vit-gru-debug` worktree now contains unchanged copies of `evaluation.py` and its tests; shared documentation remains on main. The original branch's dependency list is [requirements-eval.txt](https://github.com/tnt07-t/waldo-guidewire-policy/blob/070328fa11f1ed914771c140bfd1aae09d4fd6bb/requirements-eval.txt); it was not copied into main or the debug worktree. Importing this reference does not authorize rerunning its full-partition commands. Follow the [current Group 2 handoff](grp2/PROGRESS.md#session-handoff--2026-11-02) and [bounded GRU plan](grp2/GRU_TRIAL.md) for Tran's next work.
 
 ## Scope and rationale — 2026-11-01
 
-Sabrina requested implementation of the immediate frozen-encoder evaluation milestone, with priority on evaluation and diagnosing model limitations. This authorizes the local evaluation implementation and documentation; it does not establish team-wide protocol adoption or authorize publishing data. Existing raw loading, image preparation, and encoder interfaces are unchanged. No GRU or encoder fine-tuning is added.
+The project owner requested implementation of the immediate frozen-encoder evaluation milestone, with priority on evaluation and diagnosing model limitations. This authorizes the local evaluation implementation and documentation; it does not establish team-wide protocol adoption or authorize publishing data. Existing raw loading, image preparation, and encoder interfaces are unchanged. No GRU or encoder fine-tuning is added.
 
 `evaluation.py` trains small, L2-regularized logistic classifiers on fixed image features. This separates visual representation quality from sequence-model complexity. DINOv2 uses its current 384-value class-token summary; ResNet-18 uses its 512-value pooled summary. Both use the existing RGB, full-view, padded 518-square preparation, retain their pretrained weights, and encode the goal separately. This is a controlled shared-input comparison, not a claim that this resolution is optimal for either architecture.
 
 **What is frozen and what learns:** ResNet-18 in `cnn.py` is unchanged by this evaluation: its pretrained weights remain frozen and BatchNorm stays in evaluation mode. Images are encoded under inference mode; detached NumPy features go to a separate scikit-learn logistic-regression classifier in `evaluation.py`. Only that classifier's coefficients/intercept and training-set scaling statistics are fitted. No trainable classification head is added inside the CNN, and no gradient flows back to it. DINOv2 weights also remain unchanged. High training balanced accuracy describes the probe's fit, not encoder fine-tuning. The probe is an evaluation baseline, not the eventual GRU policy.
 
-**Current preference confirmed by Sabrina:** keep the CNN frozen for the coming experiments. Fine-tuning entries below are possible future research directions, not the next planned action or implemented changes. Continue frozen-feature evaluation first.
+**Current preference confirmed by The project owner:** keep the CNN frozen for the coming experiments. Fine-tuning entries below are possible future research directions, not the next planned action or implemented changes. Continue frozen-feature evaluation first.
 
 ## Experiments implemented
 
@@ -63,7 +63,7 @@ The runner requires data/output beneath personal `$PSCRATCH`, rejects existing o
 
 ### Compute allocation and cache troubleshooting
 
-The current shared interactive queue required 32 CPU cores per GPU in Sabrina's run; a four-core request was rejected. Request matching resources in allocation and job step, using your available GPU account. Paste each command on one line; backslashes only work when immediately followed by a newline.
+The current shared interactive queue required 32 CPU cores per GPU in the static-evaluation run; a four-core request was rejected. Request matching resources in allocation and job step, using your available GPU account. Paste each command on one line; backslashes only work when immediately followed by a newline.
 
 ```sh
 salloc --account=YOUR_GPU_ACCOUNT --constraint=gpu --qos=shared_interactive --nodes=1 --ntasks=1 --cpus-per-task=32 --gpus=1 --time=01:00:00
@@ -71,7 +71,7 @@ salloc --account=YOUR_GPU_ACCOUNT --constraint=gpu --qos=shared_interactive --no
 srun --ntasks=1 --cpus-per-task=32 --gpus=1 --pty bash -i
 ```
 
-Restore the module, scratch venv, DATA_DIR and cache exports in the resulting compute shell. CUDA availability and A100-SXM4-80GB visibility were confirmed in Sabrina's allocation. This alone does not verify pretrained inference.
+Restore the module, scratch venv, DATA_DIR and cache exports in the resulting compute shell. CUDA availability and A100-SXM4-80GB visibility were confirmed in the static-evaluation allocation. This alone does not verify pretrained inference.
 
 The first evaluation attempt failed during DINOv2 weight download with `OSError: [Errno 524]` at `fcntl.flock`, before feature extraction. The default HF cache is usually in home; NERSC documents unsupported home-directory flock on compute nodes and recommends HF caches in scratch. Set the explicit scratch cache exports above before starting a fresh Python process. This remedy is proposed pending a successful retry; the traceback did not show the resolved cache location. Do not disable locks or delete existing caches. The unauthenticated HF warning is separate from the observed locking error. [NERSC cache guidance](https://docs.nersc.gov/machinelearning/launchers/), [home locking limitation](https://docs.nersc.gov/connect/vscode/), [HF cache variables](https://huggingface.co/docs/huggingface_hub/en/package_reference/environment_variables).
 
@@ -87,7 +87,7 @@ Outputs, all kept on Perlmutter:
 
 ### First development results — owner-reported, 2026-11-01
 
-Sabrina supplied the split-position-0 summary from the completed A100-SXM4-80GB run. These are validation-selected development results, not final held-out-test estimates. Exact code/version provenance and episode intervals have not yet been reviewed from the full report.
+The project owner supplied the split-position-0 summary from the completed A100-SXM4-80GB run. These are validation-selected development results, not final held-out-test estimates. Exact code/version provenance and episode intervals have not yet been reviewed from the full report.
 
 | Experiment | Train BA | Validation BA | Retract recall | Advance recall |
 |---|---:|---:|---:|---:|
@@ -137,7 +137,7 @@ Suggested error-review worksheet, private on Perlmutter: model disagreements, tr
 
 **Latest owner-reported run:** the split-position-0 CUDA evaluation with both encoders and `--benchmark` completed after the scratch-cache exports. The aggregate scores and component timings were supplied and reviewed above. Detailed episode intervals, per-C scores and matched private predictions remain to review; no statistically supported encoder ranking or final-test claim is established.
 
-All 23 invented-data tests pass locally, including seven new evaluation checks. Sabrina also reported all 23 passed on Perlmutter in 1.780 seconds. The first real-data development classification and encoder component timing run is complete; fine-tuning and GRU remain unimplemented. Environment evidence and limits are recorded in [Group 2 progress](grp2/PROGRESS.md). CLI help and whitespace checks pass locally. Do not repeat the completed baseline merely to resume work.
+All 23 invented-data tests pass locally, including seven new evaluation checks. The project owner also reported all 23 passed on Perlmutter in 1.780 seconds. The first real-data development classification and encoder component timing run is complete; fine-tuning and GRU remain unimplemented. Environment evidence and limits are recorded in [Group 2 progress](grp2/PROGRESS.md). CLI help and whitespace checks pass locally. Do not repeat the completed baseline merely to resume work.
 
 ## Teammate handoff — resume here
 
