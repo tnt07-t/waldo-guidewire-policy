@@ -1,3 +1,18 @@
+__pycache__/
+*.py[cod]
+.venv*/
+evaluation_runs/
+*.npz
+*.pt
+*.pth
+.ipynb_checkpoints/
+shorthorizon2/
+cases.jsonl
+manifest.json
+splits.json
+validation_predictions.private.json
+attention-setup.zip
+
 # personal training docs
 docs/andrew
 docs/tran
@@ -7,4 +22,3 @@ docs/sabrina
 # env installments
 
 # cache
-__pycache__/

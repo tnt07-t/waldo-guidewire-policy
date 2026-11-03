@@ -9,7 +9,7 @@ Tran requested implementation of the planned eight-case setup. The code now exis
 | `vit_gru.py` | One-layer, 64-unit PyTorch GRU and goal-fusion classifier; 115,650 trainable parameters |
 | `vit_gru_debug.py` | Fresh eight-case selection, training-only scaling, frozen extraction, bounded training and private report |
 | `tests/test_vit_gru.py` | Synthetic wiring, gradients, freezing, selection/scaling and timeout checks |
-| `evaluation.py`, `tests/test_evaluation.py` | Unchanged copies of Sabrina's static evaluation at `070328f`; later comparison utilities |
+| `evaluation.py`, `tests/test_evaluation.py` | Unchanged copies of the static evaluation at `070328f`; later comparison utilities |
 
 Existing `dataset.py`, `preprocessing.py`, `vit.py` and the notebook are unchanged. No new project configuration/instruction files were added. Real data, features and outputs remain on Perlmutter. Current test evidence and Git state are recorded in [PROGRESS.md](PROGRESS.md#session-handoff--2026-11-03).
 
@@ -24,7 +24,7 @@ Existing `dataset.py`, `preprocessing.py`, `vit.py` and the notebook are unchang
 - A parent process stops the worker at 600 seconds overall, including imports, pretrained loading and extraction, with at most five seconds for termination before forced kill. Limits can be reduced, not increased, through the public CLI.
 - Save configuration, scales, private selected row indices, loss/accuracy, update count, gradient/update checks, elapsed time, peak allocated GPU memory, hardware/software versions and source-file hashes in `debug_summary.json`. No image/feature cache or model checkpoint is saved.
 
-## Sabrina: what to reuse and what to coordinate
+## Static evaluation reuse and coordination
 
 1. Read this handoff and the [GRU trial rationale](GRU_TRIAL.md). Check for any unpublished overlapping GRU/trainer work before making parallel edits. Tran is preparing this ViT–GRU path; your existing static evaluation is retained.
 2. Keep `evaluation.py` as the static comparison tool. Its `latest_goal_metadata` mode already supplies latest image + goal + all historical depth/time values. Do not rebuild that baseline or rerun the completed static experiment merely to resume.
@@ -34,7 +34,7 @@ Existing `dataset.py`, `preprocessing.py`, `vit.py` and the notebook are unchang
 
 ## Before transferring code
 
-The tiny setup code and prior documentation were published; the full-training runner/tests and explanatory model comments were subsequently committed and pushed at `69fd063` on `tran/vit-gru-debug`. The November 3 result/handoff documentation update remains local and uncommitted; a remote pull cannot retrieve that new update until it is explicitly committed and pushed. Check `git log -3 --oneline` and `git status --short` in both checkouts for the exact local revisions and any remaining changes. The remaining uncommitted scope is shared documentation on main; code publication is complete. Perlmutter has not yet been confirmed updated to `69fd063`. Ask Tran immediately before committing; publishing or synchronizing branches requires explicit authorization. This guide does not itself authorize those actions.
+The tiny setup and full-training runner/tests are published on `tran/vit-gru-debug`; the full-training implementation is recorded at `69fd063`. Shared November 3 results and handoff updates are published on main and reconciled into `static-evaluation`. Check the active checkout's Git log/status before updating Perlmutter. The full-training implementation has not yet been confirmed available in the remote compute checkout. Preserve notebook edits before synchronization; publication does not itself start training.
 
 Before any future pull that could affect the remote notebook, save it in the notebook UI and preserve an independent copy **on Perlmutter**. From the Perlmutter repository directory:
 
@@ -107,14 +107,14 @@ Exit 0 means the bounded loop completed with at least one checked update. It doe
 1. Record the permitted aggregates in Group 2 progress, including exact code/environment and any failures. Do not repeat manual masking or completed basic loader/CPU checks without a new reason.
 2. If the bounded check fails, investigate input alignment, finite values, extraction/backward compatibility and optimization. Propose a specific fix; do not silently widen budgets, add validation tuning or reject the encoder based on tiny fitting alone.
 3. If it works, agree on the full-training schedule, validation metric/checkpoint rule, regularization and comparable tuning budgets. Initialize a fresh GRU/classifier; never continue the tiny-fit weights into the development experiment.
-4. Compare 64 versus 128 hidden units during full training/validation. Prioritize Sabrina's latest-image + goal + matching historical-metadata baseline, with an explicit matched protocol. Its old development score is context, not an automatically matched comparator.
+4. Compare 64 versus 128 hidden units during full training/validation. Prioritize the static-evaluation latest-image + goal + matching historical-metadata baseline, with an explicit matched protocol. Its old development score is context, not an automatically matched comparator.
 5. Expand to the planned four-model comparison later. Keep test partitions reserved and agree on the five supplied splits' reporting protocol before final evaluation. End-to-end latency must include preparation, encoding and the head; the tiny runner's training/extraction timing is not decision latency.
 
 Tiny fitting does not establish generalization, goal use, visual-history benefit or optimal actions. Full training, expanded comparisons, persistent feature caches and fine-tuning remain outside this setup milestone.
 
 ## Full-training setup — 2026-11-03
 
-The separately implemented `vit_gru_train.py` uses the [agreed settings](GRU_TRIAL.md#agreed-first-full-training-setup--2026-11-03). Code/tests are published at `69fd063` on `tran/vit-gru-debug`; shared documentation updates remain uncommitted on main. Setup passed local checks; no real full run or GPU allocation has occurred. The old eight-case commands above are historical and must not be rerun.
+The separately implemented `vit_gru_train.py` uses the [agreed settings](GRU_TRIAL.md#agreed-first-full-training-setup--2026-11-03). Code/tests are published at `69fd063` on `tran/vit-gru-debug`; shared documentation updates are published on main. Setup passed local checks; no real full run or GPU allocation has occurred. The old eight-case commands above are historical and must not be rerun.
 
 Before allocation, run in the debug worktree's existing environment (laptop synthetic inputs only, or Perlmutter):
 

@@ -35,6 +35,8 @@ Image size, mode, and pixels are preserved. Images are decoded on request, not a
 
 ## Scope of the first version
 
+The new [before-GRU evaluation runner](EVALUATION.md) reuses this reader unchanged, extracts train/validation features in memory, and checks partition episode separation before decoding. It is not a replacement DataLoader and does not alter supplied splits. Local evaluation tests use invented arrays only.
+
 Request cases individually with `cases[0]`, `cases[1]`, and so on. One-case loading and notebook display have been demonstrated on Perlmutter. This is a simple reader, not yet a PyTorch `DataLoader`: batching, worker processes, model preprocessing, and tensor stacking remain deferred. No cases are shuffled.
 
 ## Local checks — laptop, invented data only

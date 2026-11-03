@@ -8,6 +8,9 @@ Read only what you need, in this order:
 2. [DATASET.md](DATASET.md) — reference for the supplied data, restrictions, and completed validation. No need to reread every check to use the project.
 3. [LOADER.md](LOADER.md) — how to read a case and what comes back; use this when working with the loader.
 4. Your group's progress: [Group 1](grp1/PROGRESS.md) or [Group 2](grp2/PROGRESS.md) — assignments, meaningful outcomes, and next steps.
+5. [Before-GRU evaluation](EVALUATION.md) — frozen probes, split/metric protocol, Perlmutter commands, and evidence-driven improvement ideas.
+6. [CNN attention setup](grp2/CNN_ATTENTION.md) — the static-evaluation temporal-attention model, neural baselines, training/reporting and comparison ledger.
+7. [Attention experiment log](grp2/ATTENTION_EXPERIMENTS.md) — selected ablations, fixed settings, rationale, verification and pending model decisions.
 
 ## Working together
 

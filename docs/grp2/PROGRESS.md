@@ -1,4 +1,4 @@
-# Group 2 — Tran and Sabrina
+# Group 2 — Transformer models
 
 Read the [shared approach notes](../APPROACHES.md), [dataset notes](../DATASET.md), and [project README](../../README.md) before continuing. This file holds Group 2 plans, progress, and permitted aggregate results. Shared environment, preprocessing, interfaces, and evaluation decisions belong in the approach notes.
 
@@ -11,15 +11,106 @@ These are team proposals, not confirmed course requirements. Friday task ownersh
 
 ## Current status and next steps
 
+**2026-11-03 — End-of-day decision:** share completed tiny/full-run evidence
+and defer the width/position sweep. Larger width remains a hypothesis; current
+logs do not distinguish weak training fit from validation-selected checkpoint
+effects or optimization issues. Next planned change is per-epoch training
+metrics/prediction counts and input-magnitude diagnostics before a bounded
+64/128 comparison. No further experiment has run. The tiny report explicitly
+confirms finite gradients, changed head weights and unchanged encoder; timing
+details and critical assessment are in [experiment results](ATTENTION_EXPERIMENTS.md).
+
+**2026-11-03 — Fixed-64 development results:** supplied seed-0 reports show
+latest/mean/attention validation BA .597/.601/.500. Attention selected epoch 1
+with RETRACT-only predictions; loss decreased modestly across later epochs but
+validation never improved. Latest/mean selected epochs 2/5. Same-case total
+median latency 33.07/131.17/132.24 ms, excluding disk IO and feature reuse.
+Latest MLP remains the provisional efficient reference; width/position sweep
+is deferred pending optimization/input diagnostics. Full evidence, uncertainty
+and comparison limits are recorded in [experiment results](ATTENTION_EXPERIMENTS.md#2026-11-03--first-fixed-64-development-comparison).
+
+**2026-11-03 — Full-run order revised:** The project owner supplied guidance to establish
+a fixed-architecture full training/validation result before architectural
+ablations. Next run: 64-wide attention with positions, plus latest/mean MLP
+controls, fixed budget and validation BA checkpoint rule. Width/position sweep
+is implemented but deferred pending review. See the updated
+[experiment plan](ATTENTION_EXPERIMENTS.md). No full-run result is recorded yet.
+
+**2026-11-03 — CNN–attention tiny fit completed (owner-reported):** the
+A100-SXM4-80GB run completed 300 updates; training loss 0.692842→0.000071,
+eight-case accuracy 1.000, status `completed`. This checks real-data learning
+plumbing only. Full report details and validation/latency comparison remain to
+review/run. See [experiment results](ATTENTION_EXPERIMENTS.md#2026-11-03--eight-case-perlmutter-check-completed).
+
+**2026-11-03 — Bounded CNN–attention check:** added separate
+`cnn_attention_debug.py` for eight balanced split-0 training cases before the
+full sweep. Adapts the team's ViT–GRU runtime/selection/freezing checks to frozen
+ResNet and the 64-wide attention head. Maximum 300 updates/120 seconds of head
+work, 600-second worker deadline; no validation tuning/checkpoints/cache.
+Three synthetic worker tests passed. Perlmutter run remains pending; see the
+[experiment log](ATTENTION_EXPERIMENTS.md#eight-case-integration-check).
+
+**2026-11-03 — Testing handoff documented:** aligned attention documents with
+the existing scope/protocol/verification/run-guide layout and added dependency
+checks, one-GPU allocation/job-step commands, CUDA checks, scratch setup,
+eight-configuration execution, result inspection and allocation cleanup.
+Code must be transferred before requesting GPU time. No real run or result is
+implied by this documentation update; the previously passing synthetic suite
+is unchanged. NERSC's current interactive-job guidance was checked for GPU
+requests in both `salloc` and `srun`.
+
+**2026-11-03 — Requested attention ablations:** The project owner retained the final MLP
+and requested position embeddings on/off and widths 32/64/128, together with
+static and mean-history comparisons. `--attention-sweep` implements eight
+configurations, fixes final MLP hidden width at 64, and shares extraction once
+in RAM. [Experiment log](ATTENTION_EXPERIMENTS.md) records decisions, ReLU/GELU,
+scaling/optimization, capacity and selection tradeoffs, run commands and pending
+results. Local invented-data tests are code verification only. Real-data runs
+could not be launched: Perlmutter SSH authentication was rejected. No new
+accuracy/latency measurements or winning-model decision exists yet.
+
+**2026-11-03 — CNN–attention setup:** The project owner requested the
+CNN–temporal attention implementation and a shared baseline/evaluation pipeline
+while Tran runs the eight-case ViT–GRU check (user-reported in progress; no result
+supplied yet). Added `temporal_models.py`, `temporal_evaluation.py`,
+`compare_runs.py` and invented-input tests. The frozen ResNet feeds a 64-wide,
+four-head, one-layer temporal attention encoder with learned positions and late
+goal fusion. A latest+goal+full-metadata MLP is the default comparison; optional
+mean-history/recurrent controls share the runner. See [CNN_ATTENTION.md](CNN_ATTENTION.md)
+for architecture, development defaults, Perlmutter commands, private checkpoint
+handling and result tracking. No existing reader/preprocessor/encoder/static
+evaluation/notebook or Tran code is changed. Real-data extraction/training,
+A100 latency and validation performance of this setup remain unverified.
+Tran's remote debug branch is now published at `b9d1bdf`; earlier unpublished
+statements below are historical. The new local setup is not automatically
+available in Perlmutter and has not been committed or pushed.
+
+**Verification:** all 42 invented-input tests passed in the local `.venv-eval`
+environment (torch 2.8.0 CPU), including nine new temporal tests. Checks cover
+all-head backward passes, case independence, attention gradients through every
+history step/goal/metadata, order sensitivity, static input roles, train-only
+scaling, actual optimization/checkpoint reload, frozen encoder state, latency
+image counts, ledger formats and a complete invented-image CLI/report smoke.
+Both command help screens and diff formatting passed. Synthetic results do not
+establish real-data accuracy, pretrained ResNet integration or A100 latency.
+
 **The real eight-training-case ViT–GRU debugging check passed on Perlmutter (Tran-reported, 2026-11-03).** At `b9d1bdf`, 300 updates reduced training loss from 0.775900 to 0.000129 and reached 100% accuracy on those same eight cases. Gradients were finite, head weights changed and encoder state stayed unchanged. The GPU allocation was explicitly released. This verifies bounded real-data fitting and the frozen training path, not held-out performance or temporal usefulness.
 
-**Current setup:** the separately bounded full-training/validation runner and synthetic tests are published at `69fd063` on `tran/vit-gru-debug` with the [agreed settings](GRU_TRIAL.md#agreed-first-full-training-setup--2026-11-03). Real full training is pending; start with fresh GRU/classifier weights. The eight-case debugging run is complete and does not need repeating. The [debugging and Sabrina handoff](GRU_DEBUG_HANDOFF.md) provides commands, expected evidence, failure handling and subsequent steps. [GRU_TRIAL.md](GRU_TRIAL.md) retains the design rationale and later comparisons. No full training, validation tuning, caching expansion or final evaluation is included in this milestone.
+**Current setup:** the separately bounded full-training/validation runner and synthetic tests are published at `69fd063` on `tran/vit-gru-debug` with the [agreed settings](GRU_TRIAL.md#agreed-first-full-training-setup--2026-11-03). Real full training is pending; start with fresh GRU/classifier weights. The eight-case debugging run is complete and does not need repeating. The [debugging handoff](GRU_DEBUG_HANDOFF.md) provides commands, expected evidence, failure handling and subsequent steps. [GRU_TRIAL.md](GRU_TRIAL.md) retains the design rationale and later comparisons. No full training, validation tuning, caching expansion or final evaluation is included in this milestone.
 
-**Existing evidence:** raw loading, full-view preparation and pretrained DINOv2 CPU extraction/grouping passed prior checks. Tran's notebook imports timm 1.0.30 and reports CUDA available. The one-frame masking result is recorded and inconclusive for temporal usefulness; do not repeat masking. Sabrina separately completed static frozen-feature probes and a reported GPU run; her unchanged evaluation module/tests are imported for later reuse. Tran's own GPU extraction/backward path is now verified within the eight-case check; her static results remain a separate experiment.
+**Existing evidence:** raw loading, full-view preparation and pretrained DINOv2 CPU extraction/grouping passed prior checks. Tran's notebook imports timm 1.0.30 and reports CUDA available. The one-frame masking result is recorded and inconclusive for temporal usefulness; do not repeat masking. The static evaluation separately completed static frozen-feature probes and a reported GPU run; the unchanged evaluation module/tests are imported for later reuse. Tran's own GPU extraction/backward path is now verified within the eight-case check; static results remain a separate experiment.
+
+**Latest aggregate findings:** the first split-0 results have now been supplied. DINOv2 goal-only has the highest observed validation BA (.609); DINOv2 latest+goal is .570 and ResNet latest+goal .547, with large train/validation gaps. Static encoder component medians are 46.83 ms total for DINOv2 and 33.87 ms for ResNet; classifier/disk IO are excluded. See EVALUATION.md for the canonical results, caveats and prioritized follow-up hypotheses. No statistically supported encoder ranking or final-test result is established; existing episode intervals and matched errors are next to inspect.
+
+**Handoff:** implementation is on `static-evaluation`; the aggregate review and [teammate resume checklist](../EVALUATION.md#teammate-handoff--resume-here) document what is complete and what to inspect next. Keep CNN/ViT frozen. Private uncertainty/error evidence is next; no baseline rerun is needed just to resume.
+
+**Update — 2026-11-01:** The project owner authorized the before-GRU evaluation milestone and ongoing documentation. `evaluation.py` compares fixed ResNet/DINOv2 features using separate regularized linear probes. Implementation, synthetic verification and the first real development run are complete. Earlier pending-execution or limited-authorization statements in dated entries describe historical stages. GRU and encoder fine-tuning remain outside this implementation.
+
+
 
 **Working layout:** documentation stays in the original checkout on `main`; code stays in sibling `waldo-guidewire-policy-vit-gru-debug` on `tran/vit-gru-debug`. Both are based on `0f77490`. Main's current notes do not automatically appear in the debug checkout; read them here until branch synchronization is explicitly authorized. Both branches were published in the main conversation; documentation has not been synchronized into the debug branch.
 
-**Experimental limits:** tiny fitting checks learning plumbing only. Later full training must start with fresh head weights, compare 64 versus 128 using validation and prioritize Sabrina's latest-image + goal + matching historical-metadata baseline before the broader four-model comparison. A functioning GRU or a perfect eight-case fit does not establish generalization, goal use or useful temporal processing.
+**Experimental limits:** tiny fitting checks learning plumbing only. Later full training must start with fresh head weights, compare 64 versus 128 using validation and prioritize the static-evaluation latest-image + goal + matching historical-metadata baseline before the broader four-model comparison. A functioning GRU or a perfect eight-case fit does not establish generalization, goal use or useful temporal processing.
 
 ## Iteration plan and run record
 
@@ -77,13 +168,13 @@ Following Tran's explicit setup request, implemented the 115,650-parameter head,
 
 **Verification:** all 44 synthetic tests passed locally in 0.952 seconds, including 11 new GRU checks. Tests verify sequence/goal/metadata wiring, reset hidden state, deterministic balanced selection, training-only scaling and constant-channel handling, inference-tensor conversion, actual backward/optimizer updates, unchanged encoder parameters/buffers, non-finite rejection and both update/time limits. The invented-feature learning check reached perfect training accuracy within 40 updates and lower loss; this is not real task evidence. An additional synthetic worker smoke exercised the actual raw loader and preprocessor with invented PNGs/records, an injected encoder, 40 head updates and successful report serialization/source hashes; it saved only the summary and used no real data or pretrained weights. CLI help, syntax, local documentation links and diff formatting passed. Environment: Python 3.14.6, torch 2.15.0, NumPy 2.5.4, scikit-learn 1.9.1 and Pillow 13.0.0. Existing CNN diagnostic tests emitted Pillow deprecation warnings without failures.
 
-**Handoff and limits:** added [GRU_DEBUG_HANDOFF.md](GRU_DEBUG_HANDOFF.md) with Sabrina's reuse/coordination steps, local and Perlmutter commands, notebook preservation, private reporting and next experiment boundaries. No real data, GPU execution, pretrained extraction rerun, remote notebook changes or new baseline run occurred. Loader/preprocessor/encoder and Sabrina's imported code are unchanged. At completion of implementation, main held the shared notes and debug held the code, all unstaged/uncommitted/unpushed. Tran subsequently requested separate commits by scope; confirmation immediately before committing is still required. Next: authorized code sharing, then one bounded Perlmutter run. Full-training and final-evaluation protocols remain separate work.
+**Handoff and limits:** added [GRU_DEBUG_HANDOFF.md](GRU_DEBUG_HANDOFF.md) with the static-evaluation reuse/coordination steps, local and Perlmutter commands, notebook preservation, private reporting and next experiment boundaries. No real data, GPU execution, pretrained extraction rerun, remote notebook changes or new baseline run occurred. Loader/preprocessor/encoder and the imported static-evaluation code are unchanged. At completion of implementation, main held the shared notes and debug held the code, all unstaged/uncommitted/unpushed. Tran subsequently requested separate commits by scope; confirmation immediately before committing is still required. Next: authorized code sharing, then one bounded Perlmutter run. Full-training and final-evaluation protocols remain separate work.
 
-### 2026-11-02 — Separate debug worktree and Sabrina evaluation reuse
+### 2026-11-02 — Separate debug worktree and static evaluation reuse
 
 At Tran's request, created `tran/vit-gru-debug` and then moved it to a separate sibling worktree, keeping shared documentation on `main`. Rechecked live remote tips: `main` at `0f77490`, `static-evaluation` at `070328f`. Fast-forwarded local main from `0c4cbee` to `0f77490`, preserving every local documentation edit through a backed-up three-way reconciliation. The untracked GRU plan is preserved; `.DS_Store` files remain excluded. No staging, new commit or push occurred.
 
-Inspected Sabrina's evaluation implementation (`5ddb566`) and handoff (`070328f`). Imported `evaluation.py` and `tests/test_evaluation.py` unchanged into the debug worktree; brought the evaluation reference into main's documentation. Existing latest-image/goal/metadata probes, metrics and partition checks can support later comparisons. The scikit-learn optimizer, centered feature scaling, validation-selected regularization and full-partition runner do not implement the proposed tiny GRU check. No baseline rerun, GRU implementation, full training, data extraction or remote notebook update occurred. Current verification is recorded in the session handoff below.
+Inspected the static-evaluation evaluation implementation (`5ddb566`) and handoff (`070328f`). Imported `evaluation.py` and `tests/test_evaluation.py` unchanged into the debug worktree; brought the evaluation reference into main's documentation. Existing latest-image/goal/metadata probes, metrics and partition checks can support later comparisons. The scikit-learn optimizer, centered feature scaling, validation-selected regularization and full-partition runner do not implement the proposed tiny GRU check. No baseline rerun, GRU implementation, full training, data extraction or remote notebook update occurred. Current verification is recorded in the session handoff below.
 
 ### 2026-11-02 — Feature check completed; temporal-model design next
 
@@ -100,6 +191,40 @@ Tran ran the diagnostics shared in `0c4cbee` on Perlmutter. Goal-image compariso
 ### 2026-11-02 — Documentation reconciled with completed CPU milestone
 
 Reviewed overall and Group 2 notes against the recorded October 31 results. Updated README, shared approach status, and ViT trial instructions to remove superseded claims that preparation, timm compatibility, or pretrained CPU extraction were still pending. No new model execution or data verification occurred. The immediate next step remains the design discussion below; GPU verification/performance measurement and complete-policy implementation remain outstanding. Group 1's separate CNN GPU diagnostics do not establish Group 2 GPU readiness. Code, notebook edits, and dataset restrictions are unchanged.
+
+### 2026-11-01 — Frozen backbone versus evaluation classifier clarified
+
+The project owner confirmed the CNN should remain frozen for the coming experiments. Explicitly documented that evaluation fits a separate logistic-regression probe and train-only scaler on detached features; it does not modify `cnn.py`, update ResNet weights or BatchNorm statistics, or backpropagate into either image encoder. Fine-tuning remains a possible future research direction, not the next planned implementation. The current accuracy gaps describe probe generalization; no encoder was trained in this milestone.
+
+### 2026-11-01 — First aggregate accuracy and component timing review
+
+The project owner supplied the generated summary and encoder benchmark. Recorded the full 12-experiment BA/recall comparison and component timings once in EVALUATION.md. Main evidence: large train/validation gaps; goal-only DINOv2 above its latest+goal baseline; metadata and mean pooling did not improve rounded DINOv2 validation BA. DINOv2 encoding is approximately 3.8 times slower than ResNet at the shared 518-square preparation, but preparation reduces the measured total-time ratio to approximately 1.38. Single-case repeated timings exclude classifier/disk IO and shared-residency memory cannot rank isolated model sizes.
+
+Proposed next order: inspect existing intervals/confusions/per-C scores and private matched errors; then a bounded stronger-regularization experiment with frozen encoders; investigate reference dependence, fusion and small-detail representation before limited fine-tuning. No new experiment was launched or model changed in this review. All real case-level artifacts remain on Perlmutter.
+
+### 2026-11-01 — First before-GRU evaluation completed on GPU
+
+After setting scratch HF/Torch cache locations, the project owner reported successful DINOv2 and ResNet weight downloads and the runner's completion message for split position 0, both encoders, CUDA and `--benchmark`. The preceding allocation check identified an A100-SXM4-80GB. This establishes owner-reported completion of the development run; scores, confusion matrices, uncertainty intervals, code/version provenance and component timings have not yet been reviewed. No superiority, fine-tuning gain, full-policy latency, or final-test result is claimed.
+
+Next: inspect the aggregate summary and encoder component benchmark on Perlmutter, retain private case-level predictions there, and record aggregate findings and a bounded follow-up hypothesis. Scratch-cache recovery succeeded for this run. These new documentation entries remain local until a later Git handoff.
+
+### 2026-11-01 — GPU visible; first evaluation blocked by cache locking
+
+The project owner confirmed CUDA availability and NVIDIA A100-SXM4-80GB visibility in an allocated compute shell. The shared interactive queue required 32 CPU cores for one GPU; the initial four-core request was rejected. The evaluation command then failed while constructing DINOv2, at HF model-download cache `fcntl.flock`, with `OSError: [Errno 524]`. No feature extraction, classifiers, accuracy results or benchmark measurements completed. An unauthenticated HF warning preceded the exception but does not identify its cause.
+
+Proposed recovery: explicitly place HF and Torch weight caches in personal scratch and rerun in a fresh Python process within the existing allocation. NERSC documents home-mount flock limitations and recommends scratch HF caches; the failing resolved cache path was not printed, so the diagnosis remains provisional. Recovery success is not yet reported. Portable commands and sources are in EVALUATION.md; no code or dependency change is needed for this retry.
+
+### 2026-11-01 — Evaluation code transferred; Perlmutter tests passed
+
+The project owner confirmed a clean Perlmutter checkout of `static-evaluation` tracking `origin/static-evaluation`, with the evaluation script and requirements present. The prior local dataset-ignore commit was preserved on a backup branch before switching. The module environment reports Python 3.12.13; dependency discovery found torch, torchvision, scikit-learn, Pillow and NumPy, with timm initially absent. A dedicated personal scratch venv reuses system packages; its dry run proposed only timm 1.0.30. Following installation/test instructions, the project owner reported all 23 synthetic tests passed in 1.780 seconds. The full installed-version inventory and exact remote commit were not supplied.
+
+This verifies the synthetic suite on the static-evaluation environment on Perlmutter, not real-data classifier execution or pretrained GPU inference. Next: confirm the job account, allocate one GPU, verify CUDA in that allocation, and run the documented evaluation with artifacts retained on Perlmutter. This entry is a local documentation update; it has not automatically propagated to the remote clone.
+
+### 2026-11-01 — Before-GRU evaluation implementation
+
+Pulled upstream main to `023d125` (including frozen ResNet-18). Added a local development evaluation runner with train-only feature scaling, class-balanced logistic regression, validation C selection, fixed threshold, per-class/confusion/probability metrics, episode-bootstrap intervals, and private aligned predictions for error review. Goal-only/latest-only/goal-plus-latest/metadata/mean-history comparisons distinguish potential context, temporal and representation limitations. Optional synchronized static encoder component timing is explicitly separated from full-policy latency. Existing loader, preprocessing and encoder code is unchanged. Dependencies are documented separately; no real features or datasets were downloaded.
+
+**Verification:** all 23 synthetic tests passed locally (six loader, five preprocessing, five encoder and seven evaluation tests), using Python 3.9.13, torch 2.8.0, NumPy 2.0.2, scikit-learn 1.6.1 and Pillow 11.3.0. Evaluation checks cover majority-class metric behavior, row/episode leakage rejection, train-only scaling and regularization tie handling, goal/latest/history feature roles, episode resampling, full invented-array comparisons, collection bookkeeping and static benchmark image selection. CLI help and `git diff --check` passed. Dependencies were installed in an isolated project venv reusing existing system packages; the first test launch occurred before installation completed and failed dependency imports, then all checks passed after installation. No real weights or data were used. Real Perlmutter classification, GPU timing and improvements from fine-tuning remain unmeasured. Changes are local and uncommitted; no GitHub push or remote code execution has occurred.
 
 ### 2026-10-31 — Pretrained feature extraction verified on CPU
 
@@ -127,7 +252,7 @@ Goal and six chronological history images displayed successfully in the remote n
 
 ## Remaining coordination and later experiments
 
-The tiny setup now uses split position 0, seed 0, four cases per label, uncentered training-only channel scales, late goal concatenation and the documented bounded budget. These are implemented settings for the debugging check, not final model-selection choices. Coordinate any unpublished teammate work before parallel extensions; Sabrina's published static evaluation is already reused.
+The tiny setup now uses split position 0, seed 0, four cases per label, uncentered training-only channel scales, late goal concatenation and the documented bounded budget. These are implemented settings for the debugging check, not final model-selection choices. Coordinate any unpublished teammate work before parallel extensions; the published static evaluation is already reused.
 
 After the real check, agree on the full-training schedule, validation/checkpoint metric, repeat seeds, fair baseline/width budgets, end-to-end latency boundary and final five-split reporting. Broader architecture ownership, caching and fine-tuning remain open. See the [handoff](GRU_DEBUG_HANDOFF.md#next-steps-after-the-check).
 
