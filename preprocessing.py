@@ -173,16 +173,17 @@ def check_crop_size(size):
         raise ValueError("crop size must be a positive multiple of 32")
 
 
-def goal_crop(image, goal_xy, size):
-    """Crop a grayscale ``size`` square centered on ``goal_xy`` at 1x scale.
+def goal_crop(image, goal_xy, size, *, mode="L"):
+    """Crop a ``size`` square centered on ``goal_xy`` at 1x scale.
 
-    Returns the Pillow "L" crop and its geometry. Box parts outside the image
-    repeat the nearest edge pixel; ``padding_ltrb`` counts them per side and
-    ``resized_size_wh`` is the size of the content taken from the image.
+    Returns the crop, converted to Pillow ``mode`` (grayscale by default), and
+    its geometry. Box parts outside the image repeat the nearest edge pixel;
+    ``padding_ltrb`` counts them per side and ``resized_size_wh`` is the size
+    of the content taken from the image.
     """
     check_crop_size(size)
-    gray = image.convert("L")
-    width, height = gray.size
+    converted = image.convert(mode)
+    width, height = converted.size
     # Round half up; Python's round() sends .5 to the nearest even pixel.
     cx, cy = (math.floor(value + 0.5) for value in goal_xy)
     if not (0 <= cx < width and 0 <= cy < height):
@@ -191,10 +192,10 @@ def goal_crop(image, goal_xy, size):
     right, bottom = left + size, top + size
     pad_l, pad_t = max(0, -left), max(0, -top)
     pad_r, pad_b = max(0, right - width), max(0, bottom - height)
-    inner = gray.crop((left + pad_l, top + pad_t, right - pad_r, bottom - pad_b))
+    inner = converted.crop((left + pad_l, top + pad_t, right - pad_r, bottom - pad_b))
     inner_w, inner_h = inner.size
 
-    crop = Image.new("L", (size, size))
+    crop = Image.new(mode, (size, size))
     crop.paste(inner, (pad_l, pad_t))
     # Stretch the outermost content column or row over each padding strip.
     # Rows go last and span the full width, so corners take the corner pixel.
@@ -387,6 +388,55 @@ class WirePreprocessor:
                 "history_context": [frame["geometry"] for frame in history],
             })
         return prepared
+
+
+# Wire-only flags, keyed by their WirePreprocessor argument names.
+WIRE_FLAGS = {"crop_size": "--crop-size", "channels": "--channels",
+              "tophat_size": "--tophat-size", "difference": "--difference",
+              "context_size": "--context-size"}
+
+
+def add_preprocessor_arguments(parser):
+    """Add the shared model-input flags; ``build_preprocessor`` reads them.
+
+    Wire defaults are applied there, so flags given for the other
+    preprocessor can be rejected instead of silently ignored.
+    """
+    group = parser.add_argument_group("model input preparation")
+    group.add_argument("--preprocessor", choices=("dinov2", "wire"), default="dinov2")
+    group.add_argument("--size", type=int, default=None,
+                       help="dinov2 input size, a multiple of 14 (default 518)")
+    group.add_argument("--crop-size", type=int, default=None,
+                       help="wire crop size, a multiple of 32 (default 256)")
+    group.add_argument("--channels", choices=WIRE_CHANNEL_MODES, default=None,
+                       help="wire channel mode (default raw)")
+    group.add_argument("--tophat-size", type=int, default=None,
+                       help="enhanced top-hat window, odd (default 11)")
+    group.add_argument("--difference", choices=DIFFERENCE_MODES, default=None,
+                       help="enhanced difference channel (default median)")
+    group.add_argument("--context-size", type=int, default=None,
+                       help="wire full-view context size, a multiple of 32 (default off)")
+
+
+def build_preprocessor(args):
+    """Build the preprocessor selected by ``add_preprocessor_arguments`` flags.
+
+    Raises ValueError for flags that do not apply to the selected options.
+    """
+    given = {name: getattr(args, name) for name in WIRE_FLAGS
+             if getattr(args, name) is not None}
+    if args.preprocessor == "dinov2":
+        if given:
+            raise ValueError("{} only apply to --preprocessor wire".format(
+                ", ".join(WIRE_FLAGS[name] for name in given)))
+        return DINOv2Preprocessor(size=518 if args.size is None else args.size)
+    if args.size is not None:
+        raise ValueError("--size applies to --preprocessor dinov2; use --crop-size with wire")
+    if given.get("channels") != "enhanced":
+        unused = [WIRE_FLAGS[name] for name in ("tophat_size", "difference") if name in given]
+        if unused:
+            raise ValueError("{} only apply to --channels enhanced".format(", ".join(unused)))
+    return WirePreprocessor(**given)
 
 
 def channel_stats(preprocessor, cases):

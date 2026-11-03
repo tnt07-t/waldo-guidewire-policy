@@ -74,6 +74,34 @@ python3 cnn.py --split-position 0 --partition train --remove-maxpool
 python3 cnn.py --split-position 0 --partition train --size 224
 ```
 
+### Preprocessor options
+
+`cnn.py`, `cnn_diagnostics.py` and `evaluation.py` share one set of input flags (`add_preprocessor_arguments` and `build_preprocessor` in `preprocessing.py`).
+Without them the default `dinov2` full-view preparation runs exactly as before.
+
+| Flag | Applies to | Default |
+| --- | --- | --- |
+| `--preprocessor {dinov2,wire}` | both | `dinov2` |
+| `--size` | `dinov2` only | 518 |
+| `--crop-size` | `wire` only | 256 |
+| `--channels {raw,enhanced}` | `wire` only | `raw` |
+| `--tophat-size` | `wire --channels enhanced` | 11 |
+| `--difference {median,previous}` | `wire --channels enhanced` | `median` |
+| `--context-size` | `wire` only | off |
+
+A flag given for the other preprocessor is rejected with an error, not ignored; for example `--size` with `wire`.
+`wire` crops a square around `goal_xy` at native resolution from the unmarked goal and the six history frames (see [the ticket index](tickets/README.md)).
+
+```sh
+# Run on Perlmutter, in a GPU allocation: compare old and new paths on one case.
+export TORCH_HOME="${PSCRATCH:?}/model-cache/torch"
+python3 cnn.py --split-position 0 --partition train
+python3 cnn.py --split-position 0 --partition train --preprocessor wire --crop-size 256
+python3 cnn.py --split-position 0 --partition train --preprocessor wire --crop-size 256 --channels enhanced
+```
+
+Each run prints the device, `(1, 6, 512)`, `(1, 512)` and `Frozen encoder check passed.`
+
 Weights download or cache access must work on Perlmutter. Keeping Torch Hub caches under scratch is recommended before constructing the encoder if home-quota limits appear:
 
 ```sh

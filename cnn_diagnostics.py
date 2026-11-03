@@ -7,7 +7,9 @@ detection, target understanding, or advance/retract recognition.
 Probes (all scored with L2 distance in 512-d space):
 1. Occlusion sensitivity on history frames (not verified wire detection).
 2. Goal red-marker region perturbation vs translated same-shape controls,
-   with edits applied on RGB before the shared preprocessor.
+   with edits applied on RGB before the shared preprocessor. With
+   ``--preprocessor wire`` the probe uses the marked goal cropped with the
+   wire box, so the marker and controls stay inside the model input.
 3. Temporal feature variation vs aligned depth changes (magnitude only).
 
 Real cases run on Perlmutter. Optional ``--output-dir`` writes verification
@@ -24,7 +26,7 @@ from pathlib import Path
 import torch
 from PIL import Image, ImageDraw
 
-from preprocessing import MEAN, STD
+from preprocessing import MEAN, STD, WirePreprocessor, goal_crop
 
 
 # Red-marker thresholds on uint8 RGB in [0, 255], before ImageNet normalization.
@@ -304,6 +306,10 @@ def grid_occlusion_deltas(encoder, image, *, patch, stride, geometry):
 
 def prepared_to_original_xy(x_prep, y_prep, geometry):
     """Map prepared-pixel coordinates into original image coordinates."""
+    if "crop_box_ltrb" in geometry:
+        # Wire crops are 1x: prepared pixels are offsets from the box corner.
+        box_left, box_top, _, _ = geometry["crop_box_ltrb"]
+        return box_left + x_prep, box_top + y_prep
     left, top, _, _ = geometry["padding_ltrb"]
     orig_w, orig_h = geometry["original_size_wh"]
     resized_w, resized_h = geometry["resized_size_wh"]
@@ -548,6 +554,38 @@ def goal_vs_history_separation(goal_features, history_features):
     }
 
 
+def default_occlusion_size(preprocessor):
+    """Occlusion patch/stride default: 74 for 518 inputs, crop/8 for wire crops."""
+    if isinstance(preprocessor, WirePreprocessor):
+        return preprocessor.crop_size // 8
+    return 74
+
+
+class _FixedCenterCrop:
+    """Single-image ``prepare_image`` for wire crops already centered on the goal."""
+
+    def __init__(self, preprocessor):
+        self.preprocessor = preprocessor
+        half = preprocessor.crop_size // 2
+        self.center = (half, half)
+
+    def prepare_image(self, image):
+        return self.preprocessor.prepare_image(image, self.center)
+
+
+def marker_probe_inputs(preprocessor, case):
+    """Marked goal and single-image preprocessor for the marker probe.
+
+    Wire crops ignore everything outside the goal box, so the probe runs on
+    the MARKED goal cropped with that box (never the unmarked goal); the
+    marker mask and its translated controls then stay inside the model input.
+    """
+    if not isinstance(preprocessor, WirePreprocessor):
+        return case["goal"], preprocessor
+    crop, _ = goal_crop(case["goal"], case["goal_xy"], preprocessor.crop_size, mode="RGB")
+    return crop, _FixedCenterCrop(preprocessor)
+
+
 def run_case_diagnostics(
     encoder,
     preprocessor,
@@ -580,9 +618,12 @@ def run_case_diagnostics(
         stride=stride,
         output_dir=output_dir,
     )
+    marker_goal, marker_preprocessor = marker_probe_inputs(preprocessor, case)
     goal_probe = goal_marker_sensitivity(
-        encoder, preprocessor, case["goal"], output_dir=output_dir
+        encoder, marker_preprocessor, marker_goal, output_dir=output_dir
     )
+    if marker_preprocessor is not preprocessor:
+        goal_probe["input"] = "marked goal cropped with the wire box"
     separation = goal_vs_history_separation(goal_features, history_features)
     temporal = temporal_feature_diagnostics(
         history_features.cpu(),
@@ -644,6 +685,8 @@ def _print_report(report):
     goal = report["goal_marker_sensitivity"]
     print("Goal marker-region perturbation sensitivity:")
     print("  status:", goal["status"])
+    if "input" in goal:
+        print("  input:", goal["input"])
     if goal["status"] != "ok":
         print("  reason:", goal.get("reason"))
     else:
@@ -694,7 +737,7 @@ def main():
     # invented-input unit tests can run without the CNN dependency stack.
     from cnn import FrameEncoder
     from dataset import GuidewireDataset
-    from preprocessing import DINOv2Preprocessor
+    from preprocessing import add_preprocessor_arguments, build_preprocessor
 
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--data-dir", default=os.environ.get("DATA_DIR"))
@@ -705,19 +748,19 @@ def main():
         default="train",
     )
     parser.add_argument("--case-index", type=int, default=0)
-    parser.add_argument("--size", type=int, default=518)
+    add_preprocessor_arguments(parser)
     parser.add_argument("--remove-maxpool", action="store_true")
     parser.add_argument(
         "--patch",
         type=int,
-        default=74,
-        help="Occlusion square side in prepared pixels",
+        default=None,
+        help="Occlusion square side in prepared pixels (default 74; crop/8 for wire)",
     )
     parser.add_argument(
         "--stride",
         type=int,
-        default=74,
-        help="Occlusion grid stride in prepared pixels",
+        default=None,
+        help="Occlusion grid stride in prepared pixels (default 74; crop/8 for wire)",
     )
     parser.add_argument(
         "--output-dir",
@@ -730,6 +773,15 @@ def main():
         parser.error("Set DATA_DIR or provide --data-dir")
     if args.case_index < 0:
         parser.error("--case-index must be non-negative")
+    try:
+        preprocessor = build_preprocessor(args)
+    except ValueError as exc:
+        parser.error(str(exc))
+    # Defaults were sized for 518 inputs; wire crops scale them down.
+    if args.patch is None:
+        args.patch = default_occlusion_size(preprocessor)
+    if args.stride is None:
+        args.stride = default_occlusion_size(preprocessor)
 
     dataset = GuidewireDataset(
         args.data_dir,
@@ -742,7 +794,6 @@ def main():
         parser.error("--case-index out of range for partition")
 
     case = dataset[args.case_index]
-    preprocessor = DINOv2Preprocessor(size=args.size)
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     encoder = FrameEncoder(remove_maxpool=args.remove_maxpool).to(device)
     encoder.eval()

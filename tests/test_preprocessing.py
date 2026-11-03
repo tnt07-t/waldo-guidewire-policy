@@ -1,5 +1,6 @@
 """Invented images only; no real data or pretrained weights are needed."""
 
+import argparse
 from copy import deepcopy
 import math
 import unittest
@@ -8,7 +9,8 @@ from PIL import Image, ImageDraw
 import torch
 
 from preprocessing import (CHECKPOINT, CONTEXT_FILL, MEAN, STD, DINOv2Preprocessor,
-                           WirePreprocessor, black_tophat, channel_stats, goal_crop)
+                           WirePreprocessor, add_preprocessor_arguments, black_tophat,
+                           build_preprocessor, channel_stats, goal_crop)
 
 
 def legacy_prepare_case(prep, case):
@@ -563,6 +565,42 @@ class EnhancedChannelTests(unittest.TestCase):
         WirePreprocessor(64, "enhanced", **stats)
         with self.assertRaises(ValueError):
             channel_stats(prep, [])
+
+
+class PreprocessorFactoryTests(unittest.TestCase):
+    @staticmethod
+    def build(*argv):
+        parser = argparse.ArgumentParser()
+        add_preprocessor_arguments(parser)
+        return build_preprocessor(parser.parse_args(list(argv)))
+
+    def test_defaults_keep_dinov2_518(self):
+        prep = self.build()
+        self.assertIsInstance(prep, DINOv2Preprocessor)
+        self.assertEqual(prep.size, 518)
+        self.assertEqual(self.build("--size", "224").size, 224)
+
+    def test_wire_defaults_and_options(self):
+        prep = self.build("--preprocessor", "wire")
+        self.assertIsInstance(prep, WirePreprocessor)
+        self.assertEqual((prep.crop_size, prep.channels, prep.context_size), (256, "raw", None))
+        prep = self.build("--preprocessor", "wire", "--crop-size", "192", "--channels",
+                          "enhanced", "--tophat-size", "7", "--difference", "previous",
+                          "--context-size", "224")
+        self.assertEqual((prep.crop_size, prep.channels, prep.tophat_size, prep.difference,
+                          prep.context_size), (192, "enhanced", 7, "previous", 224))
+
+    def test_flags_for_the_other_preprocessor_are_rejected(self):
+        with self.assertRaisesRegex(ValueError, "--size"):
+            self.build("--preprocessor", "wire", "--size", "518")
+        with self.assertRaisesRegex(ValueError, "--crop-size"):
+            self.build("--crop-size", "256")
+        with self.assertRaisesRegex(ValueError, "--tophat-size"):
+            self.build("--preprocessor", "wire", "--tophat-size", "7")
+        with self.assertRaisesRegex(ValueError, "--difference"):
+            self.build("--preprocessor", "wire", "--channels", "raw", "--difference", "previous")
+        with self.assertRaises(ValueError):
+            self.build("--preprocessor", "wire", "--crop-size", "250")
 
 
 if __name__ == "__main__":
