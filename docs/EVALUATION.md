@@ -1,5 +1,7 @@
 # Before-GRU evaluation milestone
 
+**Historical main-branch import context — 2026-11-02:** this reference was copied from Sabrina's `static-evaluation` branch at `070328f`. Its reported results and historical handoff below describe her work. Tran's separate `tran/vit-gru-debug` worktree now contains unchanged copies of `evaluation.py` and its tests; shared documentation remains on main. The original branch's dependency list is [requirements-eval.txt](https://github.com/tnt07-t/waldo-guidewire-policy/blob/070328fa11f1ed914771c140bfd1aae09d4fd6bb/requirements-eval.txt); it was not copied into main or the debug worktree. Importing this reference does not authorize rerunning its full-partition commands. Follow the [current Group 2 handoff](grp2/PROGRESS.md#session-handoff--2026-11-02) and [bounded GRU plan](grp2/GRU_TRIAL.md) for Tran's next work.
+
 ## Scope and rationale — 2026-11-01
 
 Sabrina requested implementation of the immediate frozen-encoder evaluation milestone, with priority on evaluation and diagnosing model limitations. This authorizes the local evaluation implementation and documentation; it does not establish team-wide protocol adoption or authorize publishing data. Existing raw loading, image preparation, and encoder interfaces are unchanged. No GRU or encoder fine-tuning is added.

@@ -2,7 +2,7 @@
 
 **Next stage (2026-11-01):** the first [before-GRU evaluation](../EVALUATION.md) completed on GPU with frozen-feature probes; aggregate scores, component timings and a teammate handoff are recorded there. Existing uncertainty and private matched errors are next to inspect. The encoder remains inference-only; keep it frozen for the coming experiments. Fine-tuning, alternative token pooling and resolution changes remain possible future directions, not implemented improvements.
 
-`preprocessing.py` prepares images for the initial `vit_small_patch14_dinov2.lvd142m` trial. `vit.py` implements inference-only extraction; one/two-case pretrained CPU checks passed with separate goal/history outputs. The later first GPU development evaluation also completed; component timing and shared-residency memory observations are in EVALUATION.md. Current experiments keep the encoder frozen. Final training resolution, eventual fine-tuning policy and training batch size remain undecided. Historical staged checks below describe the original CPU preparation trial.
+`preprocessing.py` prepares images for the initial `vit_small_patch14_dinov2.lvd142m` trial. `vit.py` implements inference-only extraction; Tran-run one-case pretrained CPU extraction passed on Perlmutter, with separate `[384]` goal and `[6,384]` history outputs, all finite. Two-case CPU extraction also passed: `[2,384]` goal and `[2,6,384]` history outputs matched individually encoded cases for image chunk sizes 1 and 2 (`rtol=1e-4`, `atol=1e-5`). GPU execution and inference memory/runtime measurement remain pending for Tran's path. The bounded GRU setup uses this 518-square preparation, a frozen encoder and eight-case head batches; full-training settings remain open.
 
 The first pretrained check used the existing scratch venv in a Perlmutter terminal, two CPU threads, one image per encoder call, and a three-minute process limit. Public weights downloaded successfully despite an unauthenticated HF Hub warning; no token was needed for this run. No training or feature saving occurred. The notebook path below is an alternative; its kernel selection remains unconfirmed. NERSC permits very small login-node tests; larger or prolonged work belongs on compute nodes. See [progress](PROGRESS.md) for evidence and limits.
 
@@ -22,7 +22,7 @@ python3 -m unittest discover -s tests -p 'test_preprocessing.py' -v
 
 It checks full-view geometry, edge retention, RGB/scaling, unchanged originals, goal/history separation, sequence alignment, repeatability, and invalid sizes. These checks cannot establish visibility on real data. Results and environment limits are recorded in [progress](PROGRESS.md).
 
-## One-case preview — owner-run on Perlmutter only
+## One-case preview — Tran-run on Perlmutter only
 
 Before any authorized code handoff, save the remote notebook and preserve a separate copy of its edits and sensitive outputs on Perlmutter. No Git handoff is implied here. The laptop implementation must be available in the remote clone before these imports work.
 
@@ -60,17 +60,17 @@ Inspect wire-tip and red-target visibility, all edges, and sensible history orde
 - `previews`: separate goal and six history RGB images, exactly matching the pixels used for tensor conversion.
 - `preparation`: checkpoint name, size, interpolation, padding color, normalization, and separate goal/history geometry. Dimensions are `(width, height)`; padding is `(left, top, right, bottom)`.
 
-These are one-case tensors, without a case-batch dimension. The raw `case` remains unchanged. The next encoder should receive only the goal/history tensors, with one image at a time for the first inference check. Smaller synthetic sizes are supported when divisible by 14; changing a real trial size requires a corresponding encoder configuration and another visibility check.
+These are one-case tensors, without a case-batch dimension. The raw `case` remains unchanged. The implemented encoder receives only the goal/history tensors; the completed first inference check used one image at a time. Smaller synthetic sizes are supported when divisible by 14; changing a real trial size requires a corresponding encoder configuration and another visibility check.
 
 ## Encoder dependencies — Perlmutter terminal
 
-Preparation tests and initial preview inspection have passed. The base module has torch 2.13.0+cu130 and torchvision 0.28.0+cu130 but lacks timm. The owner installed timm 1.0.30 in a separate scratch venv created with `--system-site-packages`, and confirmed its import. In the original terminal, `$vit_env` holds its generated path. Keep the module loaded and use that venv explicitly:
+Preparation tests and initial preview inspection have passed. The base module has torch 2.13.0+cu130 and torchvision 0.28.0+cu130 but lacks timm. Tran installed timm 1.0.30 in a separate scratch venv created with `--system-site-packages`, and confirmed its import. In the original terminal, `$vit_env` holds its generated path. Keep the module loaded and use that venv explicitly:
 
 ```sh
 "$vit_env/bin/python" -c 'import timm, torchvision; print("timm", timm.__version__, "torchvision", torchvision.__version__)'
 ```
 
-This reads no images, downloads no weights, and uses no GPU. If an import fails, record the non-sensitive error and resolve environment compatibility before the encoder run; do not blindly upgrade the module's PyTorch. Timm 1.0.30 import passed; actual checkpoint execution remains unverified. If the terminal variable is lost, locate the existing scratch venv and verify it instead of reinstalling. Exact generated paths belong in private notes.
+This reads no images, downloads no weights, and uses no GPU. If an import fails, record the non-sensitive error and resolve environment compatibility before the encoder run; do not blindly upgrade the module's PyTorch. Timm 1.0.30 import and actual pretrained checkpoint execution passed on CPU for one and two cases; GPU execution remains unverified. If the terminal variable is lost, locate the existing scratch venv and verify it instead of reinstalling. Exact generated paths belong in private notes.
 
 The encoder tests use an invented model, so they need only the already-used torch/Pillow environment:
 
@@ -107,8 +107,12 @@ print("One-case feature shapes and finite-value checks passed.")
 
 These are whole-image summary vectors, using the checkpoint's own class-token pooling as in its [feature extraction example](https://huggingface.co/timm/vit_small_patch14_dinov2.lvd142m). Only image tensors are passed into the encoder. No labels, identifiers, depth, or time enter it. No parameter updates or feature files are produced. A valid feature vector is not evidence of action accuracy or wire localization. This wrapper is intentionally inference-only and must not be used unchanged as a trainable component later.
 
-## Small-batch follow-up — only after the one-case run passes
+## Small-batch reference — CPU checks completed
 
-The encoder also accepts goals `[B,3,518,518]` and histories `[B,6,3,518,518]`, returning `[B,384]` and `[B,6,384]`. Start with two training cases. Compare batched results against each case encoded individually with `torch.testing.assert_close`; inspect discrepancies rather than requiring bitwise equality. The default image chunk is one even when B is two, so case grouping does not silently raise GPU workload. An explicit `image_chunk_size=2` can then test processing images together; this is not a training batch-size decision.
+The encoder also accepts goals `[B,3,518,518]` and histories `[B,6,3,518,518]`, returning `[B,384]` and `[B,6,384]`. The Tran-run two-training-case CPU check has passed; the following describes that verification for reference, not a request to repeat it. Compare batched results against each case encoded individually with `torch.testing.assert_close`; inspect discrepancies rather than requiring bitwise equality. The default image chunk is one even when B is two, so case grouping does not silently raise GPU workload. An explicit `image_chunk_size=2` can then test processing images together; this is not a training batch-size decision.
 
 Do not run a dataset-wide feature sweep. Report only permitted shape/check results, device, software versions, and memory/runtime aggregates. Keep actual feature values and all sensitive outputs on Perlmutter. For later timing, warm up the model, synchronize CUDA around measurements, and separate preprocessing, weight loading, and encoder runtime. No GPU latency or memory measurement has been made yet.
+
+## Current follow-up
+
+Tran ran the [ViT diagnostic workflow](VIT_DIAGNOSTICS.md); the one-frame masking measurements and their limits are in [progress](PROGRESS.md). Additional manual masking is not required. The [frozen ViT–GRU setup](GRU_TRIAL.md) is now implemented and synthetically tested in the separate debug worktree. Follow the [debugging/Sabrina handoff](GRU_DEBUG_HANDOFF.md) for the first bounded Perlmutter run; real GRU training results remain pending.

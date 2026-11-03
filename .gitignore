@@ -11,3 +11,13 @@ cases.jsonl
 manifest.json
 splits.json
 validation_predictions.private.json
+
+# personal training docs
+docs/andrew
+docs/tran
+docs/suhani
+docs/sabrina
+
+# env installments
+
+# cache
