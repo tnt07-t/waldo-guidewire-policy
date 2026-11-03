@@ -4,6 +4,8 @@
 
 Owner-run one-case smoke check on Perlmutter passed (2026-11-02). Exact printed device, shapes, optional flags, and remote HEAD were not supplied; do not repeat the completed default check without a relevant change. Real images, tensors, and feature values must stay on Perlmutter. Passing this check does not measure action accuracy.
 
+`mlp_cnn.py` runs the prepared goal through the same frozen ResNet as history (`encode_goal` → `[512]`), then a teammate concatenates with the GRU `[128]` summary for the MLP. Prep is `prepare_case` / `prepared["goal"]`; do not treat the goal as a seventh history step.
+
 To test whether those 512-d vectors change under occlusion / marker-region / temporal probes useful for a later GRU, use the separate [CNN_DIAGNOSTICS.md](CNN_DIAGNOSTICS.md) / `cnn_diagnostics.py` path. Those probes do not claim wire detection or action recognition. Do not fold them into `cnn.py`.
 
 ## Why ResNet-18 instead of ConvNeXt Tiny or MobileNetV2
@@ -84,4 +86,14 @@ export TORCH_HOME="${PSCRATCH:?}/model-cache/torch"
 
 Passing shapes and finite checks shows that preparation, pretrained load, freezing, and goal/history bookkeeping work for the inspected case. It does not show that the features preserve wire location, that history helps, or that ADVANCE/RETRACT prediction will beat the baseline.
 
-Next Group 1 steps: re-run fixed diagnostics with overlays on Perlmutter, agree on GRU versus LSTM and depth/time fusion, then implement only the approved temporal stage. See [CNN_DIAGNOSTICS.md](CNN_DIAGNOSTICS.md) and [progress](PROGRESS.md).
+### Goal → ResNet — `mlp_cnn.py`
+
+```python
+from mlp_cnn import encode_goal
+
+# prepared["goal"] already went through DINOv2Preprocessor (same as history).
+goal_features = encode_goal(model.cnn, prepared["goal"])   # ResNet -> [512]
+# teammate: concat(gru_summary [128], goal_features [512]) -> MLP
+```
+
+Next Group 1 steps: MLP over `concat(gru_128, goal_512)` in `mlp_cnn.py`. See [progress](PROGRESS.md).

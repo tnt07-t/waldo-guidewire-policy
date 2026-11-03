@@ -18,11 +18,17 @@ The frozen ResNet-18 frame encoder in `cnn.py` is implemented locally (commit `0
 
 Owner-run Perlmutter one-case encoder verification passed (2026-11-02): the `cnn.py` smoke check completed successfully. Exact printed device, remote HEAD, and optional flags were not supplied; do not repeat the completed default check without a code/data change or concrete concern.
 
-`cnn_diagnostics.py` adds separate 512-d probes—history **occlusion sensitivity** (not wire detection), goal **marker-region perturbation** vs translated controls (edits before prep), and **temporal feature variation** vs aligned depth (magnitude association only)—so a later GRU’s inputs can be judged without changing `cnn.py`. Diagnostics were corrected after the first owner GPU run (uint8 red overflow, control design, wording, temporal correlation). Ten invented-input regression tests passed locally (tool-verified). A re-run on Perlmutter with overlays is needed before treating marker/occlusion aggregates as current. GRU/LSTM, depth/time fusion, the current-input baseline, training, and evaluation are not implemented. Basic dataset validation has already passed as recorded in the dataset notes; do not repeat it without a concrete reason.
+`mlp_cnn.py` encodes the prepared goal through the shared frozen ResNet (`encode_goal` → `[512]` / `[B, 512]`) for MLP fusion with the GRU `[128]` summary. Prep stays in `DINOv2Preprocessor.prepare_case`; history/GRU stay in `gru.py`. Teammate can add the MLP in `mlp_cnn.py`.
 
-**Immediate next steps:** re-run fixed `cnn_diagnostics.py` on Perlmutter with `--output-dir`; inspect mask/heatmap overlays on the machine; then agree on temporal model (GRU vs LSTM), depth/time use, and goal fusion before implementing the next stage.
+`cnn_diagnostics.py` remains available for 512-d probes. GRU–goal MLP fusion, the current-input baseline, training, and evaluation are not implemented. Basic dataset validation has already passed as recorded in the dataset notes; do not repeat it without a concrete reason.
+
+**Immediate next steps:** teammate adds MLP over `concat(gru_summary [B,128], goal_features [B,512])` in `mlp_cnn.py`.
 
 ## Progress log
+
+### 2026-11-03 — Goal→ResNet helper in `mlp_cnn.py` (local)
+
+`mlp_cnn.encode_goal` runs the prepared goal through the shared `FrameEncoder` (ResNet-18). Dropped redundant `prepare_goal` (prep already comes from `prepare_case`). Invented-input `tests/test_mlp_cnn.py` passed locally. MLP fusion still pending. No staging/commit/push in this note.
 
 ### 2026-11-02 — Diagnostics correctness fixes (local)
 
