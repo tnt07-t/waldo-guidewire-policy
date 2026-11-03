@@ -19,13 +19,8 @@ The proposed preprocessor keeps the wire intact instead:
 
 ## Data facts these tickets rely on
 
-Owner-reported on 2026-11-03 (recorded formally by T03):
-
-- `goal_xy` uses the same pixel coordinates as the history frames, and the goal image shows the same view.
-- The guidewire is dark and about 3-4 px wide; it is long and thin.
-- History frames are black and white.
-- The view does not shift between frames within a case, so frames need no alignment.
-- How far the wire tip usually is from `goal_xy` is unknown (T13 measures it).
+The owner-reported image facts (shared goal/history coordinates, a dark 3-4 px wire, grayscale frames, no view shift within a case, unknown tip distance) are recorded in [DATASET.md, Visual observations](../../DATASET.md#visual-observations).
+Because the view does not shift, frames need no alignment; T13 measures the tip distance from `goal_xy`.
 
 ## Where code is written and where it runs
 

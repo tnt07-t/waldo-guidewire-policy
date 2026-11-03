@@ -1,6 +1,6 @@
 # T03 - Record owner-reported data facts
 
-**Status:** Todo
+**Status:** Done
 **Code written:** laptop (docs only)
 **Tested:** nothing to run
 **Depends on:** nothing
