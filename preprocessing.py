@@ -6,6 +6,7 @@ weights, writes no files, and leaves the raw reader's images unchanged.
 
 from copy import deepcopy
 import math
+import random
 
 from PIL import Image
 import torch
@@ -245,11 +246,17 @@ class WirePreprocessor:
     and difference are in 0-1 pixel units, standardized by the given stats
     (see ``channel_stats``). ``zero_channels`` are zeroed after normalization
     for ablations. ``context_size`` adds a downscaled full view per image.
+    ``random_center_seed`` is a control: crops center on a seeded random
+    point far from the goal instead of on ``goal_xy``.
     """
 
     def __init__(self, crop_size=256, channels="raw", *, tophat_size=11,
                  difference="median", tophat_stats=(0.0, 1.0),
-                 difference_stats=(0.0, 1.0), zero_channels=(), context_size=None):
+                 difference_stats=(0.0, 1.0), zero_channels=(), context_size=None,
+                 random_center_seed=None):
+        # Kept so with_options can rebuild this configuration with changes.
+        self._options = {key: value for key, value in locals().items()
+                         if key not in ("self", "__class__")}
         check_crop_size(crop_size)
         if channels not in WIRE_CHANNEL_MODES:
             raise ValueError("channels must be one of {}".format(WIRE_CHANNEL_MODES))
@@ -261,6 +268,8 @@ class WirePreprocessor:
             raise ValueError("zero_channels may only contain 0, 1, and 2")
         if context_size is not None:
             check_crop_size(context_size)
+        if random_center_seed is not None and type(random_center_seed) is not int:
+            raise ValueError("random_center_seed must be an integer or None")
         self.crop_size = crop_size
         self.channels = channels
         self.tophat_size = tophat_size
@@ -269,8 +278,32 @@ class WirePreprocessor:
         self.difference_stats = _check_stats(difference_stats)
         self.zero_channels = tuple(sorted(set(zero_channels)))
         self.context_size = context_size
+        self.random_center_seed = random_center_seed
         self.mean = torch.tensor(MEAN, dtype=torch.float32).view(3, 1, 1)
         self.std = torch.tensor(STD, dtype=torch.float32).view(3, 1, 1)
+
+    def with_options(self, **changes):
+        """A new WirePreprocessor with this configuration plus ``changes``."""
+        return WirePreprocessor(**{**self._options, **changes})
+
+    def _center(self, case):
+        """Crop center: ``goal_xy``, or the random-center control's seeded point.
+
+        The control point is at least ``crop_size / 2`` from the goal and
+        inside the image. It is seeded per case, so every call and rerun
+        picks the same point for the same case.
+        """
+        if self.random_center_seed is None:
+            return case["goal_xy"]
+        width, height = case["goal_raw"].size
+        goal_x, goal_y = case["goal_xy"]
+        rng = random.Random("{}:{}:{}:{}".format(
+            self.random_center_seed, case.get("case_id"), goal_x, goal_y))
+        for _ in range(10000):
+            x, y = rng.randrange(width), rng.randrange(height)
+            if math.hypot(x - goal_x, y - goal_y) >= self.crop_size / 2:
+                return [x, y]
+        raise ValueError("No point inside the image is crop_size / 2 from goal_xy")
 
     def _normalize(self, gray, tophat=None, difference=None):
         """Model tensors [N,3,S,S] from 0-1 gray crops and wire channels [N,S,S]."""
@@ -287,13 +320,14 @@ class WirePreprocessor:
         return tensor
 
     def _crop_case(self, case):
-        """Crop goal_raw and history with one box; returns crops and gray [7,S,S]."""
+        """Crop goal_raw and history with one box; returns crops, gray [7,S,S], center."""
         check_history(case)
         if len(case["goal_xy"]) != 2:
             raise ValueError("Expected goal_xy to hold two coordinates")
-        crops = [goal_crop(image, case["goal_xy"], self.crop_size)
+        center = self._center(case)
+        crops = [goal_crop(image, center, self.crop_size)
                  for image in [case["goal_raw"], *case["history"]]]
-        return crops, _gray_tensor([crop for crop, _ in crops], self.crop_size)
+        return crops, _gray_tensor([crop for crop, _ in crops], self.crop_size), center
 
     def _wire_channels(self, gray):
         """Unnormalized top-hat and difference for gray [goal, *history] crops."""
@@ -338,7 +372,7 @@ class WirePreprocessor:
         ``context_size`` set, ``goal_context`` [3,C,C] and ``history_context``
         [6,3,C,C] are added; ``zero_channels`` does not apply to them.
         """
-        crops, gray = self._crop_case(case)
+        crops, gray, center = self._crop_case(case)
         if self.channels == "raw":
             tensors = self._normalize(gray)
         else:
@@ -359,6 +393,13 @@ class WirePreprocessor:
             "pixel_scale": "uint8 / 255",
             "zero_channels": self.zero_channels,
         }
+        if self.random_center_seed is not None:
+            preparation.update({
+                "crop_center": "random-center control: seeded point >= crop_size / 2 "
+                               "from goal_xy, rounded half up",
+                "random_center_seed": self.random_center_seed,
+                "random_center_xy": tuple(center),
+            })
         if self.channels == "enhanced":
             preparation.update({
                 "channel_order": ("raw", "black_tophat", "difference"),
@@ -450,7 +491,7 @@ def channel_stats(preprocessor, cases):
     """
     totals = {"tophat": [0.0, 0.0, 0], "difference": [0.0, 0.0, 0]}
     for case in cases:
-        _, gray = preprocessor._crop_case(case)
+        _, gray, _ = preprocessor._crop_case(case)
         tophat, difference = preprocessor._wire_channels(gray)
         for name, values in (("tophat", tophat[1:]), ("difference", difference[1:])):
             values = values.double()

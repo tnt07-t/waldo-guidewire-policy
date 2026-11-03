@@ -450,6 +450,57 @@ class WirePreprocessorTests(unittest.TestCase):
                                            torch.full((3,), 50 / 255))
 
 
+class ControlOptionTests(unittest.TestCase):
+    def case(self, case_id="invented", size=(1065, 1050)):
+        frame = Image.new("L", size, 100)
+        return {"goal": frame, "goal_raw": frame, "goal_xy": [532.04, 345.01],
+                "history": [frame] * 6, "case_id": case_id,
+                "depth_relative_mm": [-5, -4, -3, -2, -1, 0],
+                "history_offsets_s": [-4.0, -3.2, -2.4, -1.6, -0.8, 0.0]}
+
+    def test_random_centers_are_seeded_valid_and_far_from_goal(self):
+        prep = WirePreprocessor(crop_size=256, random_center_seed=7)
+        centers = set()
+        for i in range(20):
+            case = self.case("case-{}".format(i))
+            result = prep.prepare_case(case)
+            x, y = result["preparation"]["random_center_xy"]
+            self.assertTrue(0 <= x < 1065 and 0 <= y < 1050)
+            self.assertGreaterEqual(math.hypot(x - 532.04, y - 345.01), 128)
+            # The same case gets the same point on every call.
+            self.assertEqual(prep.prepare_case(case)["preparation"]["random_center_xy"], (x, y))
+            # All seven crops use that point as their center.
+            box = result["preparation"]["history"][5]["crop_box_ltrb"]
+            self.assertEqual((box[0] + 128, box[1] + 128), (x, y))
+            self.assertEqual(result["preparation"]["goal"]["crop_box_ltrb"], box)
+            centers.add((x, y))
+        self.assertGreater(len(centers), 1)
+        other = WirePreprocessor(crop_size=256, random_center_seed=8).prepare_case(self.case("case-0"))
+        self.assertNotEqual(other["preparation"]["random_center_xy"],
+                            prep.prepare_case(self.case("case-0"))["preparation"]["random_center_xy"])
+        plain = WirePreprocessor(crop_size=256).prepare_case(self.case())
+        self.assertNotIn("random_center_xy", plain["preparation"])
+
+    def test_random_center_impossible_when_image_is_small(self):
+        prep = WirePreprocessor(crop_size=512, random_center_seed=0)
+        with self.assertRaisesRegex(ValueError, "crop_size / 2"):
+            prep.prepare_case(dict(self.case(size=(96, 96)), goal_xy=[48, 48]))
+        with self.assertRaises(ValueError):
+            WirePreprocessor(random_center_seed=1.5)
+
+    def test_with_options_copies_settings_and_ablation_zeroes_channel(self):
+        prep = WirePreprocessor(64, "enhanced", tophat_size=7, difference="previous")
+        ablated = prep.with_options(zero_channels=(2,))
+        self.assertEqual((ablated.crop_size, ablated.channels, ablated.tophat_size,
+                          ablated.difference, ablated.zero_channels),
+                         (64, "enhanced", 7, "previous", (2,)))
+        self.assertEqual(prep.zero_channels, ())
+        case = dict(self.case(size=(96, 96)), goal_xy=[48, 48])
+        result = ablated.prepare_case(case)
+        self.assertTrue(torch.equal(result["history"][:, 2], torch.zeros(6, 64, 64)))
+        self.assertTrue(torch.equal(result["goal"][2], torch.zeros(64, 64)))
+
+
 class EnhancedChannelTests(unittest.TestCase):
     # 96 px frames, goal at the center, 64 px crop: crop x = image x - 16.
     STATIC_COLUMNS = range(54, 58)

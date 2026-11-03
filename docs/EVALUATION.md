@@ -83,6 +83,57 @@ python evaluation.py \
   --output-dir "$PSCRATCH/waldo-evaluation/wire-raw-256-01"
 ```
 
+### Controls
+
+With 80 validation cases one split's balanced accuracy has a 95% interval of about +/-0.11, so a gain needs controls before it means anything.
+Each control is opt-in, runs on the same `--split-position`, and is written to the run's `metrics.json` under `controls` and as one line per result under "Controls" in `summary.md`, next to the normal result.
+
+| Flag | What it does | A real gain looks like |
+| --- | --- | --- |
+| `--shuffled-labels [--permutations 20]` | Refits each encoder's `latest_goal` probe on permuted training labels (class counts kept, seeded by `--control-seed`), selecting C the same way | Real BA clearly above the permuted max |
+| `--random-center` | `wire` only: crops every image around a seeded random point at least `crop_size / 2` from the goal and inside the image; the preparation record keeps the point | Lower BA than goal-centered crops |
+| `--ablate-channels 1 2` | `wire --channels enhanced` only: zeroes the top-hat (1) or difference (2) channel for training and validation, then refits | Lower BA; if nothing changes, drop that channel |
+| `--all-splits` | Runs the same configuration on split positions 0-4 (instead of `--split-position`) | Gain on most splits, not one |
+
+`--all-splits` reports each split's validation BA and their plain mean; cases are never pooled across splits, since the splits overlap.
+It cannot be combined with the other controls, so runtime stays bounded; run the controls on split 0.
+
+```sh
+# Run on Perlmutter, in a GPU allocation.
+python evaluation.py --split-position 0 --encoders resnet18 \
+  --preprocessor wire --crop-size 256 --channels enhanced \
+  --shuffled-labels --random-center --ablate-channels 1 2 \
+  --device cuda --output-dir "$PSCRATCH/waldo-evaluation/wire-controls-01"
+python evaluation.py --all-splits --encoders resnet18 \
+  --preprocessor wire --crop-size 256 --channels enhanced \
+  --device cuda --output-dir "$PSCRATCH/waldo-evaluation/wire-all-splits-01"
+```
+
+### Preprocessing selection inside training
+
+Comparing about ten configurations on the same 80 validation cases would inflate the winner's score.
+`select_preprocessing.py` instead scores each `WirePreprocessor` configuration with episode-grouped 5-fold CV inside the training partition (`GroupKFold` by `episode`); validation and test images are never encoded.
+In each rotation, C is chosen by a further grouped CV over the four fitting folds only, then the probe is scored once on the held-out fold.
+
+Parameters are searched one at a time, keeping the others at their current best:
+
+1. crop size (`--crop-sizes`, from the notebook tally);
+2. channel mode, raw vs enhanced;
+3. difference mode, median vs previous (only if enhanced wins);
+4. top-hat size (only if `--tophat-sizes` lists more than one value).
+
+Within one standard deviation of the best, the cheaper configuration wins (smaller crop, raw before enhanced).
+The context view is not searched, because the static probe does not use it.
+The script writes `selection.json` and a `summary.md` table of configuration, mean and std inner balanced accuracy, plus the one `evaluation.py` command that confirms the selection on validation.
+Run that command once; do not go back and re-select after seeing validation.
+
+```sh
+# Run on Perlmutter, in a GPU allocation.
+python select_preprocessing.py --split-position 0 \
+  --crop-sizes 192 256 384 --tophat-sizes 11 \
+  --device cuda --output-dir "$PSCRATCH/waldo-evaluation/select-01"
+```
+
 ### Compute allocation and cache troubleshooting
 
 The current shared interactive queue required 32 CPU cores per GPU in Sabrina's run; a four-core request was rejected. Request matching resources in allocation and job step, using your available GPU account. Paste each command on one line; backslashes only work when immediately followed by a newline.

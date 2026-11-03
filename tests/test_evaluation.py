@@ -7,6 +7,8 @@ import numpy as np
 
 from evaluation import (check_partitions, design_matrix, episode_interval,
                         benchmark_encoders, collect, diagnostic_notes, evaluate, fit_probe, metrics)
+from evaluation import (all_splits_summary, control_lines, grouped_fold_index, inner_cv,
+                        label_permutations, shuffled_label_control)
 
 
 class EvaluationTests(unittest.TestCase):
@@ -104,6 +106,74 @@ class EvaluationTests(unittest.TestCase):
                                     warmup=1, repeats=3)
         self.assertEqual(encoder.seen, [99, 5] * 4)
         self.assertIsNone(timing["resnet18"]["peak_cuda_bytes"])
+
+
+def separable_features(episodes=10):
+    """Two cases per episode, one per class; the latest frame carries the label."""
+    y = np.array([0, 1] * episodes)
+    return {"y": y, "episode": np.repeat(["e" + str(i) for i in range(episodes)], 2),
+            "metadata": np.zeros((2 * episodes, 12)),
+            "history": np.tile(y[:, None, None], (1, 6, 3)).astype(float)
+            + np.linspace(0, 0.1, 2 * episodes)[:, None, None],
+            "goal": np.zeros((2 * episodes, 3))}
+
+
+class ControlAndSelectionTests(unittest.TestCase):
+    def test_label_permutations_keep_class_counts_and_are_seeded(self):
+        y = np.array([0] * 7 + [1] * 13)
+        permutations = label_permutations(y, 5, seed=3)
+        self.assertEqual(len(permutations), 5)
+        for permuted in permutations:
+            self.assertEqual(np.bincount(permuted).tolist(), [7, 13])
+        self.assertFalse(all(np.array_equal(p, y) for p in permutations))
+        for again, first in zip(label_permutations(y, 5, seed=3), permutations):
+            np.testing.assert_array_equal(again, first)
+
+    def test_shuffled_label_control_reports_distribution(self):
+        train, val = separable_features(), separable_features()
+        result = shuffled_label_control(design_matrix(train, "latest_goal"), train["y"],
+                                        design_matrix(val, "latest_goal"), val["y"],
+                                        permutations=3, seed=0)
+        self.assertEqual(len(result["validation_balanced_accuracy"]), 3)
+        self.assertTrue(all(0 <= s <= 1 for s in result["validation_balanced_accuracy"]))
+        self.assertLessEqual(result["mean"], result["max"])
+
+    def test_grouped_folds_never_share_an_episode(self):
+        episodes = np.array(["e{}".format(i // 3) for i in range(60)])
+        fold = grouped_fold_index(episodes, 5)
+        self.assertEqual(sorted(set(fold.tolist())), [0, 1, 2, 3, 4])
+        for k in range(5):
+            scored = set(episodes[fold == k])
+            fitted = set(episodes[fold != k])
+            self.assertFalse(scored & fitted)
+            # Inner C selection inside rotation k must not see fold k either.
+            for j in set(range(5)) - {k}:
+                inner_fit = set(episodes[(fold != k) & (fold != j)])
+                self.assertFalse(inner_fit & scored)
+                self.assertFalse(inner_fit & set(episodes[fold == j]))
+
+    def test_inner_cv_scores_each_fold(self):
+        result = inner_cv(separable_features(), "latest_goal", n_splits=5)
+        self.assertEqual(len(result["fold_balanced_accuracy"]), 5)
+        self.assertEqual(len(result["selected_C"]), 5)
+        self.assertEqual(result["mean"], 1.0)
+        self.assertEqual(result["std"], 0.0)
+
+    def test_all_splits_summary_and_control_lines(self):
+        def result(score):
+            return {"validation": {"balanced_accuracy": score}}
+        summary = all_splits_summary({0: {"a:latest_goal": result(.5)},
+                                      1: {"a:latest_goal": result(.7)}})
+        self.assertEqual(summary["a:latest_goal"]["validation_balanced_accuracy"],
+                         {"0": .5, "1": .7})
+        self.assertAlmostEqual(summary["a:latest_goal"]["mean"], .6)
+        controls = {"shuffled_labels": {"a:latest_goal": {"mean": .5, "max": .55,
+                                                          "permutations": 20}},
+                    "random_center": {"results": {"a:latest_goal": result(.52)}}}
+        lines = control_lines(controls, {"a:latest_goal": result(.7)})
+        self.assertEqual(len(lines), 2)
+        self.assertIn("real BA 0.700", lines[0])
+        self.assertIn("random_center", lines[1])
 
 
 class WirePreprocessorEvaluationTests(unittest.TestCase):
