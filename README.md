@@ -70,21 +70,28 @@ test -d "$DATA_DIR" && printf 'Dataset directory exists\n'
 The owner confirmed Python 3.12.13 and Pillow 12.3.0 after loading the candidate `pytorch/2.13.0` module on Perlmutter. Subsequent Group 2 checks verified pretrained DINOv2 CPU extraction using a scratch venv with timm 1.0.30; Group 1 reports a one-case CNN GPU diagnostic run. Tran's GPU path and team-wide environment adoption remain open; Sabrina separately reports a completed GPU static evaluation. See the approach notes for evidence and next steps. Do not repeat the completed environment inventory or basic dataset validation.
 
 ## Project Environment Setup
+
 Setup the conda environment for the project
+
 ```
+git pull
 module load conda
 ```
 
-For first time, create environment with `environment.yml` file. If conda environment already created, skip this step. 
+For first time, create environment with `environment.yml` file. If conda environment already created, skip this step.
+
 ```
 conda env create -f environment.yml
 ```
 
 Activate and update environment
+
 ```
+conda env update -n final_project_env -f environment.yml --prune
 conda activate final_project_env
-conda env update -f environment.yml --prune
 ```
+
+==If you have install a new package, don't simply run conda install. Also run the following command to update the packages.`conda env export --from-history | grep -v '^prefix:' > environment.ym`==
 
 ## Lightweight collaboration
 
