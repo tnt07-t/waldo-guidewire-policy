@@ -1,4 +1,10 @@
+# personal training docs
 docs/andrew
 docs/tran
 docs/suhani
 docs/sabrina
+
+# env installments
+
+# cache
+__pycache__/
