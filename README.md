@@ -91,7 +91,7 @@ conda env update -n final_project_env -f environment.yml --prune
 conda activate final_project_env
 ```
 
-==If you have install a new package, don't simply run conda install. Also run the following command to update the packages.`conda env export --from-history | grep -v '^prefix:' > environment.ym`==
+If you have installed a new package, don't simply run conda install, add it to the pip list for environment.yml.
 
 ## Lightweight collaboration
 

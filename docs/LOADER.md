@@ -25,6 +25,10 @@ This example selects the first supplied split object and its training partition 
 ## Returned case
 
 - `goal`: one detached Pillow image from `paths[0]`, including the supplied target marking.
+- `goal_raw`: one detached Pillow image from `clean_paths[0]`, the same goal frame without the target marking.
+  It goes through the same path checks as every other image.
+  A record without seven `clean_paths` or two `goal_xy` values raises `ValueError`.
+- `goal_xy`: the record's two target pixel coordinates `[x, y]` from the top-left, unchanged, in the same pixel coordinates as the history frames.
 - `history`: six detached Pillow images from `paths[1:]`, in chronological order.
 - `depth_relative_mm`: six original numbers, aligned with history.
 - `history_offsets_s`: six original numbers, aligned with history.
