@@ -8,3 +8,4 @@ docs/sabrina
 
 # cache
 __pycache__/
+*.pyc
