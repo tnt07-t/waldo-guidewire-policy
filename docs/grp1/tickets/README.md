@@ -76,26 +76,29 @@ Anything that loads ResNet weights on real cases, runs the probe, or benchmarks 
 
 ## Tickets and order
 
-| ID | Title | Perlmutter run | Depends on |
-| --- | --- | --- | --- |
-| [T01](T01-perlmutter-test-setup.md) | Perlmutter test setup | Existing tests, dependency check | - |
-| [T02](T02-repo-hygiene.md) | Untrack `__pycache__` and fix `.gitignore` | Existing tests | - |
-| [T03](T03-record-data-facts.md) | Record owner-reported data facts | None (docs) | - |
-| [T04](T04-reader-goal-xy-and-raw.md) | Expose `goal_xy` and unmarked goal from the reader | Tests + one real case | T01 |
-| [T05](T05-preparation-metadata-refactor.md) | Make `prepare_case` metadata preprocessor-specific | Tests | T01 |
-| [T06](T06-black-tophat.md) | Fast black top-hat filter | Tests | T01 |
-| [T07](T07-goal-centered-crop.md) | Goal-centered native-resolution crop | Tests | T01 |
-| [T08](T08-wire-preprocessor-raw.md) | `WirePreprocessor`, raw mode | Tests | T04, T05, T07 |
-| [T09](T09-enhanced-channels.md) | Enhanced channels: top-hat and difference | Tests | T06, T08 |
-| [T10](T10-context-view.md) | Optional full-view context input | Tests | T08 |
-| [T11](T11-cli-integration.md) | Preprocessor flags in `cnn.py` and `cnn_diagnostics.py` | Tests + one real case | T08 (T09, T10 when present) |
-| [T12](T12-latency-benchmark.md) | Preprocessing latency benchmark | GPU node | T09 |
-| [T13](T13-inspection-notebook-cells.md) | Notebook cells: channel check and crop-size boxes | Notebook | T09 |
-| [T14](T14-port-static-probe.md) | Bring the static probe to Group 1 with preprocessor options | Tests | T08, owner approval |
-| [T15](T15-probe-controls.md) | Probe controls: shuffled labels, random center, channel ablation, all splits | Tests | T14 |
-| [T16](T16-grouped-inner-cv.md) | Episode-grouped inner CV for parameter selection | Tests | T14 |
-| [T17](T17-experiment-ladder.md) | Run the evaluation ladder | GPU node, full ladder | T11-T16 |
-| [T18](T18-docs-and-progress.md) | Documentation and progress write-up | None (docs) | T17 |
+Status as of 2026-11-03; results are in [the progress entry](../PROGRESS.md#2026-11-03---wire-preserving-preprocessing-and-frozen-feature-probe-owner-run-ladder-stopped-early).
+Finished ticket files were removed by the owner, so some links below no longer resolve.
+
+| ID | Title | Perlmutter run | Depends on | Status |
+| --- | --- | --- | --- | --- |
+| [T01](T01-perlmutter-test-setup.md) | Perlmutter test setup | Existing tests, dependency check | - | Closed by owner |
+| [T02](T02-repo-hygiene.md) | Untrack `__pycache__` and fix `.gitignore` | Existing tests | - | Done |
+| [T03](T03-record-data-facts.md) | Record owner-reported data facts | None (docs) | - | Done |
+| [T04](T04-reader-goal-xy-and-raw.md) | Expose `goal_xy` and unmarked goal from the reader | Tests + one real case | T01 | Done; marker-free view not reported |
+| [T05](T05-preparation-metadata-refactor.md) | Make `prepare_case` metadata preprocessor-specific | Tests | T01 | Done |
+| [T06](T06-black-tophat.md) | Fast black top-hat filter | Tests | T01 | Done |
+| [T07](T07-goal-centered-crop.md) | Goal-centered native-resolution crop | Tests | T01 | Done |
+| [T08](T08-wire-preprocessor-raw.md) | `WirePreprocessor`, raw mode | Tests | T04, T05, T07 | Done |
+| [T09](T09-enhanced-channels.md) | Enhanced channels: top-hat and difference | Tests | T06, T08 | Built; tests not reported |
+| [T10](T10-context-view.md) | Optional full-view context input | Tests | T08 | Built (opt-in); tests not reported |
+| [T11](T11-cli-integration.md) | Preprocessor flags in `cnn.py` and `cnn_diagnostics.py` | Tests + one real case | T08 (T09, T10 when present) | Built; used in real runs |
+| [T12](T12-latency-benchmark.md) | Preprocessing latency benchmark | GPU node | T09 | Not built; `evaluation.py --benchmark` used instead |
+| [T13](T13-inspection-notebook-cells.md) | Notebook cells: channel check and crop-size boxes | Notebook | T09 | Cells written; not run |
+| [T14](T14-port-static-probe.md) | Bring the static probe to Group 1 with preprocessor options | Tests | T08, owner approval | Built; used in real runs |
+| [T15](T15-probe-controls.md) | Probe controls: shuffled labels, random center, channel ablation, all splits | Tests | T14 | Built; controls not run |
+| [T16](T16-grouped-inner-cv.md) | Episode-grouped inner CV for parameter selection | Tests | T14 | Built; run on split 0 |
+| [T17](T17-experiment-ladder.md) | Run the evaluation ladder | GPU node, full ladder | T11-T16 | Partly run; stopped by owner |
+| [T18](T18-docs-and-progress.md) | Documentation and progress write-up | None (docs) | T17 | Done (with results so far) |
 
 T01-T03 and T06-T07 can be implemented in parallel.
 Batching several tickets into one Perlmutter run is fine, as long as each ticket's commands and results are reported separately.

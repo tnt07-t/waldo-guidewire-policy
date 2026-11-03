@@ -1,6 +1,6 @@
 # T18 - Documentation and progress write-up
 
-**Status:** Todo
+**Status:** Done (with results so far; see the progress entry)
 **Code written:** laptop (docs only)
 **Tested:** nothing to run
 **Depends on:** T17 (smaller doc updates happen inside each ticket)

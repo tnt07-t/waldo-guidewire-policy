@@ -102,6 +102,25 @@ python3 cnn.py --split-position 0 --partition train --preprocessor wire --crop-s
 
 Each run prints the device, `(1, 6, 512)`, `(1, 512)` and `Frozen encoder check passed.`
 
+## Wire preprocessing
+
+**Why:** `DINOv2Preprocessor` shrinks the whole 1065 x 1050 frame to 518, so the dark 3-4 px guidewire becomes about 1.5-2 px before the ResNet stem and is averaged away by global pooling.
+
+**Design** (`WirePreprocessor` in `preprocessing.py`):
+
+- one square box around `goal_xy` (rounded half up) is cropped at native resolution from the unmarked goal (`goal_raw`) and all six history frames, since the view is fixed within a case;
+- outside the image the box repeats edge pixels; the crop size must be a multiple of 32;
+- `raw` repeats the gray crop to three channels with ImageNet normalization, as the frozen ResNet expects;
+- `enhanced` uses raw, a black top-hat (thin dark structures) and a frame difference (median or previous frame); the goal's difference channel is zero, and `--standardize-channels` fits the extra channels' scale on training cases;
+- optional `context_size` adds a downscaled full view; `random_center_seed` and `zero_channels` exist for controls.
+
+**Chosen parameters:** none are adopted yet; `dinov2` stays the default.
+Training-only selection preferred a raw 512 crop (inner BA 0.597), but it scored 0.506 on split 0 validation against 0.547 for the full-frame baseline.
+The visual check of top-hat size and crop size (T13 notebook cells) was not run.
+Results, latency and limits are recorded once in [the 2026-11-03 progress entry](PROGRESS.md#2026-11-03---wire-preserving-preprocessing-and-frozen-feature-probe-owner-run-ladder-stopped-early).
+
+**Commands:** the flags are in [Preprocessor options](#preprocessor-options); the probe, controls and selection commands are in [EVALUATION.md](../EVALUATION.md#preprocessor-options).
+
 Weights download or cache access must work on Perlmutter. Keeping Torch Hub caches under scratch is recommended before constructing the encoder if home-quota limits appear:
 
 ```sh
