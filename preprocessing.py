@@ -505,3 +505,12 @@ def channel_stats(preprocessor, cases):
         mean = total / count
         stats[name + "_stats"] = (mean, math.sqrt(max(squares / count - mean ** 2, 0.0)))
     return stats
+
+
+def standardize_wire_channels(preprocessor, cases):
+    """``preprocessor`` with top-hat/difference stats fitted on ``cases``.
+
+    Like ``channel_stats``, call this on TRAINING cases only. The stats use
+    no labels; they are recorded in each ``preparation`` record.
+    """
+    return preprocessor.with_options(**channel_stats(preprocessor, cases))

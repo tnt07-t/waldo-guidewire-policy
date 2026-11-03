@@ -69,6 +69,10 @@ Without them it runs the default `dinov2` full-view preparation, and every defau
 
 - `--preprocessor wire` needs `--encoders resnet18`; the DINOv2 encoder is only accepted with the `dinov2` preprocessor.
 - `--context-size` is rejected, since the probe only encodes the crops.
+- `--standardize-channels` (with `--channels enhanced`) standardizes the top-hat and difference channels to zero mean and unit std, using stats fitted on each split's training cases only (no labels).
+  Without it those channels enter the ResNet in 0-1 pixel units while channel 0 is ImageNet-normalized.
+  The stats are recorded per split in `metrics.json`, and the controls inherit them.
+  `select_preprocessing.py` takes the same flag and adds it to its confirm command.
 - `metrics.json` records the preprocessor's own `preparation` settings (crop size, channels, top-hat size, difference mode, normalization), without per-case geometry.
 - With `--benchmark`, wire timing prepares the whole case, because the difference channel needs all six frames; `prepared_images_per_case` says how many images were prepared.
 

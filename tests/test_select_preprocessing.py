@@ -49,6 +49,11 @@ class SelectionTests(unittest.TestCase):
         self.assertIn("--preprocessor wire --crop-size 256 --channels enhanced", command)
         self.assertIn("--tophat-size 11 --difference median", command)
         self.assertIn("--encoders resnet18", command)
+        self.assertNotIn("--standardize-channels", command)
+        standardized = confirm_command({"crop_size": 256, "channels": "enhanced"}, 0, True)
+        self.assertIn("--standardize-channels", standardized)
+        raw = confirm_command({"crop_size": 256, "channels": "raw"}, 0, True)
+        self.assertNotIn("--standardize-channels", raw)
 
 
 if __name__ == "__main__":

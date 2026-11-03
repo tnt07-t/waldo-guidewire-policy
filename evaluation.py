@@ -426,7 +426,11 @@ def main():
     controls.add_argument("--ablate-channels", type=int, nargs="+", choices=sorted(ABLATIONS),
                           default=[], help="Also zero these enhanced channels (1 top-hat, 2 difference)")
     controls.add_argument("--control-seed", type=int, default=0)
-    from preprocessing import add_preprocessor_arguments, build_preprocessor
+    parser.add_argument("--standardize-channels", action="store_true",
+                        help="Fit top-hat/difference standardization on each split's training "
+                             "cases (wire --channels enhanced)")
+    from preprocessing import (add_preprocessor_arguments, build_preprocessor,
+                               standardize_wire_channels)
     add_preprocessor_arguments(parser)
     args = parser.parse_args()
     try:
@@ -445,6 +449,8 @@ def main():
         parser.error("--random-center needs --preprocessor wire")
     if args.ablate_channels and args.channels != "enhanced":
         parser.error("--ablate-channels needs --preprocessor wire --channels enhanced")
+    if args.standardize_channels and args.channels != "enhanced":
+        parser.error("--standardize-channels needs --preprocessor wire --channels enhanced")
     if args.permutations < 1:
         parser.error("--permutations must be positive")
     scratch = os.environ.get("PSCRATCH")
@@ -478,6 +484,14 @@ def main():
     if "resnet18" in args.encoders:
         from cnn import FrameEncoder
         encoders["resnet18"] = FrameEncoder().to(args.device).eval()
+    split_prepare = {}
+    for position in positions:
+        train_cases = split_datasets[position]["train"]
+        # Standardization uses only this split's training cases, never validation.
+        split_prepare[position] = (standardize_wire_channels(
+            prepare, (train_cases[i] for i in range(len(train_cases))))
+            if args.standardize_channels else prepare)
+    prepare = split_prepare[positions[0]]
     first_case = split_datasets[positions[0]]["train"][0]
     preparation = preparation_record(prepare, first_case)
     timings = benchmark_encoders(first_case, prepare, encoders, args.device) if args.benchmark else None
@@ -495,7 +509,7 @@ def main():
                 "val_features": val_features, "results": results,
                 "predictions": predictions, "seconds": seconds}
 
-    runs = {position: extract_and_evaluate(split_datasets[position], prepare)
+    runs = {position: extract_and_evaluate(split_datasets[position], split_prepare[position])
             for position in positions}
 
     control_results = {}
@@ -523,11 +537,17 @@ def main():
 
     def split_report(position):
         run, datasets = runs[position], split_datasets[position]
-        return {"split_position": position, "fold": datasets["train"].fold,
-                "partition_counts": {name: len(data) for name, data in datasets.items()},
-                "feature_extraction_wall_seconds": run["seconds"],
-                "diagnostic_hypotheses": diagnostic_notes(run["results"]),
-                "results": run["results"]}
+        report = {"split_position": position, "fold": datasets["train"].fold,
+                  "partition_counts": {name: len(data) for name, data in datasets.items()},
+                  "feature_extraction_wall_seconds": run["seconds"],
+                  "diagnostic_hypotheses": diagnostic_notes(run["results"]),
+                  "results": run["results"]}
+        if args.standardize_channels:
+            report["channel_stats"] = {
+                "tophat_stats": split_prepare[position].tophat_stats,
+                "difference_stats": split_prepare[position].difference_stats,
+                "fitted_on": "this split's training cases only"}
+        return report
 
     def private_predictions(position):
         run = runs[position]

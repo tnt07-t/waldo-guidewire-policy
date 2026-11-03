@@ -10,7 +10,8 @@ import torch
 
 from preprocessing import (CHECKPOINT, CONTEXT_FILL, MEAN, STD, DINOv2Preprocessor,
                            WirePreprocessor, add_preprocessor_arguments, black_tophat,
-                           build_preprocessor, channel_stats, goal_crop)
+                           build_preprocessor, channel_stats, goal_crop,
+                           standardize_wire_channels)
 
 
 def legacy_prepare_case(prep, case):
@@ -616,6 +617,19 @@ class EnhancedChannelTests(unittest.TestCase):
         WirePreprocessor(64, "enhanced", **stats)
         with self.assertRaises(ValueError):
             channel_stats(prep, [])
+
+    def test_standardize_wire_channels_gives_zero_mean_unit_std(self):
+        cases = [self.moving()[0], self.line_case([30] * 6)]
+        prep = WirePreprocessor(64, "enhanced", difference="previous")
+        standardized = standardize_wire_channels(prep, iter(cases))
+        self.assertEqual(standardized.difference, "previous")
+        self.assertEqual((standardized.tophat_stats, standardized.difference_stats),
+                         tuple(channel_stats(prep, cases).values()))
+        history = torch.cat([standardized.prepare_case(case)["history"] for case in cases])
+        for channel in (1, 2):
+            values = history[:, channel].double()
+            self.assertAlmostEqual(values.mean().item(), 0.0, places=4)
+            self.assertAlmostEqual(values.std(unbiased=False).item(), 1.0, places=4)
 
 
 class PreprocessorFactoryTests(unittest.TestCase):

@@ -72,9 +72,11 @@ def config_label(config):
     return ", ".join("{}={}".format(key, value) for key, value in config.items())
 
 
-def confirm_command(config, split_position):
+def confirm_command(config, split_position, standardize=False):
     flags = ["--preprocessor wire"] + ["--{} {}".format(key.replace("_", "-"), value)
                                        for key, value in config.items()]
+    if standardize and config["channels"] == "enhanced":
+        flags.append("--standardize-channels")
     return ("python evaluation.py --split-position {} --encoders resnet18 {} "
             "--device cuda --output-dir \"$PSCRATCH/waldo-evaluation/<new-run>\"".format(
                 split_position, " ".join(flags)))
@@ -94,6 +96,9 @@ def main():
     parser.add_argument("--mode", choices=MODES, default="latest_goal",
                         help="Probe feature design scored in each fold")
     parser.add_argument("--folds", type=int, default=5)
+    parser.add_argument("--standardize-channels", action="store_true",
+                        help="Standardize enhanced top-hat/difference channels with stats "
+                             "fitted on the training partition (no labels used)")
     args = parser.parse_args()
     scratch = os.environ.get("PSCRATCH")
     if not scratch or not args.data_dir:
@@ -110,7 +115,7 @@ def main():
     import torch
     from cnn import FrameEncoder
     from dataset import GuidewireDataset
-    from preprocessing import WirePreprocessor
+    from preprocessing import WirePreprocessor, standardize_wire_channels
 
     if args.device == "cuda" and not torch.cuda.is_available():
         parser.error("CUDA unavailable; use an allocated GPU node or explicitly choose cpu")
@@ -133,16 +138,25 @@ def main():
         # Each configuration's training features are extracted once.
         key = json.dumps(config, sort_keys=True)
         if key not in cache:
-            _, features = collect(datasets["train"], WirePreprocessor(**config),
-                                  {"resnet18": encoder})
-            cache[key] = {"config": config,
+            prepare = WirePreprocessor(**config)
+            extra = {}
+            if args.standardize_channels and config["channels"] == "enhanced":
+                # Label-free stats from the whole training partition, shared by
+                # all inner folds; validation is still never touched.
+                train = datasets["train"]
+                prepare = standardize_wire_channels(
+                    prepare, (train[i] for i in range(len(train))))
+                extra["channel_stats"] = {"tophat_stats": prepare.tophat_stats,
+                                          "difference_stats": prepare.difference_stats}
+            _, features = collect(datasets["train"], prepare, {"resnet18": encoder})
+            cache[key] = {"config": config, **extra,
                           **inner_cv(features["resnet18"], args.mode, n_splits=args.folds)}
             print("{}: inner BA {:.3f} +/- {:.3f}".format(
                 config_label(config), cache[key]["mean"], cache[key]["std"]))
         return cache[key]
 
     selected, stages = search(score, args.crop_sizes, args.tophat_sizes)
-    command = confirm_command(selected, args.split_position)
+    command = confirm_command(selected, args.split_position, args.standardize_channels)
     git = subprocess.run(["git", "rev-parse", "HEAD"], capture_output=True, text=True)
     dirty = subprocess.run(["git", "status", "--porcelain"], capture_output=True, text=True)
     report = {"created_utc": datetime.now(timezone.utc).isoformat(),
@@ -150,6 +164,7 @@ def main():
               "device": args.device, "split_position": args.split_position,
               "fold": datasets["train"].fold, "encoder": "resnet18", "mode": args.mode,
               "inner_folds": args.folds, "training_cases": len(datasets["train"]),
+              "standardize_channels": args.standardize_channels,
               "selection_rule": "one parameter at a time; cheapest within one std of the best",
               "validation_note": "Validation and test were not encoded; confirm the selection once with evaluation.py",
               "configurations": list(cache.values()), "stages": stages,
