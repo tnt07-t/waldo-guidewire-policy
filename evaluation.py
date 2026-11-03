@@ -164,6 +164,21 @@ def collect(dataset, prepare, encoders):
     return shared, data
 
 
+def static_images(prepare, case):
+    """Goal and latest-frame tensors [2,3,H,W] plus how many images were prepared."""
+    import torch
+    from preprocessing import WirePreprocessor
+
+    if isinstance(prepare, WirePreprocessor):
+        # Wire crops need goal_xy, and the enhanced difference channel needs
+        # all six history frames, so the whole case is prepared.
+        prepared = prepare.prepare_case(case)
+        return torch.stack([prepared["goal"], prepared["history"][-1]]), 7
+    # Only prepare the two images consumed by this static policy.
+    return torch.stack([prepare.prepare_image(case["goal"])["tensor"],
+                        prepare.prepare_image(case["history"][-1])["tensor"]]), 2
+
+
 def benchmark_encoders(case, prepare, encoders, device, *, warmup=5, repeats=20):
     """Batch-one, current-frame + goal encoding; classifier/disk IO excluded."""
     import torch
@@ -172,12 +187,11 @@ def benchmark_encoders(case, prepare, encoders, device, *, warmup=5, repeats=20)
         if device == "cuda":
             torch.cuda.synchronize()
 
+    _, prepared_count = static_images(prepare, case)
     timings = {}
     for name, encoder in encoders.items():
         def static_run():
-            # Only prepare the two images consumed by this static policy.
-            images = torch.stack([prepare.prepare_image(case["goal"])["tensor"],
-                                  prepare.prepare_image(case["history"][-1])["tensor"]])
+            images, _ = static_images(prepare, case)
             sync()
             boundary = time.perf_counter()
             with torch.inference_mode():
@@ -205,7 +219,8 @@ def benchmark_encoders(case, prepare, encoders, device, *, warmup=5, repeats=20)
             total.append((end - start) * 1000)
         timings[name] = {
             "warmup": warmup, "repeats": repeats, "case_batch_size": 1,
-            "images_per_case": 2, "image_chunk_size": 1,
+            "images_per_case": 2, "prepared_images_per_case": prepared_count,
+            "image_chunk_size": 1,
             "scope": "Repeated same in-memory training case; goal+latest encoding only. Includes CPU preparation and H2D. Excludes disk IO, classifier, and metadata. Both backbones may be resident.",
             "milliseconds": {key: {"median": float(np.median(value)),
                                    "p95": float(np.percentile(value, 95))}
@@ -281,7 +296,17 @@ def main():
     parser.add_argument("--device", choices=("cpu", "cuda"), default="cuda")
     parser.add_argument("--bootstrap-repeats", type=int, default=1000)
     parser.add_argument("--benchmark", action="store_true", help="Also time static encoder components on one training case")
+    from preprocessing import add_preprocessor_arguments, build_preprocessor
+    add_preprocessor_arguments(parser)
     args = parser.parse_args()
+    try:
+        prepare = build_preprocessor(args)
+    except ValueError as exc:
+        parser.error(str(exc))
+    if args.preprocessor != "dinov2" and "dinov2" in args.encoders:
+        parser.error("--encoders dinov2 needs --preprocessor dinov2; use --encoders resnet18")
+    if args.context_size is not None:
+        parser.error("--context-size is not used by the static probe")
     scratch = os.environ.get("PSCRATCH")
     if not scratch or not args.data_dir:
         parser.error("Run on Perlmutter with PSCRATCH and DATA_DIR set")
@@ -311,7 +336,16 @@ def main():
     if "resnet18" in args.encoders:
         from cnn import FrameEncoder
         encoders["resnet18"] = FrameEncoder().to(args.device).eval()
-    prepare = DINOv2Preprocessor()
+    if isinstance(prepare, DINOv2Preprocessor):
+        preparation = {"size": prepare.size, "mean": MEAN, "std": STD,
+                       "resize": "proportional bicubic + mean padding", "dinov2_checkpoint": CHECKPOINT,
+                       "resnet_weights": "ResNet18_Weights.DEFAULT; maxpool retained"}
+    else:
+        # The preprocessor's own record, without one case's per-image geometry.
+        record = prepare.prepare_case(datasets["train"][0])["preparation"]
+        preparation = {key: value for key, value in record.items()
+                       if key not in ("goal", "history")}
+        preparation["resnet_weights"] = "ResNet18_Weights.DEFAULT; maxpool retained"
     timings = benchmark_encoders(datasets["train"][0], prepare, encoders, args.device) if args.benchmark else None
     start = time.perf_counter()
     train, train_features = collect(datasets["train"], prepare, encoders)
@@ -335,9 +369,7 @@ def main():
               "device": args.device, "gpu": torch.cuda.get_device_name() if args.device == "cuda" else None,
               "split_position": args.split_position, "fold": datasets["train"].fold,
               "threshold": 0.5, "class_weight": "balanced", "encoders": list(encoders),
-              "preparation": {"size": 518, "mean": MEAN, "std": STD,
-                              "resize": "proportional bicubic + mean padding", "dinov2_checkpoint": CHECKPOINT,
-                              "resnet_weights": "ResNet18_Weights.DEFAULT; maxpool retained"},
+              "preparation": preparation,
               "partition_counts": {name: len(data) for name, data in datasets.items()},
               "feature_extraction_wall_seconds": extraction_seconds,
               "encoder_component_benchmark": timings,

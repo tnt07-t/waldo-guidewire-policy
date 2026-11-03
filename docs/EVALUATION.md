@@ -61,6 +61,28 @@ python evaluation.py \
 
 The runner requires data/output beneath personal `$PSCRATCH`, rejects existing output directories, and has no test-evaluation option. It holds train/validation features in memory for reuse across heads; it does not save a persistent feature cache or model checkpoint. Public pretrained weights may download; no image upload is performed.
 
+### Preprocessor options
+
+Group 1 brought `evaluation.py`, its tests and `requirements-eval.txt` onto `andrew/grp1-preprocessing-tickets` unchanged from `070328f` (with approval), then added preprocessor selection.
+The probe takes the same input flags as `cnn.py` (listed in [grp1/CNN.md](grp1/CNN.md#preprocessor-options)), one preprocessor configuration per run.
+Without them it runs the default `dinov2` full-view preparation, and every default, metric, C selection and bootstrap is unchanged, so results stay comparable with the first run below.
+
+- `--preprocessor wire` needs `--encoders resnet18`; the DINOv2 encoder is only accepted with the `dinov2` preprocessor.
+- `--context-size` is rejected, since the probe only encodes the crops.
+- `metrics.json` records the preprocessor's own `preparation` settings (crop size, channels, top-hat size, difference mode, normalization), without per-case geometry.
+- With `--benchmark`, wire timing prepares the whole case, because the difference channel needs all six frames; `prepared_images_per_case` says how many images were prepared.
+
+```sh
+# Run on Perlmutter, in a GPU allocation; use a fresh run directory each time.
+python evaluation.py \
+  --split-position 0 \
+  --encoders resnet18 \
+  --preprocessor wire \
+  --crop-size 256 \
+  --device cuda \
+  --output-dir "$PSCRATCH/waldo-evaluation/wire-raw-256-01"
+```
+
 ### Compute allocation and cache troubleshooting
 
 The current shared interactive queue required 32 CPU cores per GPU in Sabrina's run; a four-core request was rejected. Request matching resources in allocation and job step, using your available GPU account. Paste each command on one line; backslashes only work when immediately followed by a newline.

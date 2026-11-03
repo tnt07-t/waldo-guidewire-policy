@@ -106,5 +106,45 @@ class EvaluationTests(unittest.TestCase):
         self.assertIsNone(timing["resnet18"]["peak_cuda_bytes"])
 
 
+class WirePreprocessorEvaluationTests(unittest.TestCase):
+    """Invented cases through the real WirePreprocessor and an untrained ResNet."""
+
+    @staticmethod
+    def wire_case(row):
+        from PIL import Image
+
+        frame = Image.new("L", (96, 96), 100 + row)
+        return {"goal": Image.new("RGB", (96, 96), (255, 0, 0)), "goal_raw": frame,
+                "goal_xy": [48.0, 48.0], "history": [frame] * 6,
+                "depth_relative_mm": [-5, -4, -3, -2, -1, 0],
+                "history_offsets_s": [-4.0, -3.2, -2.4, -1.6, -0.8, 0.0],
+                "label": row % 2, "episode": "invented", "case_id": "invented-" + str(row),
+                "row_index": row}
+
+    def test_collect_with_wire_preprocessor_and_frame_encoder(self):
+        import torch
+        from cnn import FrameEncoder
+        from evaluation import static_images
+        from preprocessing import WirePreprocessor
+
+        cases = [self.wire_case(0), self.wire_case(1)]
+        encoder = FrameEncoder(pretrained=False).eval()
+        for channels in ("raw", "enhanced"):
+            with self.subTest(channels=channels):
+                prepare = WirePreprocessor(crop_size=64, channels=channels)
+                shared, features = collect(cases, prepare, {"resnet18": encoder})
+                self.assertEqual(features["resnet18"]["goal"].shape, (2, 512))
+                self.assertEqual(features["resnet18"]["history"].shape, (2, 6, 512))
+                self.assertTrue(np.isfinite(features["resnet18"]["history"]).all())
+                self.assertEqual(shared["metadata"].shape, (2, 12))
+                images, prepared_count = static_images(prepare, cases[0])
+                self.assertEqual((tuple(images.shape), prepared_count), ((2, 3, 64, 64), 7))
+                prepared = prepare.prepare_case(cases[0])
+                self.assertTrue(torch.equal(images[1], prepared["history"][-1]))
+        timing = benchmark_encoders(cases[0], prepare, {"resnet18": encoder}, "cpu",
+                                    warmup=1, repeats=2)
+        self.assertEqual(timing["resnet18"]["prepared_images_per_case"], 7)
+
+
 if __name__ == "__main__":
     unittest.main()
