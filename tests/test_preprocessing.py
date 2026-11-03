@@ -1,13 +1,14 @@
 """Invented images only; no real data or pretrained weights are needed."""
 
 from copy import deepcopy
+import math
 import unittest
 
 from PIL import Image, ImageDraw
 import torch
 
-from preprocessing import (CHECKPOINT, MEAN, STD, DINOv2Preprocessor,
-                           WirePreprocessor, black_tophat, goal_crop)
+from preprocessing import (CHECKPOINT, CONTEXT_FILL, MEAN, STD, DINOv2Preprocessor,
+                           WirePreprocessor, black_tophat, channel_stats, goal_crop)
 
 
 def legacy_prepare_case(prep, case):
@@ -53,6 +54,16 @@ def reference_black_tophat(rows, size):
     dilated = [[window(rows, y, x, max) for x in range(width)] for y in range(height)]
     closed = [[window(dilated, y, x, min) for x in range(width)] for y in range(height)]
     return [[closed[y][x] - rows[y][x] for x in range(width)] for y in range(height)]
+
+
+def legacy_wire_raw_tensor(image, goal_xy, size):
+    """Frozen copy of the original single-image WirePreprocessor raw tensor."""
+    crop, _ = goal_crop(image, goal_xy, size)
+    pixels = torch.frombuffer(bytearray(crop.tobytes()), dtype=torch.uint8)
+    gray = pixels.reshape(size, size).to(torch.float32).div(255)
+    mean = torch.tensor(MEAN, dtype=torch.float32).view(3, 1, 1)
+    std = torch.tensor(STD, dtype=torch.float32).view(3, 1, 1)
+    return ((gray.expand(3, -1, -1) - mean) / std).contiguous()
 
 
 def unnormalize(tensor):
@@ -368,12 +379,190 @@ class WirePreprocessorTests(unittest.TestCase):
         self.assertEqual(goal.shape, (1, 512))
 
     def test_invalid_settings_and_cases_rejected(self):
-        for kwargs in ({"crop_size": 250}, {"crop_size": 0}, {"channels": "enhanced"}):
+        for kwargs in ({"crop_size": 250}, {"crop_size": 0}, {"channels": "sharp"},
+                       {"tophat_size": 4}, {"tophat_size": 1}, {"difference": "mean"},
+                       {"tophat_stats": (0.0, 0.0)}, {"difference_stats": (float("nan"), 1.0)},
+                       {"zero_channels": (3,)}, {"zero_channels": (True,)},
+                       {"context_size": 100}, {"context_size": 0}):
             with self.subTest(**kwargs), self.assertRaises(ValueError):
                 WirePreprocessor(**kwargs)
         self.case["history"].pop()
         with self.assertRaisesRegex(ValueError, "six aligned"):
             WirePreprocessor().prepare_case(self.case)
+
+    def test_raw_mode_matches_frozen_single_image_version(self):
+        prep = WirePreprocessor()
+        result = prep.prepare_case(self.case)
+        goal_xy = self.case["goal_xy"]
+        self.assertTrue(torch.equal(result["goal"],
+                                    legacy_wire_raw_tensor(self.case["goal_raw"], goal_xy, 256)))
+        for i, frame in enumerate(self.case["history"]):
+            expected = legacy_wire_raw_tensor(frame, goal_xy, 256)
+            self.assertTrue(torch.equal(result["history"][i], expected))
+            self.assertTrue(torch.equal(prep.prepare_image(frame, goal_xy)["tensor"], expected))
+
+    def test_context_off_by_default_and_crops_unchanged_when_on(self):
+        plain = WirePreprocessor(crop_size=64).prepare_case(self.case)
+        with_context = WirePreprocessor(crop_size=64, context_size=224).prepare_case(self.case)
+        self.assertFalse({"goal_context", "history_context"} & set(plain))
+        self.assertNotIn("context_size", plain["preparation"])
+        self.assertEqual(set(with_context) - set(plain), {"goal_context", "history_context"})
+        self.assertTrue(torch.equal(plain["goal"], with_context["goal"]))
+        self.assertTrue(torch.equal(plain["history"], with_context["history"]))
+        self.assertEqual(with_context["goal_context"].shape, (3, 224, 224))
+        self.assertEqual(with_context["history_context"].shape, (6, 3, 224, 224))
+        self.assertTrue(torch.isfinite(with_context["history_context"]).all())
+        geometry = with_context["preparation"]["goal_context"]
+        self.assertEqual(geometry["resized_size_wh"], (224, 221))
+        self.assertEqual(geometry["padding_ltrb"], (0, 1, 0, 2))
+        self.assertEqual(len(with_context["preparation"]["history_context"]), 6)
+        # Gray repeated to three channels; row 0 is padding with the mean gray.
+        pixels = unnormalize(with_context["goal_context"])
+        torch.testing.assert_close(pixels[0], pixels[1])
+        torch.testing.assert_close(pixels[0], pixels[2])
+        torch.testing.assert_close(pixels[0, 0, 0], torch.tensor(CONTEXT_FILL / 255))
+
+    def test_all_four_edges_survive_context_resize(self):
+        for size in ((112, 56), (56, 112)):
+            with self.subTest(size=size):
+                image = Image.new("L", size)
+                draw = ImageDraw.Draw(image)
+                w, h = size
+                draw.rectangle((0, 0, w - 1, 7), fill=50)
+                draw.rectangle((0, h - 8, w - 1, h - 1), fill=100)
+                draw.rectangle((0, 8, 7, h - 9), fill=150)
+                draw.rectangle((w - 8, 8, w - 1, h - 9), fill=200)
+                self.case.update(goal_raw=image, history=[image] * 6, goal_xy=[w / 2, h / 2])
+                result = WirePreprocessor(crop_size=32, context_size=64).prepare_case(self.case)
+                preview = result["previews"]["history_context"][0]
+                geometry = result["preparation"]["history_context"][0]
+                rw, rh = geometry["resized_size_wh"]
+                left, top, _, _ = geometry["padding_ltrb"]
+                self.assertEqual(preview.getpixel((left + rw // 2, top)), 50)
+                self.assertEqual(preview.getpixel((left + rw // 2, top + rh - 1)), 100)
+                self.assertEqual(preview.getpixel((left, top + rh // 2)), 150)
+                self.assertEqual(preview.getpixel((left + rw - 1, top + rh // 2)), 200)
+                self.assertEqual(preview.getpixel((0, 0)), CONTEXT_FILL)
+                pixels = unnormalize(result["history_context"][0])
+                torch.testing.assert_close(pixels[:, top, left + rw // 2],
+                                           torch.full((3,), 50 / 255))
+
+
+class EnhancedChannelTests(unittest.TestCase):
+    # 96 px frames, goal at the center, 64 px crop: crop x = image x - 16.
+    STATIC_COLUMNS = range(54, 58)
+
+    @staticmethod
+    def line_case(positions):
+        """Frames with a static dark line plus a moving one at each x (None: no line)."""
+        def frame(x):
+            image = Image.new("L", (96, 96), 150)
+            draw = ImageDraw.Draw(image)
+            draw.rectangle((70, 0, 73, 95), fill=30)
+            if x is not None:
+                draw.rectangle((x, 0, x + 3, 95), fill=30)
+            return image
+        return {
+            "goal": Image.new("RGB", (96, 96), (255, 0, 0)),
+            "goal_raw": frame(None),
+            "goal_xy": [48, 48],
+            "history": [frame(x) for x in positions],
+            "depth_relative_mm": [-5, -4, -3, -2, -1, 0],
+            "history_offsets_s": [-4.0, -3.2, -2.4, -1.6, -0.8, 0.0],
+        }
+
+    @staticmethod
+    def columns_mask(*column_ranges):
+        mask = torch.zeros(64, 64, dtype=torch.bool)
+        for columns in column_ranges:
+            mask[:, list(columns)] = True
+        return mask
+
+    def moving(self):
+        positions = [24 + 6 * t for t in range(6)]
+        crop_columns = [range(x - 16, x - 12) for x in positions]
+        return self.line_case(positions), crop_columns
+
+    def test_identical_frames_give_zero_difference(self):
+        case = self.line_case([30] * 6)
+        for mode in ("median", "previous"):
+            with self.subTest(mode=mode):
+                result = WirePreprocessor(64, "enhanced", difference=mode).prepare_case(case)
+                self.assertTrue(torch.equal(result["history"][:, 2], torch.zeros(6, 64, 64)))
+                self.assertTrue(torch.equal(result["goal"][2], torch.zeros(64, 64)))
+
+    def test_moving_line_appears_in_difference_only_where_it_moved(self):
+        case, columns = self.moving()
+        median = WirePreprocessor(64, "enhanced").prepare_case(case)
+        previous = WirePreprocessor(64, "enhanced", difference="previous").prepare_case(case)
+        for t in range(6):
+            with self.subTest(t=t):
+                self.assertTrue(torch.equal(median["history"][t, 2] != 0,
+                                            self.columns_mask(columns[t])))
+                expected = (self.columns_mask() if t == 0
+                            else self.columns_mask(columns[t], columns[t - 1]))
+                self.assertTrue(torch.equal(previous["history"][t, 2] != 0, expected))
+        # The line is darker than the median, so its own frame's difference is negative.
+        torch.testing.assert_close(median["history"][0, 2, 0, columns[0][0]],
+                                   torch.tensor(-120 / 255))
+        self.assertTrue(torch.equal(median["goal"][2], torch.zeros(64, 64)))
+
+    def test_line_bright_in_tophat_and_background_zero(self):
+        case, columns = self.moving()
+        result = WirePreprocessor(64, "enhanced").prepare_case(case)
+        for t in range(6):
+            with self.subTest(t=t):
+                lines = self.columns_mask(columns[t], self.STATIC_COLUMNS)
+                tophat = result["history"][t, 1]
+                torch.testing.assert_close(tophat[lines], torch.full((int(lines.sum()),), 120 / 255))
+                self.assertLess(tophat[~lines].abs().max().item(), 1e-6)
+        self.assertTrue(torch.equal(result["goal"][1] != 0,
+                                    self.columns_mask(self.STATIC_COLUMNS)))
+        # Channel 0 keeps the ImageNet red-channel normalization of raw mode.
+        torch.testing.assert_close(result["history"][0, 0, 0, 0],
+                                   torch.tensor((150 / 255 - MEAN[0]) / STD[0]))
+
+    def test_stats_standardize_wire_channels(self):
+        case, _ = self.moving()
+        plain = WirePreprocessor(64, "enhanced").prepare_case(case)
+        scaled = WirePreprocessor(64, "enhanced", tophat_stats=(0.1, 0.2),
+                                  difference_stats=(-0.05, 0.5)).prepare_case(case)
+        torch.testing.assert_close(scaled["history"][:, 0], plain["history"][:, 0])
+        torch.testing.assert_close(scaled["history"][:, 1], (plain["history"][:, 1] - 0.1) / 0.2)
+        torch.testing.assert_close(scaled["history"][:, 2], (plain["history"][:, 2] + 0.05) / 0.5)
+        self.assertEqual(scaled["preparation"]["tophat_stats"], (0.1, 0.2))
+        self.assertEqual(scaled["preparation"]["channel_order"],
+                         ("raw", "black_tophat", "difference"))
+
+    def test_zero_channels_zeroes_exactly_that_channel(self):
+        case, _ = self.moving()
+        kwargs = {"tophat_stats": (0.1, 0.2), "difference_stats": (-0.05, 0.5)}
+        plain = WirePreprocessor(64, "enhanced", **kwargs).prepare_case(case)
+        ablated = WirePreprocessor(64, "enhanced", zero_channels=(1,), **kwargs).prepare_case(case)
+        for key in ("goal", "history"):
+            self.assertTrue(torch.equal(ablated[key][..., 1, :, :],
+                                        torch.zeros_like(ablated[key][..., 1, :, :])))
+            for channel in (0, 2):
+                self.assertTrue(torch.equal(ablated[key][..., channel, :, :],
+                                            plain[key][..., channel, :, :]))
+        self.assertEqual(ablated["preparation"]["zero_channels"], (1,))
+
+    def test_channel_stats_match_direct_computation(self):
+        cases = [self.moving()[0], self.line_case([30] * 6)]
+        prep = WirePreprocessor(64, "enhanced", tophat_stats=(0.3, 2.0))
+        stats = channel_stats(prep, cases)
+        # Default (0, 1) stats leave the wire channels in plain 0-1 units.
+        histories = [WirePreprocessor(64, "enhanced").prepare_case(case)["history"]
+                     for case in cases]
+        for channel, name in ((1, "tophat_stats"), (2, "difference_stats")):
+            values = torch.cat([h[:, channel].flatten() for h in histories]).double()
+            mean, std = stats[name]
+            self.assertTrue(math.isfinite(mean) and math.isfinite(std))
+            self.assertAlmostEqual(mean, values.mean().item(), places=6)
+            self.assertAlmostEqual(std, values.std(unbiased=False).item(), places=6)
+        WirePreprocessor(64, "enhanced", **stats)
+        with self.assertRaises(ValueError):
+            channel_stats(prep, [])
 
 
 if __name__ == "__main__":

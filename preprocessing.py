@@ -20,7 +20,10 @@ STD = (0.229, 0.224, 0.225)
 
 # Raw images are replaced by prepared tensors; every other key is metadata.
 IMAGE_KEYS = ("goal", "goal_raw", "history")
-WIRE_CHANNEL_MODES = ("raw",)
+WIRE_CHANNEL_MODES = ("raw", "enhanced")
+DIFFERENCE_MODES = ("median", "previous")
+# Context padding: the 8-bit gray nearest the average ImageNet channel mean.
+CONTEXT_FILL = round(sum(MEAN) / 3 * 255)
 
 
 def check_history(case):
@@ -55,6 +58,33 @@ def assemble_case(case, goal, history, preparation):
     return prepared
 
 
+def fit_square(image, size, fill):
+    """Proportional bicubic resize into a ``size`` square on ``fill`` padding.
+
+    Returns the square image and its geometry in Pillow's (width, height)
+    convention; padding is L,T,R,B.
+    """
+    width, height = image.size
+    if width <= 0 or height <= 0:
+        raise ValueError("image dimensions must be positive")
+    # Fit the longer side to the square; one shared scale preserves shape.
+    scale = size / max(width, height)
+    resized_size = (max(1, round(width * scale)),
+                    max(1, round(height * scale)))
+    resized = image.resize(resized_size, resample=Image.Resampling.BICUBIC)
+    # Center without cropping. An odd leftover pixel goes right or below.
+    left = (size - resized_size[0]) // 2
+    top = (size - resized_size[1]) // 2
+    square = Image.new(image.mode, (size, size), fill)
+    square.paste(resized, (left, top))
+    return square, {
+        "original_size_wh": image.size,
+        "resized_size_wh": resized_size,
+        "padding_ltrb": (left, top, size - resized_size[0] - left,
+                         size - resized_size[1] - top),
+    }
+
+
 class DINOv2Preprocessor:
     """RGB, proportional bicubic resize, centered padding, then normalization.
 
@@ -77,36 +107,13 @@ class DINOv2Preprocessor:
         Preview pixels are exactly those converted to the model tensor. The
         geometry uses Pillow's (width, height) convention; padding is L,T,R,B.
         """
-        rgb = image.convert("RGB")
-        width, height = rgb.size
-        if width <= 0 or height <= 0:
-            raise ValueError("image dimensions must be positive")
-        # Fit the longer side to the square; one shared scale preserves shape.
-        scale = self.size / max(width, height)
-        resized_size = (max(1, round(width * scale)),
-                        max(1, round(height * scale)))
-        resized = rgb.resize(resized_size, resample=Image.Resampling.BICUBIC)
-        # Center without cropping. An odd leftover pixel goes right or below.
-        left = (self.size - resized_size[0]) // 2
-        top = (self.size - resized_size[1]) // 2
-        preview = Image.new("RGB", (self.size, self.size), self.padding_rgb)
-        preview.paste(resized, (left, top))
-
+        preview, geometry = fit_square(image.convert("RGB"), self.size, self.padding_rgb)
         # A writable byte copy avoids sharing storage with the Pillow image.
         pixels = torch.frombuffer(bytearray(preview.tobytes()), dtype=torch.uint8)
         # Pillow stores [height,width,RGB]; PyTorch expects [RGB,height,width].
         pixels = pixels.reshape(self.size, self.size, 3).permute(2, 0, 1)
         tensor = (pixels.to(torch.float32).div(255) - self.mean) / self.std
-        return {
-            "tensor": tensor.contiguous(),
-            "preview": preview,
-            "geometry": {
-                "original_size_wh": image.size,
-                "resized_size_wh": resized_size,
-                "padding_ltrb": (left, top, self.size - resized_size[0] - left,
-                                 self.size - resized_size[1] - top),
-            },
-        }
+        return {"tensor": tensor.contiguous(), "preview": preview, "geometry": geometry}
 
     def prepare_case(self, case):
         """Prepare one raw case; goal [3,H,W], history [6,3,H,W].
@@ -212,45 +219,133 @@ def goal_crop(image, goal_xy, size):
     }
 
 
+def _check_stats(stats):
+    mean, std = stats
+    if not (math.isfinite(mean) and math.isfinite(std) and std > 0):
+        raise ValueError("channel stats must be a finite mean and positive std")
+    return (float(mean), float(std))
+
+
+def _gray_tensor(images, size):
+    """Stack ``size`` square Pillow "L" images into floats [N,S,S] in 0-1."""
+    # A writable byte copy avoids sharing storage with the Pillow images.
+    data = bytearray(b"".join(image.tobytes() for image in images))
+    pixels = torch.frombuffer(data, dtype=torch.uint8)
+    return pixels.reshape(len(images), size, size).to(torch.float32).div(255)
+
+
 class WirePreprocessor:
     """Goal-centered native-resolution grayscale crops for the frozen ResNet.
 
     One crop box around ``goal_xy`` serves the unmarked goal and all six
     history frames, since the view is fixed within a case. ``raw`` repeats
     the grayscale crop to three channels with ImageNet normalization.
+    ``enhanced`` uses channels raw, black top-hat, and difference; top-hat
+    and difference are in 0-1 pixel units, standardized by the given stats
+    (see ``channel_stats``). ``zero_channels`` are zeroed after normalization
+    for ablations. ``context_size`` adds a downscaled full view per image.
     """
 
-    def __init__(self, crop_size=256, channels="raw"):
+    def __init__(self, crop_size=256, channels="raw", *, tophat_size=11,
+                 difference="median", tophat_stats=(0.0, 1.0),
+                 difference_stats=(0.0, 1.0), zero_channels=(), context_size=None):
         check_crop_size(crop_size)
         if channels not in WIRE_CHANNEL_MODES:
             raise ValueError("channels must be one of {}".format(WIRE_CHANNEL_MODES))
+        if type(tophat_size) is not int or tophat_size < 3 or tophat_size % 2 == 0:
+            raise ValueError("tophat_size must be an odd integer of at least 3")
+        if difference not in DIFFERENCE_MODES:
+            raise ValueError("difference must be one of {}".format(DIFFERENCE_MODES))
+        if any(type(c) is not int or c not in (0, 1, 2) for c in zero_channels):
+            raise ValueError("zero_channels may only contain 0, 1, and 2")
+        if context_size is not None:
+            check_crop_size(context_size)
         self.crop_size = crop_size
         self.channels = channels
+        self.tophat_size = tophat_size
+        self.difference = difference
+        self.tophat_stats = _check_stats(tophat_stats)
+        self.difference_stats = _check_stats(difference_stats)
+        self.zero_channels = tuple(sorted(set(zero_channels)))
+        self.context_size = context_size
         self.mean = torch.tensor(MEAN, dtype=torch.float32).view(3, 1, 1)
         self.std = torch.tensor(STD, dtype=torch.float32).view(3, 1, 1)
 
-    def prepare_image(self, image, goal_xy):
-        """Return a normalized [3,S,S] tensor, grayscale preview, and geometry."""
-        crop, geometry = goal_crop(image, goal_xy, self.crop_size)
-        # A writable byte copy avoids sharing storage with the Pillow image.
-        pixels = torch.frombuffer(bytearray(crop.tobytes()), dtype=torch.uint8)
-        gray = pixels.reshape(self.crop_size, self.crop_size).to(torch.float32).div(255)
+    def _normalize(self, gray, tophat=None, difference=None):
+        """Model tensors [N,3,S,S] from 0-1 gray crops and wire channels [N,S,S]."""
+        if self.channels == "raw":
+            tensor = (gray[:, None].expand(-1, 3, -1, -1) - self.mean) / self.std
+        else:
+            tensor = torch.stack([
+                (gray - MEAN[0]) / STD[0],
+                (tophat - self.tophat_stats[0]) / self.tophat_stats[1],
+                (difference - self.difference_stats[0]) / self.difference_stats[1],
+            ], dim=1)
+        for channel in self.zero_channels:
+            tensor[:, channel] = 0
+        return tensor
+
+    def _crop_case(self, case):
+        """Crop goal_raw and history with one box; returns crops and gray [7,S,S]."""
+        check_history(case)
+        if len(case["goal_xy"]) != 2:
+            raise ValueError("Expected goal_xy to hold two coordinates")
+        crops = [goal_crop(image, case["goal_xy"], self.crop_size)
+                 for image in [case["goal_raw"], *case["history"]]]
+        return crops, _gray_tensor([crop for crop, _ in crops], self.crop_size)
+
+    def _wire_channels(self, gray):
+        """Unnormalized top-hat and difference for gray [goal, *history] crops."""
+        tophat = black_tophat(gray[:, None], self.tophat_size)[:, 0]
+        history = gray[1:]
+        if self.difference == "median":
+            # Six frames have two middle values; their mean is the median.
+            difference = history - history.sort(dim=0).values[2:4].mean(dim=0)
+        else:
+            difference = torch.zeros_like(history)
+            difference[1:] = history[1:] - history[:-1]
+        # The goal has no timeline, so its difference channel is zero.
+        return tophat, torch.cat([torch.zeros_like(gray[:1]), difference])
+
+    def _context(self, image):
+        """Downscaled full view: normalized [3,C,C] tensor, preview, geometry."""
+        preview, geometry = fit_square(image.convert("L"), self.context_size, CONTEXT_FILL)
+        gray = _gray_tensor([preview], self.context_size)[0]
         tensor = (gray.expand(3, -1, -1) - self.mean) / self.std
-        return {"tensor": tensor.contiguous(), "preview": crop, "geometry": geometry}
+        return {"tensor": tensor.contiguous(), "preview": preview, "geometry": geometry}
+
+    def prepare_image(self, image, goal_xy):
+        """Return a normalized [3,S,S] tensor, grayscale preview, and geometry.
+
+        A single image has no timeline, so in ``enhanced`` mode its difference
+        channel is zero, as for the goal.
+        """
+        crop, geometry = goal_crop(image, goal_xy, self.crop_size)
+        gray = _gray_tensor([crop], self.crop_size)
+        if self.channels == "raw":
+            tensor = self._normalize(gray)
+        else:
+            tophat = black_tophat(gray[:, None], self.tophat_size)[:, 0]
+            tensor = self._normalize(gray, tophat, torch.zeros_like(gray))
+        return {"tensor": tensor[0].contiguous(), "preview": crop, "geometry": geometry}
 
     def prepare_case(self, case):
         """Prepare one raw case; goal [3,S,S], history [6,3,S,S].
 
         The goal comes from ``goal_raw`` so the target marking is not cropped.
-        Metadata is copied unchanged, as in ``DINOv2Preprocessor``.
+        Metadata is copied unchanged, as in ``DINOv2Preprocessor``. With
+        ``context_size`` set, ``goal_context`` [3,C,C] and ``history_context``
+        [6,3,C,C] are added; ``zero_channels`` does not apply to them.
         """
-        check_history(case)
-        if len(case["goal_xy"]) != 2:
-            raise ValueError("Expected goal_xy to hold two coordinates")
-        goal = self.prepare_image(case["goal_raw"], case["goal_xy"])
-        history = [self.prepare_image(frame, case["goal_xy"])
-                   for frame in case["history"]]
-        return assemble_case(case, goal, history, {
+        crops, gray = self._crop_case(case)
+        if self.channels == "raw":
+            tensors = self._normalize(gray)
+        else:
+            tensors = self._normalize(gray, *self._wire_channels(gray))
+        goal, *history = [
+            {"tensor": tensor.clone(), "preview": crop, "geometry": geometry}
+            for tensor, (crop, geometry) in zip(tensors, crops)]
+        preparation = {
             "preprocessor": type(self).__name__,
             "crop_size": self.crop_size,
             "channels": self.channels,
@@ -261,4 +356,61 @@ class WirePreprocessor:
             "mean": MEAN,
             "std": STD,
             "pixel_scale": "uint8 / 255",
-        })
+            "zero_channels": self.zero_channels,
+        }
+        if self.channels == "enhanced":
+            preparation.update({
+                "channel_order": ("raw", "black_tophat", "difference"),
+                "raw_normalization": "ImageNet channel 0",
+                "tophat_size": self.tophat_size,
+                "difference": self.difference,
+                "median": "mean of the two middle history values",
+                "goal_difference": "zeros (the goal has no timeline)",
+                "wire_pixel_scale": "uint8 / 255, then (value - mean) / std",
+                "tophat_stats": self.tophat_stats,
+                "difference_stats": self.difference_stats,
+            })
+        prepared = assemble_case(case, goal, history, preparation)
+        if self.context_size is not None:
+            goal = self._context(case["goal_raw"])
+            history = [self._context(frame) for frame in case["history"]]
+            prepared["goal_context"] = goal["tensor"]
+            prepared["history_context"] = torch.stack([frame["tensor"] for frame in history])
+            prepared["previews"]["goal_context"] = goal["preview"]
+            prepared["previews"]["history_context"] = [frame["preview"] for frame in history]
+            prepared["preparation"].update({
+                "context_size": self.context_size,
+                "context": "Pillow L, proportional bicubic resize, centered padding, "
+                           "repeated to three channels, ImageNet normalization",
+                "context_fill": CONTEXT_FILL,
+                "goal_context": goal["geometry"],
+                "history_context": [frame["geometry"] for frame in history],
+            })
+        return prepared
+
+
+def channel_stats(preprocessor, cases):
+    """Top-hat and difference (mean, std) over the history crops of ``cases``.
+
+    Call this on TRAINING cases only; validation or test statistics would
+    leak into preprocessing. Uses the preprocessor's crop, top-hat, and
+    difference settings and ignores its current stats. The goal is excluded
+    because its difference channel is zero by design. Returns keyword
+    arguments for ``WirePreprocessor``.
+    """
+    totals = {"tophat": [0.0, 0.0, 0], "difference": [0.0, 0.0, 0]}
+    for case in cases:
+        _, gray = preprocessor._crop_case(case)
+        tophat, difference = preprocessor._wire_channels(gray)
+        for name, values in (("tophat", tophat[1:]), ("difference", difference[1:])):
+            values = values.double()
+            totals[name][0] += values.sum().item()
+            totals[name][1] += values.square().sum().item()
+            totals[name][2] += values.numel()
+    if not totals["tophat"][2]:
+        raise ValueError("channel_stats needs at least one case")
+    stats = {}
+    for name, (total, squares, count) in totals.items():
+        mean = total / count
+        stats[name + "_stats"] = (mean, math.sqrt(max(squares / count - mean ** 2, 0.0)))
+    return stats
