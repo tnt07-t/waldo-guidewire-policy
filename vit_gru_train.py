@@ -15,8 +15,8 @@ import time
 
 from vit_gru_debug import freeze_and_snapshot, verify_frozen, supervise, training_inputs
 
-# Settings for the next bounded comparison; architecture and budgets stay fixed.
-CONFIG = dict(seed=0, hidden_size=64, batch_size=32, lr=0.001,
+# Preserve the completed AdamW recipe by default; comparisons use explicit CLI flags.
+CONFIG = dict(architecture="late_goal", seed=0, hidden_size=64, batch_size=32, lr=0.001,
               optimizer="AdamW", weight_decay=0.01, max_epochs=100,
               max_updates=900, patience=20, head_seconds=120,
               extraction_seconds=300, overall_seconds=600,
@@ -26,8 +26,12 @@ OUTPUT_BYTES = 20 * 1024 * 1024
 
 def resolve_config(config, **overrides):
     """Resolve actual settings without permitting larger operational budgets."""
-    resolved = dict(config)
+    # Checkpoints/configurations predating architecture selection used late fusion.
+    resolved = dict(architecture="late_goal")
+    resolved.update(config)
     resolved.update({key: value for key, value in overrides.items() if value is not None})
+    if resolved['architecture'] not in ('late_goal', 'early_goal'):
+        raise ValueError('Unsupported architecture')
     if resolved['optimizer'] not in ('Adam', 'AdamW'):
         raise ValueError('Unsupported optimizer')
     for key in ('lr', 'weight_decay', 'head_seconds', 'extraction_seconds', 'overall_seconds'):
@@ -164,6 +168,11 @@ def evaluate(head, data):
 
 def save_checkpoint(directory, name, head, context, epoch, updates, scores):
     import torch
+    config = dict(context['config'])
+    if config.get('architecture', head.architecture) != head.architecture:
+        raise ValueError('Checkpoint architecture does not match head')
+    config['architecture'] = head.architecture
+    context = dict(context, config=config)
     buffer = io.BytesIO()
     torch.save(dict(format_version=1, state_dict={k: v.detach().cpu() for k, v in head.state_dict().items()},
                     context=context, epoch=epoch, updates=updates, validation=scores), buffer)
@@ -179,7 +188,7 @@ def load_checkpoint(path, device='cpu'):
     scales = torch.tensor(checkpoint['context']['metadata_scale_depth_time'])
     if scales.shape != (2,) or not torch.isfinite(scales).all() or (scales <= 0).any():
         raise ValueError('Invalid checkpoint scales')
-    head = ViTGRUHead().to(device)
+    head = ViTGRUHead(checkpoint['context']['config'].get('architecture', 'late_goal')).to(device)
     head.load_state_dict(checkpoint['state_dict'], strict=True)
     if any(not torch.isfinite(p).all() for p in head.parameters()):
         raise ValueError('Nonfinite checkpoint weights')
@@ -200,7 +209,7 @@ def train_fresh(train, validation, directory, context, *, max_epochs=None,
     seconds, patience = config['head_seconds'], config['patience']
     # Fresh initialization; the frozen encoder is not part of this optimizer.
     torch.manual_seed(config['seed'])
-    head = ViTGRUHead().to(train[0].device)
+    head = ViTGRUHead(config['architecture']).to(train[0].device)
     optimizer_class = {'Adam': torch.optim.Adam, 'AdamW': torch.optim.AdamW}[config['optimizer']]
     optimizer = optimizer_class(head.parameters(), lr=config['lr'],
                                 weight_decay=config['weight_decay'])
@@ -283,7 +292,8 @@ def run_worker(args):
     from preprocessing import CHECKPOINT, DINOv2Preprocessor
     from vit import DINOv2Encoder
     torch.set_num_threads(2)
-    config = resolve_config(CONFIG)
+    config = resolve_config(CONFIG, architecture=args.architecture,
+                            optimizer=args.optimizer, weight_decay=args.weight_decay)
     # Only train/validation are instantiated; test images remain reserved.
     train = GuidewireDataset(args.data_dir, split_position=config['split_position'], partition='train')
     validation = GuidewireDataset(args.data_dir, split_position=config['split_position'], partition='validation')
@@ -335,8 +345,17 @@ def main(argv=None):
     parser.add_argument('--data-dir', type=Path, default=os.environ.get('DATA_DIR'))
     parser.add_argument('--output-dir', type=Path, required=True)
     parser.add_argument('--device', choices=('cpu','cuda'), default='cuda')
+    parser.add_argument('--architecture', choices=('late_goal', 'early_goal'),
+                        default=config['architecture'], help='Goal at classifier only, or also at every GRU step')
+    parser.add_argument('--optimizer', choices=('Adam', 'AdamW'), default=config['optimizer'])
+    parser.add_argument('--weight-decay', type=float, default=config['weight_decay'])
     parser.add_argument('--worker', action='store_true', help=argparse.SUPPRESS)
     args = parser.parse_args(argv)
+    try:
+        config = resolve_config(CONFIG, architecture=args.architecture,
+                                optimizer=args.optimizer, weight_decay=args.weight_decay)
+    except ValueError as error:
+        parser.error(str(error))
     if not os.environ.get('SLURM_JOB_ID') or not os.environ.get('PSCRATCH') or args.data_dir is None:
         parser.error('Use an allocated Perlmutter compute node with PSCRATCH and DATA_DIR set')
     scratch = Path(os.environ['PSCRATCH']).resolve()
@@ -357,7 +376,9 @@ def main(argv=None):
     # This terminates the worker, NOT the Slurm allocation; release that separately.
     code, timeout = supervise([sys.executable, '-B', str(Path(__file__).resolve()), '--worker',
                               '--data-dir', str(args.data_dir), '--output-dir', str(args.output_dir),
-                              '--device', args.device], seconds=config['overall_seconds'])
+                              '--device', args.device, '--architecture', config['architecture'],
+                              '--optimizer', config['optimizer'],
+                              '--weight-decay', str(config['weight_decay'])], seconds=config['overall_seconds'])
     path = args.output_dir/'summary.json'
     result = json.loads(path.read_text()) if path.exists() else {}
     if timeout or code:
