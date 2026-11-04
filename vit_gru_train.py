@@ -16,7 +16,7 @@ import time
 from vit_gru_debug import freeze_and_snapshot, verify_frozen, supervise, training_inputs
 
 # Preserve the completed AdamW recipe by default; comparisons use explicit CLI flags.
-CONFIG = dict(architecture="late_goal", seed=0, hidden_size=64, batch_size=32, lr=0.001,
+CONFIG = dict(model="gru", architecture="late_goal", seed=0, hidden_size=64, batch_size=32, lr=0.001,
               optimizer="AdamW", weight_decay=0.01, max_epochs=100,
               max_updates=900, patience=20, head_seconds=120,
               extraction_seconds=300, overall_seconds=600,
@@ -27,11 +27,15 @@ OUTPUT_BYTES = 20 * 1024 * 1024
 def resolve_config(config, **overrides):
     """Resolve actual settings without permitting larger operational budgets."""
     # Checkpoints/configurations predating architecture selection used late fusion.
-    resolved = dict(architecture="late_goal")
+    resolved = dict(model="gru", architecture="late_goal")
     resolved.update(config)
     resolved.update({key: value for key, value in overrides.items() if value is not None})
     if resolved['architecture'] not in ('late_goal', 'early_goal'):
         raise ValueError('Unsupported architecture')
+    if resolved['model'] not in ('gru', 'static_latest_goal_metadata'):
+        raise ValueError('Unsupported model')
+    if resolved['model'] != 'gru' and resolved['architecture'] != 'late_goal':
+        raise ValueError('GRU architecture selection is unavailable for the static model')
     if resolved['optimizer'] not in ('Adam', 'AdamW'):
         raise ValueError('Unsupported optimizer')
     for key in ('lr', 'weight_decay', 'head_seconds', 'extraction_seconds', 'overall_seconds'):
@@ -54,6 +58,34 @@ def resolve_config(config, **overrides):
         if type(resolved[key]) is not int or resolved[key] != expected:
             raise ValueError('Unsupported ' + key)
     return resolved
+
+
+def selected_config(model='gru', architecture='late_goal', optimizer=None, weight_decay=None):
+    """Static comparison uses the baseline Adam recipe; GRU defaults stay intact."""
+    static = model == 'static_latest_goal_metadata'
+    return resolve_config(CONFIG, model=model, architecture=architecture,
+                          optimizer=optimizer if optimizer is not None else ('Adam' if static else CONFIG['optimizer']),
+                          weight_decay=weight_decay if weight_decay is not None else (0.0 if static else CONFIG['weight_decay']))
+
+
+def make_head(config):
+    if config.get('model', 'gru') == 'gru':
+        from vit_gru import ViTGRUHead
+        return ViTGRUHead(config.get('architecture', 'late_goal'))
+    if config['model'] == 'static_latest_goal_metadata' and config.get('architecture', 'late_goal') == 'late_goal':
+        from vit_static import ViTStaticHead
+        return ViTStaticHead()
+    raise ValueError('Unsupported model/architecture')
+
+
+def head_description(head):
+    static = getattr(head, 'model', 'gru') != 'gru'
+    return dict(model=getattr(head, 'model', 'gru'),
+                head_type=type(head).__name__,
+                trainable_parameters=sum(p.numel() for p in head.parameters() if p.requires_grad),
+                feature_roles=(['latest_image384', 'goal384', 'six_chronological_depth_time_pairs12']
+                               if static else ['six_chronological_image384_depth_time_steps', 'goal384']),
+                visual_history_frames=1 if static else 6)
 
 
 def save_bytes(directory, name, data, limit=OUTPUT_BYTES):
@@ -112,8 +144,10 @@ def check_partitions(train, validation):
         raise ValueError('Overlapping partition episodes')
 
 
-def extract(datasets, prepare, encoder, *, seconds=300, clock=time.monotonic):
+def extract(datasets, prepare, encoder, *, seconds=300, clock=time.monotonic, model='gru'):
     import torch
+    if model not in ('gru', 'static_latest_goal_metadata'):
+        raise ValueError('Unsupported extraction model')
     start = clock()
     result = []
     if sum(map(len, datasets)) > 347:
@@ -123,8 +157,16 @@ def extract(datasets, prepare, encoder, *, seconds=300, clock=time.monotonic):
         for index in range(len(dataset)):
             if clock() - start >= seconds:
                 raise TimeoutError('extraction_time_limit')
-            prepared = prepare.prepare_case(dataset[index])
-            feature = encoder.encode(prepared['goal'], prepared['history'], image_chunk_size=1)
+            case = dataset[index]
+            if model == 'gru':
+                prepared = prepare.prepare_case(case)
+                feature = encoder.encode(prepared['goal'], prepared['history'], image_chunk_size=1)
+            else:
+                # All six movement pairs are retained separately; only two images
+                # need normalization and encoding for this comparison.
+                goal = prepare.prepare_image(case['goal'])['tensor']
+                latest = prepare.prepare_image(case['history'][-1])['tensor']
+                feature = encoder.encode_latest(goal, latest, image_chunk_size=1)
             # Encoder inference tensors cannot be saved for backward by the head.
             # Clone outside inference mode; retain only small feature vectors on CPU.
             histories.append(feature['history_features'].detach().cpu().clone())
@@ -171,8 +213,11 @@ def save_checkpoint(directory, name, head, context, epoch, updates, scores):
     config = dict(context['config'])
     if config.get('architecture', head.architecture) != head.architecture:
         raise ValueError('Checkpoint architecture does not match head')
+    if config.get('model', 'gru') != getattr(head, 'model', 'gru'):
+        raise ValueError('Checkpoint model does not match head')
     config['architecture'] = head.architecture
-    context = dict(context, config=config)
+    config['model'] = getattr(head, 'model', 'gru')
+    context = dict(context, config=config, head=head_description(head))
     buffer = io.BytesIO()
     torch.save(dict(format_version=1, state_dict={k: v.detach().cpu() for k, v in head.state_dict().items()},
                     context=context, epoch=epoch, updates=updates, validation=scores), buffer)
@@ -181,14 +226,13 @@ def save_checkpoint(directory, name, head, context, epoch, updates, scores):
 
 def load_checkpoint(path, device='cpu'):
     import torch
-    from vit_gru import ViTGRUHead
     checkpoint = torch.load(path, map_location='cpu', weights_only=True)
     if checkpoint['format_version'] != 1 or checkpoint['context']['config']['hidden_size'] != 64:
         raise ValueError('Unsupported checkpoint configuration')
     scales = torch.tensor(checkpoint['context']['metadata_scale_depth_time'])
     if scales.shape != (2,) or not torch.isfinite(scales).all() or (scales <= 0).any():
         raise ValueError('Invalid checkpoint scales')
-    head = ViTGRUHead(checkpoint['context']['config'].get('architecture', 'late_goal')).to(device)
+    head = make_head(checkpoint['context']['config']).to(device)
     head.load_state_dict(checkpoint['state_dict'], strict=True)
     if any(not torch.isfinite(p).all() for p in head.parameters()):
         raise ValueError('Nonfinite checkpoint weights')
@@ -199,7 +243,6 @@ def load_checkpoint(path, device='cpu'):
 def train_fresh(train, validation, directory, context, *, max_epochs=None,
                 max_updates=None, seconds=None, patience=None, clock=time.monotonic):
     import torch
-    from vit_gru import ViTGRUHead
     from torch.nn import functional as F
     config = resolve_config(context['config'], max_epochs=max_epochs,
                             max_updates=max_updates, head_seconds=seconds, patience=patience)
@@ -209,7 +252,7 @@ def train_fresh(train, validation, directory, context, *, max_epochs=None,
     seconds, patience = config['head_seconds'], config['patience']
     # Fresh initialization; the frozen encoder is not part of this optimizer.
     torch.manual_seed(config['seed'])
-    head = ViTGRUHead(config['architecture']).to(train[0].device)
+    head = make_head(config).to(train[0].device)
     optimizer_class = {'Adam': torch.optim.Adam, 'AdamW': torch.optim.AdamW}[config['optimizer']]
     optimizer = optimizer_class(head.parameters(), lr=config['lr'],
                                 weight_decay=config['weight_decay'])
@@ -241,7 +284,7 @@ def train_fresh(train, validation, directory, context, *, max_epochs=None,
             loss.backward()
             if any(p.grad is None or not torch.isfinite(p.grad).all() for p in head.parameters()):
                 raise RuntimeError('Invalid training gradients')
-            # Update only GRU/classifier weights; AdamW applies decoupled weight decay.
+            # Update only selected head weights; AdamW applies decoupled weight decay.
             optimizer.step()
             if any(not torch.isfinite(p).all() for p in head.parameters()):
                 raise RuntimeError('Nonfinite head weights')
@@ -292,8 +335,7 @@ def run_worker(args):
     from preprocessing import CHECKPOINT, DINOv2Preprocessor
     from vit import DINOv2Encoder
     torch.set_num_threads(2)
-    config = resolve_config(CONFIG, architecture=args.architecture,
-                            optimizer=args.optimizer, weight_decay=args.weight_decay)
+    config = selected_config(args.model, args.architecture, args.optimizer, args.weight_decay)
     # Only train/validation are instantiated; test images remain reserved.
     train = GuidewireDataset(args.data_dir, split_position=config['split_position'], partition='train')
     validation = GuidewireDataset(args.data_dir, split_position=config['split_position'], partition='validation')
@@ -314,15 +356,15 @@ def run_worker(args):
     snapshot = freeze_and_snapshot(encoder.backbone)
     start = time.monotonic()
     features = extract((train, validation), DINOv2Preprocessor(), encoder,
-                       seconds=config['extraction_seconds'])
+                       seconds=config['extraction_seconds'], model=config['model'])
     extraction_seconds = time.monotonic()-start
     verify_frozen(encoder.backbone, snapshot)
-    context = dict(config=config, checkpoint=CHECKPOINT,
+    context = dict(config=config, head=head_description(make_head(config)), checkpoint=CHECKPOINT,
                    preparation='Existing full-view 518-square DINOv2Preprocessor; no augmentation',
                    metadata_scale_depth_time=scales.tolist(), metadata_scaling='training population std; no centering',
                    train_rows=list(train.indices), validation_rows=list(validation.indices),
                    code_sha256={name: hashlib.sha256((Path(__file__).parent/name).read_bytes()).hexdigest()
-                                for name in ('vit_gru_train.py', 'vit_gru.py', 'vit_gru_debug.py', 'vit.py', 'preprocessing.py', 'dataset.py')},
+                                for name in ('vit_gru_train.py', 'vit_gru.py', 'vit_static.py', 'vit_gru_debug.py', 'vit.py', 'preprocessing.py', 'dataset.py')},
                    git_commit=subprocess.run(['git','rev-parse','HEAD'], cwd=Path(__file__).parent,
                                              capture_output=True, text=True).stdout.strip(),
                    git_dirty=bool(subprocess.run(['git','status','--porcelain'], cwd=Path(__file__).parent,
@@ -345,15 +387,16 @@ def main(argv=None):
     parser.add_argument('--data-dir', type=Path, default=os.environ.get('DATA_DIR'))
     parser.add_argument('--output-dir', type=Path, required=True)
     parser.add_argument('--device', choices=('cpu','cuda'), default='cuda')
+    parser.add_argument('--model', choices=('gru', 'static_latest_goal_metadata'), default='gru',
+                        help='GRU (default), or latest image + goal + all movement metadata without recurrence')
     parser.add_argument('--architecture', choices=('late_goal', 'early_goal'),
                         default=config['architecture'], help='Goal at classifier only, or also at every GRU step')
-    parser.add_argument('--optimizer', choices=('Adam', 'AdamW'), default=config['optimizer'])
-    parser.add_argument('--weight-decay', type=float, default=config['weight_decay'])
+    parser.add_argument('--optimizer', choices=('Adam', 'AdamW'), default=None, help='Default: AdamW for GRU; Adam for static')
+    parser.add_argument('--weight-decay', type=float, default=None, help='Default: 0.01 for GRU; 0 for static')
     parser.add_argument('--worker', action='store_true', help=argparse.SUPPRESS)
     args = parser.parse_args(argv)
     try:
-        config = resolve_config(CONFIG, architecture=args.architecture,
-                                optimizer=args.optimizer, weight_decay=args.weight_decay)
+        config = selected_config(args.model, args.architecture, args.optimizer, args.weight_decay)
     except ValueError as error:
         parser.error(str(error))
     if not os.environ.get('SLURM_JOB_ID') or not os.environ.get('PSCRATCH') or args.data_dir is None:
@@ -376,7 +419,8 @@ def main(argv=None):
     # This terminates the worker, NOT the Slurm allocation; release that separately.
     code, timeout = supervise([sys.executable, '-B', str(Path(__file__).resolve()), '--worker',
                               '--data-dir', str(args.data_dir), '--output-dir', str(args.output_dir),
-                              '--device', args.device, '--architecture', config['architecture'],
+                              '--device', args.device, '--model', config['model'],
+                              '--architecture', config['architecture'],
                               '--optimizer', config['optimizer'],
                               '--weight-decay', str(config['weight_decay'])], seconds=config['overall_seconds'])
     path = args.output_dir/'summary.json'

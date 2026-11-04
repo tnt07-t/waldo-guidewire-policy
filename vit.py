@@ -46,6 +46,20 @@ class DINOv2Encoder:
             outputs.append(features)
         return torch.cat(outputs)
 
+    @torch.inference_mode()
+    def encode_latest(self, goal, latest, *, image_chunk_size=1):
+        """Encode only one goal and latest image; preserve the shared preparation."""
+        if type(image_chunk_size) is not int or image_chunk_size <= 0:
+            raise ValueError("image_chunk_size must be a positive integer")
+        for value in (goal, latest):
+            if value.shape != (3, 518, 518):
+                raise ValueError("Expected a 518-square RGB goal and latest image")
+            if value.dtype != torch.float32 or not torch.isfinite(value).all():
+                raise ValueError("Inputs must be finite normalized float32 tensors")
+        self.backbone.eval()
+        features = self._encode_images(torch.stack((goal, latest)), image_chunk_size)
+        return {"goal_features": features[0], "history_features": features[1:2]}
+
     # Skip learning bookkeeping; this wrapper is for extraction only.
     @torch.inference_mode()
     def encode(self, goal, history, *, image_chunk_size=1):

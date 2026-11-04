@@ -10,6 +10,7 @@ def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('history', type=Path, help='Private history.json from a training run')
     parser.add_argument('--output', type=Path, required=True, help='New SVG path on Perlmutter')
+    parser.add_argument('--title', default='GRU training and validation by epoch')
     args = parser.parse_args()
     history = json.loads(args.history.read_text())
     if args.output.exists():
@@ -24,7 +25,7 @@ def main():
     svg = ['<svg xmlns="http://www.w3.org/2000/svg" width="960" height="700" viewBox="0 0 960 700">',
            '<rect width="960" height="700" fill="white"/>',
            '<style>text{font:16px sans-serif;fill:#222}.grid{stroke:#ddd}.axis{stroke:#333}</style>',
-           '<text x="50" y="30" font-weight="bold">GRU training and validation by epoch</text>',
+           f'<text x="50" y="30" font-weight="bold">{html.escape(args.title)}</text>',
            '<text x="620" y="30" fill="#1769aa">Training</text><line x1="590" y1="24" x2="612" y2="24" stroke="#1769aa" stroke-width="3"/>',
            '<text x="790" y="30">Validation</text><line x1="758" y1="24" x2="780" y2="24" stroke="#c0392b" stroke-width="3"/>']
     for index, (title, metric) in enumerate(panels):
