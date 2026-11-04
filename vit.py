@@ -47,6 +47,37 @@ class DINOv2Encoder:
         return torch.cat(outputs)
 
     @torch.inference_mode()
+    def encode_latest_grid(self, goal, latest, *, image_chunk_size=1):
+        """Frozen full-view patch features → row-major 4×4 regional means.
+
+        No input crop/resolution change. Adaptive averaging uses the entire
+        37×37 grid; boundary bins can overlap because 37 is not divisible by 4.
+        Features include padding and global context, not isolated crop features.
+        """
+        if type(image_chunk_size) is not int or image_chunk_size <= 0:
+            raise ValueError('image_chunk_size must be a positive integer')
+        for value in (goal, latest):
+            if value.shape != (3, 518, 518):
+                raise ValueError('Expected a 518-square RGB goal and latest image')
+            if value.dtype != torch.float32 or not torch.isfinite(value).all():
+                raise ValueError('Inputs must be finite normalized float32 tensors')
+        # The chosen non-register DINOv2 Small/14 has one prefix (CLS) token.
+        # Reject unexpected layouts rather than silently treating prefixes as patches.
+        if getattr(self.backbone, 'num_prefix_tokens', None) != 1:
+            raise ValueError('Expected one CLS prefix token for the selected checkpoint')
+        self.backbone.eval()
+        grids = []
+        for chunk in torch.stack((goal, latest)).split(image_chunk_size):
+            tokens = self.backbone.forward_features(chunk.to(self.device))
+            if tokens.shape != (len(chunk), 1370, 384) or not torch.isfinite(tokens).all():
+                raise ValueError('Expected finite CLS + 37x37 patch tokens of width 384')
+            spatial = tokens[:, 1:].reshape(len(chunk), 37, 37, 384).permute(0, 3, 1, 2)
+            pooled = torch.nn.functional.adaptive_avg_pool2d(spatial, (4, 4))
+            grids.append(pooled.permute(0, 2, 3, 1).reshape(len(chunk), 16, 384))
+        features = torch.cat(grids)
+        return {'goal_features': features[0], 'history_features': features[1:2]}
+
+    @torch.inference_mode()
     def encode_latest(self, goal, latest, *, image_chunk_size=1):
         """Encode only one goal and latest image; preserve the shared preparation."""
         if type(image_chunk_size) is not int or image_chunk_size <= 0:

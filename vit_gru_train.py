@@ -32,7 +32,7 @@ def resolve_config(config, **overrides):
     resolved.update({key: value for key, value in overrides.items() if value is not None})
     if resolved['architecture'] not in ('late_goal', 'early_goal'):
         raise ValueError('Unsupported architecture')
-    if resolved['model'] not in ('gru', 'static_latest_goal_metadata'):
+    if resolved['model'] not in ('gru', 'static_latest_goal_metadata', 'static_grid_goal_metadata'):
         raise ValueError('Unsupported model')
     if resolved['model'] != 'gru' and resolved['architecture'] != 'late_goal':
         raise ValueError('GRU architecture selection is unavailable for the static model')
@@ -62,7 +62,7 @@ def resolve_config(config, **overrides):
 
 def selected_config(model='gru', architecture='late_goal', optimizer=None, weight_decay=None):
     """Static comparison uses the baseline Adam recipe; GRU defaults stay intact."""
-    static = model == 'static_latest_goal_metadata'
+    static = model in ('static_latest_goal_metadata', 'static_grid_goal_metadata')
     return resolve_config(CONFIG, model=model, architecture=architecture,
                           optimizer=optimizer if optimizer is not None else ('Adam' if static else CONFIG['optimizer']),
                           weight_decay=weight_decay if weight_decay is not None else (0.0 if static else CONFIG['weight_decay']))
@@ -75,17 +75,24 @@ def make_head(config):
     if config['model'] == 'static_latest_goal_metadata' and config.get('architecture', 'late_goal') == 'late_goal':
         from vit_static import ViTStaticHead
         return ViTStaticHead()
+    if config['model'] == 'static_grid_goal_metadata' and config.get('architecture', 'late_goal') == 'late_goal':
+        from vit_grid import ViTGridHead
+        return ViTGridHead()
     raise ValueError('Unsupported model/architecture')
 
 
 def head_description(head):
     static = getattr(head, 'model', 'gru') != 'gru'
+    grid = getattr(head, 'model', 'gru') == 'static_grid_goal_metadata'
     return dict(model=getattr(head, 'model', 'gru'),
                 head_type=type(head).__name__,
                 trainable_parameters=sum(p.numel() for p in head.parameters() if p.requires_grad),
-                feature_roles=(['latest_image384', 'goal384', 'six_chronological_depth_time_pairs12']
+                feature_roles=(['latest_grid16x384', 'goal_grid16x384', 'six_chronological_depth_time_pairs12']
+                               if grid else ['latest_image384', 'goal384', 'six_chronological_depth_time_pairs12']
                                if static else ['six_chronological_image384_depth_time_steps', 'goal384']),
-                visual_history_frames=1 if static else 6)
+                visual_history_frames=1 if static else 6,
+                spatial_grid=([4, 4] if grid else None),
+                regional_projection_width=(16 if grid else None))
 
 
 def save_bytes(directory, name, data, limit=OUTPUT_BYTES):
@@ -146,7 +153,7 @@ def check_partitions(train, validation):
 
 def extract(datasets, prepare, encoder, *, seconds=300, clock=time.monotonic, model='gru'):
     import torch
-    if model not in ('gru', 'static_latest_goal_metadata'):
+    if model not in ('gru', 'static_latest_goal_metadata', 'static_grid_goal_metadata'):
         raise ValueError('Unsupported extraction model')
     start = clock()
     result = []
@@ -166,9 +173,12 @@ def extract(datasets, prepare, encoder, *, seconds=300, clock=time.monotonic, mo
                 # need normalization and encoding for this comparison.
                 goal = prepare.prepare_image(case['goal'])['tensor']
                 latest = prepare.prepare_image(case['history'][-1])['tensor']
-                feature = encoder.encode_latest(goal, latest, image_chunk_size=1)
+                if model == 'static_grid_goal_metadata':
+                    feature = encoder.encode_latest_grid(goal, latest, image_chunk_size=1)
+                else:
+                    feature = encoder.encode_latest(goal, latest, image_chunk_size=1)
             # Encoder inference tensors cannot be saved for backward by the head.
-            # Clone outside inference mode; retain only small feature vectors on CPU.
+            # Clone outside inference mode; retain vectors/compact grids on CPU.
             histories.append(feature['history_features'].detach().cpu().clone())
             goals.append(feature['goal_features'].detach().cpu().clone())
             if clock() - start >= seconds:
@@ -364,7 +374,7 @@ def run_worker(args):
                    metadata_scale_depth_time=scales.tolist(), metadata_scaling='training population std; no centering',
                    train_rows=list(train.indices), validation_rows=list(validation.indices),
                    code_sha256={name: hashlib.sha256((Path(__file__).parent/name).read_bytes()).hexdigest()
-                                for name in ('vit_gru_train.py', 'vit_gru.py', 'vit_static.py', 'vit_gru_debug.py', 'vit.py', 'preprocessing.py', 'dataset.py')},
+                                for name in ('vit_gru_train.py', 'vit_gru.py', 'vit_static.py', 'vit_grid.py', 'vit_gru_debug.py', 'vit.py', 'preprocessing.py', 'dataset.py')},
                    git_commit=subprocess.run(['git','rev-parse','HEAD'], cwd=Path(__file__).parent,
                                              capture_output=True, text=True).stdout.strip(),
                    git_dirty=bool(subprocess.run(['git','status','--porcelain'], cwd=Path(__file__).parent,
@@ -387,8 +397,8 @@ def main(argv=None):
     parser.add_argument('--data-dir', type=Path, default=os.environ.get('DATA_DIR'))
     parser.add_argument('--output-dir', type=Path, required=True)
     parser.add_argument('--device', choices=('cpu','cuda'), default='cuda')
-    parser.add_argument('--model', choices=('gru', 'static_latest_goal_metadata'), default='gru',
-                        help='GRU (default), or latest image + goal + all movement metadata without recurrence')
+    parser.add_argument('--model', choices=('gru', 'static_latest_goal_metadata', 'static_grid_goal_metadata'), default='gru',
+                        help='GRU (default), static image summaries, or static 4x4 patch grids; both static models retain all movement metadata')
     parser.add_argument('--architecture', choices=('late_goal', 'early_goal'),
                         default=config['architecture'], help='Goal at classifier only, or also at every GRU step')
     parser.add_argument('--optimizer', choices=('Adam', 'AdamW'), default=None, help='Default: AdamW for GRU; Adam for static')
