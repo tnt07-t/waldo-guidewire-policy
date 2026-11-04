@@ -1,0 +1,352 @@
+{
+  "format_version": 1,
+  "title": "Guidewire experiment journal",
+  "scope": "Permitted aggregate summaries recorded in project notes. This is a curated historical log, not a copy of private artifacts. Saved reports are linked at runtime on Perlmutter and kept distinct from these owner-reported snapshots.",
+  "takeaway": "All four development models show overfitting in the recorded curve reviews. Static latest+goal+movement metadata matches the early-goal GRU closely on selected validation BA; these runs do not demonstrate a benefit from visual-history processing. One seed and 80 related validation cases do not establish superiority or uselessness of history.",
+  "trials": [
+    {
+      "id": "gru-adam",
+      "title": "GRU baseline \u00b7 Adam",
+      "date": "2026-11-03",
+      "category": "development",
+      "status": "completed",
+      "question": "Does frozen visual history + goal + movement metadata generalize?",
+      "change": "Six visual frames through a 64-unit GRU; goal enters the classifier; Adam without weight decay.",
+      "observation": "Selected validation BA 59.21%, versus training BA 87.20%. Training improves while validation loss rises; the selected peak was isolated in supplied points.",
+      "decision": "Retain as the original reference; test regularization with the same inputs before widening the model.",
+      "protocol": {
+        "split_position": 0,
+        "seed": 0,
+        "batch_size": 32,
+        "lr": 0.001,
+        "model": "gru",
+        "architecture": "late_goal",
+        "optimizer": "Adam",
+        "weight_decay": 0
+      },
+      "best_epoch": 53,
+      "completed_epochs": 73,
+      "updates": 657,
+      "validation": {
+        "loss": 0.90499,
+        "accuracy": 0.575,
+        "balanced_accuracy": 0.5921,
+        "retract_recall": 0.7059,
+        "advance_recall": 0.4783,
+        "confusion_matrix": [
+          [
+            24,
+            10
+          ],
+          [
+            24,
+            22
+          ]
+        ],
+        "n": 80
+      },
+      "selected_train": {
+        "loss": 0.35353,
+        "accuracy": 0.8427,
+        "balanced_accuracy": 0.872,
+        "retract_recall": 0.9794,
+        "advance_recall": 0.7647,
+        "n": 267
+      },
+      "artifact_hint": null,
+      "revision": "69fd063",
+      "provenance": "Pre-run revision confirmed; aggregate metrics rounded as supplied. Private baseline directory has not been confirmed; match by saved settings, selected/final epochs and score, not its name.",
+      "source": "docs/grp2/PROGRESS.md"
+    },
+    {
+      "id": "gru-adamw",
+      "title": "GRU \u00b7 AdamW regularization",
+      "date": "2026-11-03",
+      "category": "development",
+      "status": "completed",
+      "question": "Does weight decay reduce the generalization gap and improve validation BA?",
+      "change": "Same late-goal architecture; switch to AdamW with weight decay 0.01.",
+      "observation": "Selected BA 57.48%, below the Adam baseline. The selected epoch favors ADVANCE; train/validation divergence continues.",
+      "decision": "Do not replace the baseline based on ordinary accuracy or a smaller gap alone; keep this completed comparison.",
+      "protocol": {
+        "split_position": 0,
+        "seed": 0,
+        "batch_size": 32,
+        "lr": 0.001,
+        "model": "gru",
+        "architecture": "late_goal",
+        "optimizer": "AdamW",
+        "weight_decay": 0.01
+      },
+      "best_epoch": 32,
+      "completed_epochs": 52,
+      "updates": 468,
+      "validation": {
+        "loss": 0.800831,
+        "accuracy": 0.6125,
+        "balanced_accuracy": 0.574808,
+        "retract_recall": 0.323529,
+        "advance_recall": 0.826087,
+        "confusion_matrix": [
+          [
+            11,
+            23
+          ],
+          [
+            8,
+            38
+          ]
+        ],
+        "n": 80
+      },
+      "selected_train": {
+        "loss": 0.462567,
+        "balanced_accuracy": 0.747483,
+        "retract_recall": 0.57732,
+        "advance_recall": 0.917647,
+        "n": 267
+      },
+      "artifact_hint": "waldo-gru-training/split0-seed0-adamw-01",
+      "revision": "481e517",
+      "provenance": "Saved revision and AdamW settings reported. Saved dirty flag true; exact tracked/untracked source details unverified.",
+      "source": "docs/grp2/PROGRESS.md"
+    },
+    {
+      "id": "gru-early-goal",
+      "title": "GRU \u00b7 goal at every step",
+      "date": "2026-11-03",
+      "category": "development",
+      "status": "completed",
+      "question": "Does access to the goal during memory updates help?",
+      "change": "Repeat goal384 at each GRU step; retain direct goal fusion; return to Adam/zero decay. Parameters increase to 189,378.",
+      "observation": "Selected BA 60.87%; curve still overfits. The larger head changes capacity as well as goal timing.",
+      "decision": "Keep for comparison; current evidence does not justify widening it or claiming route understanding.",
+      "protocol": {
+        "split_position": 0,
+        "seed": 0,
+        "batch_size": 32,
+        "lr": 0.001,
+        "model": "gru",
+        "architecture": "early_goal",
+        "optimizer": "Adam",
+        "weight_decay": 0
+      },
+      "best_epoch": 52,
+      "completed_epochs": 72,
+      "updates": 648,
+      "validation": {
+        "loss": 0.904229,
+        "accuracy": 0.625,
+        "balanced_accuracy": 0.608696,
+        "retract_recall": 0.5,
+        "advance_recall": 0.717391,
+        "confusion_matrix": [
+          [
+            17,
+            17
+          ],
+          [
+            13,
+            33
+          ]
+        ],
+        "n": 80
+      },
+      "selected_train": {},
+      "artifact_hint": "waldo-gru-training/split0-seed0-early-goal-01",
+      "revision": "422e61e",
+      "provenance": "Published code and intended invocation recorded; saved run revision/configuration/dirty state and selected/final numeric training scores remain uninspected.",
+      "source": "docs/grp2/PROGRESS.md"
+    },
+    {
+      "id": "static-latest",
+      "title": "Static \u00b7 latest image + goal + movement history",
+      "date": "2026-11-04",
+      "category": "development",
+      "status": "completed",
+      "question": "Does processing six visual frames add value beyond the latest image and movement metadata?",
+      "change": "No GRU: latest384 + goal384 + six depth/time pairs \u2192 780\u219264\u21922. Adam/zero decay; 50,114 parameters.",
+      "observation": "Selected BA 61.13%, close to early-goal GRU 60.87%. RETRACT recall falls to 35.29% while ADVANCE reaches 86.96%. Screenshot still shows overfitting.",
+      "decision": "No demonstrated visual-history advantage in these runs. Preserve both model families; inspect representation and saved aggregates before another experiment.",
+      "protocol": {
+        "split_position": 0,
+        "seed": 0,
+        "batch_size": 32,
+        "lr": 0.001,
+        "model": "static_latest_goal_metadata",
+        "architecture": "late_goal",
+        "optimizer": "Adam",
+        "weight_decay": 0
+      },
+      "best_epoch": 42,
+      "completed_epochs": 62,
+      "updates": 558,
+      "validation": {
+        "loss": 0.8513572812080383,
+        "accuracy": 0.6500000357627869,
+        "balanced_accuracy": 0.6112531969309463,
+        "retract_recall": 0.35294117647058826,
+        "advance_recall": 0.8695652173913043,
+        "confusion_matrix": [
+          [
+            12,
+            22
+          ],
+          [
+            6,
+            40
+          ]
+        ],
+        "n": 80
+      },
+      "selected_train": {},
+      "artifact_hint": "waldo-static-training/latest-goal-meta-h64-adam-wd0-split0-seed0-01",
+      "revision": "aa1496a",
+      "provenance": "Compute-node HEAD aa1496a and CUDA confirmed before execution. Summary supplied, freeze/reload passed. Saved context/dirty state not yet inspected; screenshot readings are qualitative.",
+      "source": "docs/grp2/PROGRESS.md"
+    }
+  ],
+  "other_work": [
+    {
+      "date": "2026-10-30\u201331",
+      "title": "Reader, preparation and frozen-encoder readiness",
+      "status": "verified setup",
+      "question": "Are image/goal roles and metadata aligned, and can frozen DINOv2 extraction run?",
+      "outcome": "Synthetic loader/preparation/encoder checks and owner-run real-case CPU extraction/grouping passed. This is infrastructure evidence, not classifier validation.",
+      "source": "docs/grp2/PROGRESS.md"
+    },
+    {
+      "date": "2026-11-02\u201303",
+      "title": "Marker/wire feature-sensitivity checks",
+      "status": "inconclusive diagnostic",
+      "question": "Do the whole-image summaries visibly respond to target and wire changes?",
+      "outcome": "A one-frame masking result is recorded as inconclusive for temporal usefulness. Do not turn sensitivity into a claim of learned route reasoning or repeat masking merely to resume.",
+      "source": "docs/grp2/PROGRESS.md"
+    },
+    {
+      "date": "2026-11-03",
+      "title": "Eight-case GRU learning check",
+      "status": "completed sanity check",
+      "question": "Can the frozen-feature head actually update and fit a tiny training subset?",
+      "outcome": "300 updates: training loss 0.775900 \u2192 0.000129; accuracy 50% \u2192 100%. Finite gradients, changed head and unchanged encoder reported. Training-only memorization; no held-out score or checkpoint.",
+      "source": "docs/grp2/PROGRESS.md"
+    }
+  ],
+  "probe_baseline": {
+    "date": "2026-11-01",
+    "title": "Sabrina's frozen-feature probe comparison",
+    "status": "completed separate protocol",
+    "source": "docs/EVALUATION.md",
+    "note": "Owner-reported split-0 validation results rounded to three decimals. Centered per-column scaling, class-balanced L2 logistic fitting and validation-selected C differ from the PyTorch recipe. Goal-only result is not proof of leakage. Full report access may be unavailable from another account; do not copy private artifacts between accounts.",
+    "scores": [
+      {
+        "approach": "majority",
+        "train_ba": 0.5,
+        "validation_ba": 0.5,
+        "retract_recall": 0,
+        "advance_recall": 1
+      },
+      {
+        "approach": "metadata",
+        "train_ba": 0.58,
+        "validation_ba": 0.547,
+        "retract_recall": 0.529,
+        "advance_recall": 0.565
+      },
+      {
+        "approach": "DINOv2 latest",
+        "train_ba": 0.997,
+        "validation_ba": 0.458,
+        "retract_recall": 0.265,
+        "advance_recall": 0.652
+      },
+      {
+        "approach": "DINOv2 goal only",
+        "train_ba": 0.805,
+        "validation_ba": 0.609,
+        "retract_recall": 0.588,
+        "advance_recall": 0.63
+      },
+      {
+        "approach": "DINOv2 latest + goal",
+        "train_ba": 0.963,
+        "validation_ba": 0.57,
+        "retract_recall": 0.618,
+        "advance_recall": 0.522
+      },
+      {
+        "approach": "DINOv2 latest + goal + metadata",
+        "train_ba": 1,
+        "validation_ba": 0.57,
+        "retract_recall": 0.618,
+        "advance_recall": 0.522
+      },
+      {
+        "approach": "DINOv2 mean history + goal",
+        "train_ba": 0.94,
+        "validation_ba": 0.54,
+        "retract_recall": 0.559,
+        "advance_recall": 0.522
+      },
+      {
+        "approach": "ResNet latest",
+        "train_ba": 0.807,
+        "validation_ba": 0.536,
+        "retract_recall": 0.441,
+        "advance_recall": 0.63
+      },
+      {
+        "approach": "ResNet goal only",
+        "train_ba": 0.787,
+        "validation_ba": 0.513,
+        "retract_recall": 0.353,
+        "advance_recall": 0.674
+      },
+      {
+        "approach": "ResNet latest + goal",
+        "train_ba": 1,
+        "validation_ba": 0.547,
+        "retract_recall": 0.441,
+        "advance_recall": 0.652
+      },
+      {
+        "approach": "ResNet latest + goal + metadata",
+        "train_ba": 0.909,
+        "validation_ba": 0.514,
+        "retract_recall": 0.441,
+        "advance_recall": 0.587
+      },
+      {
+        "approach": "ResNet mean history + goal",
+        "train_ba": 1,
+        "validation_ba": 0.54,
+        "retract_recall": 0.471,
+        "advance_recall": 0.609
+      }
+    ]
+  },
+  "next_options": [
+    {
+      "title": "Compact frozen patch/spatial features",
+      "status": "discussed candidate; local implementation/report state checked automatically below",
+      "reason": "Retain more local wire/target information than a single image summary; agree on compact pooling/head and controls before coding or training.",
+      "implementation_file": "vit_grid.py",
+      "model": "static_grid_goal_metadata"
+    },
+    {
+      "title": "Smaller or more strongly regularized heads",
+      "status": "discussed \u2014 no new run",
+      "reason": "Existing balanced L2 probes already overfit. An unchanged repeat is not a new experiment."
+    },
+    {
+      "title": "Last-block fine-tuning",
+      "status": "discussed \u2014 not implemented",
+      "reason": "A separate adaptation comparison requiring trainable encoder handling and fresh features, after frozen controls."
+    },
+    {
+      "title": "128-unit GRU / repeat seeds / expanded splits",
+      "status": "deferred \u2014 not run",
+      "reason": "Larger capacity is not a demonstrated fix for overfitting; repeats and final reporting protocol need a separate agreed budget."
+    }
+  ]
+}
