@@ -20,15 +20,33 @@ Owner-run Perlmutter one-case encoder verification passed (2026-11-02): the `cnn
 
 `mlp_cnn.py` encodes the prepared goal through the shared frozen ResNet (`encode_goal` → `[512]` / `[B, 512]`) for MLP fusion with the GRU `[128]` summary. Prep stays in `DINOv2Preprocessor.prepare_case`; history/GRU stay in `gru.py`. Teammate can add the MLP in `mlp_cnn.py`.
 
-`cnn_diagnostics.py` remains available for 512-d probes. GRU–goal MLP fusion, the current-input baseline, training, and evaluation are not implemented. Basic dataset validation has already passed as recorded in the dataset notes; do not repeat it without a concrete reason.
+`mlp_cnn.GoalClassifier` is the MLP head over `concat(gru_summary [B,128], goal_features [B,512])` (640 -> 128 -> 2 logits, no / yes). `model_cnngru.CNNGRUModel` wires the full path: history through `CNNGRUEncoder`, goal through `encode_goal` with the same shared CNN, then `GoalClassifier`.
 
-**Immediate next steps:** teammate adds MLP over `concat(gru_summary [B,128], goal_features [B,512])` in `mlp_cnn.py`.
+`cnn_diagnostics.py` remains available for 512-d probes. The current-input baseline, training loop, and evaluation are not implemented. Basic dataset validation has already passed as recorded in the dataset notes; do not repeat it without a concrete reason.
+
+**Immediate next steps:** write the training and evaluation script around `CNNGRUModel` (cross-entropy on `label`, argmax for prediction), then run a one-case forward/backward check on Perlmutter.
 
 ## Progress log
+
+### 2026-11-03 - Full CNN-GRU model in `model_cnngru.py` (local)
+
+Added `model_cnngru.py` with `CNNGRUModel(pretrained=True)`, which composes the existing pieces into one yes / no model.
+`forward(history, depth, offsets, goal)` runs `CNNGRUEncoder` for the `[B, 128]` history summary and `encode_goal(self.encoder.cnn, goal)` for the `[B, 512]` goal features, so history and goal share one frozen ResNet-18.
+`GoalClassifier` then maps the concatenated 640-d vector to `[B, 2]` logits.
+The module docstring records the expected batch layout (output of `prepare_case` plus collate) and the intended training step: `cross_entropy(logits, label)`, prediction by `argmax`.
+
+Supporting changes: added `GoalClassifier` (640 -> 128 -> ReLU -> 2) to `mlp_cnn.py` and removed its MLP TODO; `gru.py` only had a trailing-newline change.
+
+Not verified: no test or forward pass has been run on this model yet, and no training or accuracy results exist.
+No staging/commit/push in this note.
 
 ### 2026-11-03 — Goal→ResNet helper in `mlp_cnn.py` (local)
 
 `mlp_cnn.encode_goal` runs the prepared goal through the shared `FrameEncoder` (ResNet-18). Dropped redundant `prepare_goal` (prep already comes from `prepare_case`). Invented-input `tests/test_mlp_cnn.py` passed locally. MLP fusion still pending. No staging/commit/push in this note.
+
+### 2026-11-03 — ResNet→GRU in `gru.py` (local)
+
+`gru.CNNGRUEncoder` runs the images through the shared `FrameEncoder` (ResNet-18).
 
 ### 2026-11-02 — Diagnostics correctness fixes (local)
 

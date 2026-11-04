@@ -10,11 +10,11 @@ Teammate: concat([gru_summary, goal_features], dim=-1) -> [B, 640] -> MLP -> act
 """
 
 import torch
+from torch import nn
 
 # Matches FrameEncoder.feature_dim / CNNGRUEncoder hidden size.
 GOAL_FEATURE_DIM = 512
 GRU_SUMMARY_DIM = 128
-
 
 def encode_goal(encoder, goal):
     """Run the prepared goal through the shared frozen ResNet (FrameEncoder).
@@ -45,6 +45,20 @@ def encode_goal(encoder, goal):
     return features
 
 
-# TODO: add MLP here, e.g.
-#   x = torch.cat([gru_summary, encode_goal(model.cnn, goal)], dim=-1)  # [B, 640]
-#   return mlp(x)
+class GoalClassifier(nn.Module):
+    """MLP classifier (yes / no) over the GRU summary and goal features.
+
+    gru_summary [B, 128] + goal_features [B, 512] -> logits [B, 2] (no, yes).
+    Train with CrossEntropyLoss, predict with argmax.
+    """
+
+    def __init__(self):
+        super().__init__()
+        self.mlp = nn.Sequential(
+            nn.Linear(GRU_SUMMARY_DIM + GOAL_FEATURE_DIM, 128),
+            nn.ReLU(),
+            nn.Linear(128, 2),
+        )
+
+    def forward(self, gru_summary, goal_features):
+        return self.mlp(torch.cat([gru_summary, goal_features], dim=-1))
