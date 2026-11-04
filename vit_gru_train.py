@@ -15,13 +15,41 @@ import time
 
 from vit_gru_debug import freeze_and_snapshot, verify_frozen, supervise, training_inputs
 
-# Settings for the first agreed experiment, not a hyperparameter sweep.
+# Settings for the next bounded comparison; architecture and budgets stay fixed.
 CONFIG = dict(seed=0, hidden_size=64, batch_size=32, lr=0.001,
-              optimizer="Adam", weight_decay=0.0, max_epochs=100,
+              optimizer="AdamW", weight_decay=0.01, max_epochs=100,
               max_updates=900, patience=20, head_seconds=120,
               extraction_seconds=300, overall_seconds=600,
               split_position=0, image_chunk_size=1)
 OUTPUT_BYTES = 20 * 1024 * 1024
+
+
+def resolve_config(config, **overrides):
+    """Resolve actual settings without permitting larger operational budgets."""
+    resolved = dict(config)
+    resolved.update({key: value for key, value in overrides.items() if value is not None})
+    if resolved['optimizer'] not in ('Adam', 'AdamW'):
+        raise ValueError('Unsupported optimizer')
+    for key in ('lr', 'weight_decay', 'head_seconds', 'extraction_seconds', 'overall_seconds'):
+        value = resolved[key]
+        if type(value) not in (int, float) or not math.isfinite(value):
+            raise ValueError('Invalid ' + key)
+    if resolved['lr'] <= 0 or resolved['weight_decay'] < 0:
+        raise ValueError('Invalid learning rate or weight decay')
+    for key, ceiling in (('max_epochs', 100), ('max_updates', 900), ('patience', 20),
+                         ('batch_size', 32)):
+        if type(resolved[key]) is not int or not 1 <= resolved[key] <= ceiling:
+            raise ValueError('Invalid or excessive ' + key)
+    for key, ceiling in (('head_seconds', 120), ('extraction_seconds', 300),
+                         ('overall_seconds', 600)):
+        if not 0 < resolved[key] <= ceiling:
+            raise ValueError('Invalid or excessive ' + key)
+    if type(resolved['seed']) is not int or not 0 <= resolved['seed'] < 2**32:
+        raise ValueError('Invalid seed')
+    for key, expected in (('hidden_size', 64), ('split_position', 0), ('image_chunk_size', 1)):
+        if type(resolved[key]) is not int or resolved[key] != expected:
+            raise ValueError('Unsupported ' + key)
+    return resolved
 
 
 def save_bytes(directory, name, data, limit=OUTPUT_BYTES):
@@ -159,21 +187,24 @@ def load_checkpoint(path, device='cpu'):
     return head, checkpoint
 
 
-def train_fresh(train, validation, directory, context, *, max_epochs=100,
-                max_updates=900, seconds=120, patience=20, clock=time.monotonic):
+def train_fresh(train, validation, directory, context, *, max_epochs=None,
+                max_updates=None, seconds=None, patience=None, clock=time.monotonic):
     import torch
     from vit_gru import ViTGRUHead
     from torch.nn import functional as F
-    if not 1 <= max_epochs <= 100 or not 1 <= max_updates <= 900 or not 1 <= patience <= 20:
-        raise ValueError('Training work limits exceeded')
-    if not math.isfinite(seconds) or not 0 < seconds <= 120:
-        raise ValueError('Invalid training deadline')
-    # Construct NEW learned weights and optimizer state on every run.
-    # The seed makes local repeated runs reproducible; no tiny-fit weights are loaded.
-    torch.manual_seed(0)
+    config = resolve_config(context['config'], max_epochs=max_epochs,
+                            max_updates=max_updates, head_seconds=seconds, patience=patience)
+    # Save the resolved values, including reduced test/work limits, not stale defaults.
+    context = dict(context, config=config)
+    max_epochs, max_updates = config['max_epochs'], config['max_updates']
+    seconds, patience = config['head_seconds'], config['patience']
+    # Fresh initialization; the frozen encoder is not part of this optimizer.
+    torch.manual_seed(config['seed'])
     head = ViTGRUHead().to(train[0].device)
-    optimizer = torch.optim.Adam(head.parameters(), lr=0.001, weight_decay=0)
-    generator = torch.Generator().manual_seed(0)
+    optimizer_class = {'Adam': torch.optim.Adam, 'AdamW': torch.optim.AdamW}[config['optimizer']]
+    optimizer = optimizer_class(head.parameters(), lr=config['lr'],
+                                weight_decay=config['weight_decay'])
+    generator = torch.Generator().manual_seed(config['seed'])
     start = clock()
     initial, _ = evaluate(head, train)
     evaluate(head, validation)  # Validate labels and tensor contracts before updates.
@@ -186,7 +217,7 @@ def train_fresh(train, validation, directory, context, *, max_epochs=100,
         complete = True
         head.train()
         # Keep the smaller last batch: 267 cases give eight batches of 32 and one of 11.
-        for batch in torch.randperm(len(train[3]), generator=generator).split(32):
+        for batch in torch.randperm(len(train[3]), generator=generator).split(config['batch_size']):
             if clock() - start >= seconds or updates >= max_updates:
                 stop = 'head_time_limit' if clock() - start >= seconds else 'max_updates'
                 complete = False
@@ -201,7 +232,7 @@ def train_fresh(train, validation, directory, context, *, max_epochs=100,
             loss.backward()
             if any(p.grad is None or not torch.isfinite(p.grad).all() for p in head.parameters()):
                 raise RuntimeError('Invalid training gradients')
-            # Adam uses those gradients to update only the GRU/classifier weights.
+            # Update only GRU/classifier weights; AdamW applies decoupled weight decay.
             optimizer.step()
             if any(not torch.isfinite(p).all() for p in head.parameters()):
                 raise RuntimeError('Nonfinite head weights')
@@ -252,9 +283,10 @@ def run_worker(args):
     from preprocessing import CHECKPOINT, DINOv2Preprocessor
     from vit import DINOv2Encoder
     torch.set_num_threads(2)
+    config = resolve_config(CONFIG)
     # Only train/validation are instantiated; test images remain reserved.
-    train = GuidewireDataset(args.data_dir, split_position=0, partition='train')
-    validation = GuidewireDataset(args.data_dir, split_position=0, partition='validation')
+    train = GuidewireDataset(args.data_dir, split_position=config['split_position'], partition='train')
+    validation = GuidewireDataset(args.data_dir, split_position=config['split_position'], partition='validation')
     check_partitions(train, validation)
     if (len(train), len(validation)) != (267, 80):
         raise ValueError('Real split-0 counts must be 267/80')
@@ -271,10 +303,11 @@ def run_worker(args):
     encoder = DINOv2Encoder(device=device)
     snapshot = freeze_and_snapshot(encoder.backbone)
     start = time.monotonic()
-    features = extract((train, validation), DINOv2Preprocessor(), encoder)
+    features = extract((train, validation), DINOv2Preprocessor(), encoder,
+                       seconds=config['extraction_seconds'])
     extraction_seconds = time.monotonic()-start
     verify_frozen(encoder.backbone, snapshot)
-    context = dict(config=CONFIG, checkpoint=CHECKPOINT,
+    context = dict(config=config, checkpoint=CHECKPOINT,
                    preparation='Existing full-view 518-square DINOv2Preprocessor; no augmentation',
                    metadata_scale_depth_time=scales.tolist(), metadata_scaling='training population std; no centering',
                    train_rows=list(train.indices), validation_rows=list(validation.indices),
@@ -297,6 +330,7 @@ def run_worker(args):
 
 
 def main(argv=None):
+    config = resolve_config(CONFIG)
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--data-dir', type=Path, default=os.environ.get('DATA_DIR'))
     parser.add_argument('--output-dir', type=Path, required=True)
@@ -323,7 +357,7 @@ def main(argv=None):
     # This terminates the worker, NOT the Slurm allocation; release that separately.
     code, timeout = supervise([sys.executable, '-B', str(Path(__file__).resolve()), '--worker',
                               '--data-dir', str(args.data_dir), '--output-dir', str(args.output_dir),
-                              '--device', args.device], seconds=600)
+                              '--device', args.device], seconds=config['overall_seconds'])
     path = args.output_dir/'summary.json'
     result = json.loads(path.read_text()) if path.exists() else {}
     if timeout or code:

@@ -8,7 +8,7 @@ from unittest.mock import patch
 import torch
 from vit_gru import ViTGRUHead
 from vit_gru_train import (CONFIG, check_partitions, evaluate, extract, load_checkpoint,
-                           metrics, save_bytes, train_fresh, validation_inputs)
+                           metrics, resolve_config, save_bytes, train_fresh, validation_inputs)
 from vit_gru_debug import training_inputs
 
 torch.set_num_threads(2)
@@ -28,6 +28,54 @@ def context():
 
 
 class TrainingTests(unittest.TestCase):
+    def test_resolved_recipe_drives_training_and_checkpoint(self):
+        config = dict(CONFIG, seed=9, batch_size=7, lr=0.002, weight_decay=0.03)
+        ctx = dict(context(), config=config)
+        with tempfile.TemporaryDirectory() as directory, patch(
+                'torch.optim.AdamW', wraps=torch.optim.AdamW) as optimizer:
+            result = train_fresh(inputs(16), inputs(8), directory, ctx, max_epochs=1)
+            self.assertEqual(result['updates'], 3)  # 7 + 7 + 2, from config
+            self.assertTrue(result['reload_verified'])
+            optimizer.assert_called_once()
+            self.assertEqual(optimizer.call_args.kwargs, dict(lr=0.002, weight_decay=0.03))
+            head, saved = load_checkpoint(Path(directory)/'latest.pt')
+            self.assertEqual(saved['context']['config'], dict(config, max_epochs=1))
+            self.assertEqual(ctx['config']['max_epochs'], 100)  # caller not mutated
+            torch.manual_seed(9)
+            initial = ViTGRUHead()
+            self.assertEqual(evaluate(initial, inputs(16))[0], result['initial_train'])
+            self.assertTrue(any(not torch.equal(p, q) for p, q in
+                                zip(initial.parameters(), head.parameters())))
+
+    def test_decay_changes_actual_updates_and_legacy_adam_loads(self):
+        heads = []
+        for optimizer, decay in [('AdamW', 0.01), ('AdamW', 0.0), ('Adam', 0.0)]:
+            ctx = dict(context(), config=dict(CONFIG, optimizer=optimizer, weight_decay=decay))
+            with tempfile.TemporaryDirectory() as directory:
+                result = train_fresh(inputs(8), inputs(8), directory, ctx, max_epochs=1)
+                self.assertTrue(result['reload_verified'])
+                head, saved = load_checkpoint(Path(directory)/'latest.pt')
+                self.assertEqual(saved['context']['config']['optimizer'], optimizer)
+                heads.append(head)
+        # Same initialization/data: nonzero decay must affect learned parameters.
+        self.assertTrue(any(not torch.equal(p, q) for p, q in
+                            zip(heads[0].parameters(), heads[1].parameters())))
+        for p, q in zip(heads[1].parameters(), heads[2].parameters()):
+            self.assertTrue(torch.allclose(p, q, atol=1e-7, rtol=1e-6))
+
+    def test_recipe_rejects_invalid_values_and_larger_budgets(self):
+        for key, value in [('optimizer', 'SGD'), ('lr', float('nan')),
+                           ('weight_decay', -1), ('weight_decay', float('inf')),
+                           ('batch_size', 0), ('seed', -1), ('hidden_size', 128),
+                           ('split_position', 1), ('max_epochs', 101),
+                           ('max_updates', 901), ('patience', 21),
+                           ('head_seconds', 121), ('extraction_seconds', 301),
+                           ('overall_seconds', 601)]:
+            with self.subTest(key=key, value=value), self.assertRaises(ValueError):
+                resolve_config(dict(CONFIG, **{key: value}))
+        with tempfile.TemporaryDirectory() as directory, self.assertRaises(ValueError):
+            train_fresh(inputs(), inputs(8), directory, context(), max_epochs=101)
+
     def test_metrics_known_counts_and_ties(self):
         result = metrics(torch.tensor([[2.,0.],[0.,2.],[0.,2.],[2.,0.],[0.,0.]]),
                          torch.tensor([0,0,1,1,1]))
