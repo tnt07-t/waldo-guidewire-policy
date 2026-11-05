@@ -8,3 +8,6 @@ docs/sabrina
 
 # cache
 __pycache__/
+
+# training checkpoints (large; keep metrics/logs/curves only)
+docs/grp1/results/**/*.pt

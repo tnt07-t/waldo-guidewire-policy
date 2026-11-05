@@ -41,7 +41,8 @@ Input fixes:
 
 Training: class-weighted cross-entropy (`n / (2 * count_c)`), AdamW (lr `1e-3`, weight decay `1e-2`), batch 16, gradient clipping at 1.0, up to 200 epochs with early stopping (patience 20) on validation balanced accuracy, ties broken by lower validation loss.
 Each epoch prints train and validation loss, accuracy and balanced accuracy (both in eval mode), plus validation ROC AUC and per-class recall; the best epoch is marked `*best`.
-With `--output-dir` it also writes `metrics.csv`, `summary.json` and `best_model.pt` (a `CNNGRUModel` state_dict).
+Every run writes to its own folder `docs/grp1/results/<run-name>/` (default name `cnngru-split<S>-seed<N>-<timestamp>`, or `--run-name`): `train.log`, `metrics.csv`, `summary.json`, `curves.png` and `best_model.pt` (a `CNNGRUModel` state_dict).
+Checkpoints are git-ignored; the other files hold aggregate metrics only, and `summary.json` omits the personal `data_dir` path.
 
 Not verified: invented-input `tests/test_train_cnngru.py` has not been run; no Perlmutter training run or results exist yet.
 No staging/commit/push in this note.

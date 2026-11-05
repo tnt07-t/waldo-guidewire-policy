@@ -9,11 +9,16 @@ Pipeline:
    gradient clipping and early stopping on validation balanced accuracy.
 4. After every epoch, print one line of train and validation metrics
    (both computed in eval mode, so dropout does not distort the train
-   numbers). With --output-dir, also write metrics.csv, summary.json and
-   the best checkpoint.
+   numbers).
 
-The test partition is never loaded. Real images, features and outputs
-must remain on Perlmutter.
+Every run writes to its own folder docs/grp1/results/<run-name>/:
+train.log (the terminal output), metrics.csv (one row per epoch),
+summary.json (settings + best epoch), curves.png and best_model.pt
+(git-ignored). Results hold aggregate metrics only, no images or
+case identifiers.
+
+The test partition is never loaded. Real images and features must remain
+on Perlmutter.
 """
 
 import argparse
@@ -35,6 +40,10 @@ from model_cnngru import CNNGRUModel
 from preprocessing import DINOv2Preprocessor
 
 CLASS_NAMES = ("RETRACT", "ADVANCE")  # label 0, label 1
+REPO_ROOT = Path(__file__).resolve().parent
+RESULTS_DIR = REPO_ROOT / "docs" / "grp1" / "results"
+# Sabrina's frozen ResNet latest+goal logistic probe, split 0 (docs/EVALUATION.md).
+STATIC_PROBE_BAL_ACC = 0.547
 
 
 class PreparedCases(Dataset):
@@ -233,8 +242,9 @@ def parse_args():
                         help="Cases per frozen-ResNet forward during feature extraction")
     parser.add_argument("--num-workers", type=int, default=4,
                         help="DataLoader workers for image decoding/preparation")
-    parser.add_argument("--output-dir",
-                        help="Optional new directory for metrics.csv, summary.json, best_model.pt")
+    parser.add_argument("--run-name",
+                        help="Folder name under docs/grp1/results "
+                             "(default: cnngru-split<S>-seed<N>-<timestamp>)")
     args = parser.parse_args()
 
     if not args.data_dir:
@@ -244,16 +254,54 @@ def parse_args():
             parser.error("--{} must be positive".format(name.replace("_", "-")))
     if not 0 <= args.dropout < 1:
         parser.error("--dropout must be in [0, 1)")
-    if args.output_dir and Path(args.output_dir).exists():
-        parser.error("--output-dir already exists; choose a fresh directory")
+    args.run_name = args.run_name or "cnngru-split{}-seed{}-{}".format(
+        args.split_position, args.seed, time.strftime("%Y%m%d-%H%M%S"))
+    if Path(args.run_name).name != args.run_name or args.run_name in (".", ".."):
+        parser.error("--run-name must be a plain folder name")
+    if (RESULTS_DIR / args.run_name).exists():
+        parser.error("Run folder already exists: {}".format(RESULTS_DIR / args.run_name))
     return args
+
+
+def save_curves(rows, path):
+    """Train vs validation loss and balanced accuracy per epoch, as a PNG."""
+    import matplotlib
+    matplotlib.use("Agg")
+    import matplotlib.pyplot as plt
+
+    epochs = [row["epoch"] for row in rows]
+    fig, axes = plt.subplots(1, 2, figsize=(11, 4))
+    for ax, metric in zip(axes, ("loss", "bal_acc")):
+        for split in ("train", "val"):
+            ax.plot(epochs, [row["{}_{}".format(split, metric)] for row in rows], label=split)
+        ax.set_xlabel("epoch")
+        ax.set_title(metric)
+        ax.grid(alpha=0.3)
+    axes[1].axhline(STATIC_PROBE_BAL_ACC, ls="--", c="gray", lw=1,
+                    label="static probe {:.3f}".format(STATIC_PROBE_BAL_ACC))
+    for ax in axes:
+        ax.legend()
+    fig.tight_layout()
+    fig.savefig(path, dpi=120)
+    plt.close(fig)
 
 
 def main():
     args = parse_args()
+    run_dir = RESULTS_DIR / args.run_name
+    run_dir.mkdir(parents=True)
+    log_file = (run_dir / "train.log").open("w", encoding="utf-8")
+
+    def log(line=""):
+        """Print to the terminal and append to train.log."""
+        print(line, flush=True)
+        log_file.write(line + "\n")
+        log_file.flush()
+
     random.seed(args.seed)
     torch.manual_seed(args.seed)
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+    log("Run folder: {}".format(run_dir.relative_to(REPO_ROOT)))
 
     model = CNNGRUModel(dropout=args.dropout).to(device)
     prepare = DINOv2Preprocessor(size=args.size)
@@ -265,53 +313,58 @@ def main():
         data[name] = {key: value.to(device) for key, value in extract_features(
             model.encoder.cnn, PreparedCases(raw, prepare), device,
             args.feature_batch_size, args.num_workers).items()}
-        print("Encoded {} in {:.1f}s".format(
-            describe_partition(name, data[name]), time.perf_counter() - start), flush=True)
+        log("Encoded {} in {:.1f}s".format(
+            describe_partition(name, data[name]), time.perf_counter() - start))
 
     model.encoder.set_metadata_stats(data["train"]["depth"], data["train"]["offsets"])
     weight = class_weights(data["train"]["label"].cpu())
     trainable = sum(p.numel() for p in model.parameters() if p.requires_grad)
-    print("Device: {} | split {} | seed {}".format(device, args.split_position, args.seed))
-    print("Trainable parameters: {:,}".format(trainable))
-    print("Metadata mean [depth_mm, offset_s]: {} std: {}".format(
+    log("Device: {} | split {} | seed {}".format(device, args.split_position, args.seed))
+    log("Trainable parameters: {:,}".format(trainable))
+    log("Metadata mean [depth_mm, offset_s]: {} std: {}".format(
         [round(v, 3) for v in model.encoder.meta_mean.tolist()],
         [round(v, 3) for v in model.encoder.meta_std.tolist()]))
-    print("Class weights [{}, {}]: {}".format(
+    log("Class weights [{}, {}]: {}".format(
         *CLASS_NAMES, [round(v, 3) for v in weight.tolist()]))
-    print("Metrics: loss is class-weighted CE; bal = balanced accuracy; "
-          "rec R/A = validation recall for RETRACT/ADVANCE.", flush=True)
+    log("Metrics: loss is class-weighted CE; bal = balanced accuracy; "
+        "rec R/A = validation recall for RETRACT/ADVANCE.")
 
     result = train_model(
         model, data["train"], data["validation"],
         epochs=args.epochs, batch_size=args.batch_size, lr=args.lr,
         weight_decay=args.weight_decay, grad_clip=args.grad_clip,
-        patience=args.patience, seed=args.seed,
-        log=lambda line: print(line, flush=True))
+        patience=args.patience, seed=args.seed, log=log)
 
     best = result["best"]
-    print("\nBest epoch {}: train bal {:.3f} | val bal {:.3f} acc {:.3f} auc {:.3f} loss {:.4f}"
-          .format(best["epoch"], best["train"]["bal_acc"], best["val"]["bal_acc"],
-                  best["val"]["acc"], best["val"]["auc"], best["val"]["loss"]))
-    print("Validation confusion (rows true, cols pred; RETRACT, ADVANCE):")
+    log()
+    log("Best epoch {}: train bal {:.3f} | val bal {:.3f} acc {:.3f} auc {:.3f} loss {:.4f}"
+        .format(best["epoch"], best["train"]["bal_acc"], best["val"]["bal_acc"],
+                best["val"]["acc"], best["val"]["auc"], best["val"]["loss"]))
+    log("Validation confusion (rows true, cols pred; RETRACT, ADVANCE):")
     for name, row in zip(CLASS_NAMES, best["val"]["confusion"]):
-        print("  {:<8} {}".format(name, row))
+        log("  {:<8} {}".format(name, row))
 
-    if args.output_dir:
-        out = Path(args.output_dir)
-        out.mkdir(parents=True)
-        with (out / "metrics.csv").open("w", newline="", encoding="utf-8") as handle:
-            writer = csv.DictWriter(handle, fieldnames=list(result["rows"][0]))
-            writer.writeheader()
-            writer.writerows(result["rows"])
-        summary = {"args": vars(args), "device": str(device),
-                   "trainable_parameters": trainable,
-                   "class_weights": weight.tolist(),
-                   "meta_mean": model.encoder.meta_mean.tolist(),
-                   "meta_std": model.encoder.meta_std.tolist(),
-                   "epochs_run": len(result["rows"]), "best": best}
-        (out / "summary.json").write_text(json.dumps(summary, indent=2), encoding="utf-8")
-        torch.save(result["best_state"], out / "best_model.pt")
-        print("Wrote metrics.csv, summary.json, best_model.pt to", out)
+    with (run_dir / "metrics.csv").open("w", newline="", encoding="utf-8") as handle:
+        writer = csv.DictWriter(handle, fieldnames=list(result["rows"][0]))
+        writer.writeheader()
+        writer.writerows(result["rows"])
+    # data_dir is a personal absolute path; keep it out of the shareable summary.
+    run_args = {key: value for key, value in vars(args).items() if key != "data_dir"}
+    summary = {"args": run_args, "device": str(device),
+               "trainable_parameters": trainable,
+               "class_weights": weight.tolist(),
+               "meta_mean": model.encoder.meta_mean.tolist(),
+               "meta_std": model.encoder.meta_std.tolist(),
+               "epochs_run": len(result["rows"]), "best": best}
+    (run_dir / "summary.json").write_text(json.dumps(summary, indent=2), encoding="utf-8")
+    torch.save(result["best_state"], run_dir / "best_model.pt")
+    try:
+        save_curves(result["rows"], run_dir / "curves.png")
+    except ImportError:
+        log("matplotlib not installed; skipped curves.png")
+    log("Wrote train.log, metrics.csv, summary.json, curves.png, best_model.pt to {}"
+        .format(run_dir.relative_to(REPO_ROOT)))
+    log_file.close()
 
 
 if __name__ == "__main__":
