@@ -7,21 +7,22 @@ import tempfile
 import unittest
 from pathlib import Path
 
-from summarize_runs import load_group, load_run, mean_std, paired_differences
+from summarize_runs import (load_group, load_run, mean_std, null_pairs, paired_differences,
+                            slack_region, slack_report, val_auc_at)
 
 FIELDS = ("epoch", "train_bal_acc", "val_bal_acc", "val_auc", "val_loss")
 
 
-def write_run(root, name, split, seed, val_auc, null=False, epochs=5):
-    """Fake run folder: constant val AUC per epoch, best epoch 2."""
+def write_run(root, name, split, seed, val_auc, null=False, epochs=5, train_bal_acc=0.9):
+    """Fake run folder: constant metrics per epoch, best epoch 2."""
     run_dir = Path(root) / name
     run_dir.mkdir()
     with (run_dir / "metrics.csv").open("w", newline="", encoding="utf-8") as handle:
         writer = csv.DictWriter(handle, fieldnames=FIELDS)
         writer.writeheader()
         for epoch in range(1, epochs + 1):
-            writer.writerow({"epoch": epoch, "train_bal_acc": 0.9, "val_bal_acc": 0.55,
-                             "val_auc": val_auc, "val_loss": 0.7})
+            writer.writerow({"epoch": epoch, "train_bal_acc": train_bal_acc,
+                             "val_bal_acc": 0.55, "val_auc": val_auc, "val_loss": 0.7})
     summary = {"args": {"split_position": split, "seed": seed,
                         "shuffle_train_labels": null},
                "best": {"epoch": 2, "val": {"bal_acc": 0.6, "auc": val_auc}}}
@@ -73,6 +74,51 @@ class SummarizeRunsTests(unittest.TestCase):
             write_run(root, "r2", 0, 0, 0.6)
             with self.assertRaises(SystemExit):
                 load_group(str(Path(root) / "r*"), window=20)
+
+    def test_min_effect_blocks_small_consistent_gain(self):
+        with tempfile.TemporaryDirectory() as root:
+            for seed in range(3):
+                write_run(root, "a-{}".format(seed), 0, seed, 0.50)
+                write_run(root, "b-{}".format(seed), 0, seed, 0.52)
+            a = load_group(str(Path(root) / "a-*"), window=20)
+            b = load_group(str(Path(root) / "b-*"), window=20)
+        self.assertTrue(paired_differences(a, b, "last-N val auc")["passes"])
+        self.assertFalse(paired_differences(a, b, "last-N val auc", min_effect=0.03)["passes"])
+
+    def test_slack_region_budget(self):
+        self.assertEqual(slack_region(0.95, 1.0), "too much slack")
+        self.assertEqual(slack_region(0.60, 0.80), "target")
+        self.assertEqual(slack_region(0.60, 0.62), "too little slack")   # real underfits
+        self.assertEqual(slack_region(0.70, 0.73), "too little slack")   # no learnable signal
+        self.assertEqual(slack_region(0.72, 0.85), "outside target")
+        self.assertEqual(slack_region(0.60, 0.95), "outside target")
+
+    def test_slack_report_pairs_real_with_its_null(self):
+        with tempfile.TemporaryDirectory() as root:
+            for seed in range(3):
+                write_run(root, "real-{}".format(seed), 0, seed, 0.60 + 0.01 * seed,
+                          train_bal_acc=0.80)
+                write_run(root, "null-{}".format(seed), 0, seed, 0.50, null=True,
+                          train_bal_acc=0.60)
+            real = load_group(str(Path(root) / "real-*"), window=20)
+            null = load_group(str(Path(root) / "null-*"), window=20)
+        report = slack_report(real, null)
+        self.assertAlmostEqual(report["null_train"], 0.60)
+        self.assertAlmostEqual(report["learnable"], 0.20)
+        self.assertAlmostEqual(report["gap"], 0.25)  # 0.80 train - 0.55 val
+        self.assertEqual(report["region"], "target")
+        self.assertAlmostEqual(report["vs_null"]["mean"], 0.11)
+        self.assertTrue(report["vs_null"]["passes"])
+        with self.assertRaises(SystemExit):
+            slack_report(null, real)  # real/null swapped
+
+    def test_null_pairs_by_name_and_val_auc_at_epoch(self):
+        groups = [("r0", ["r"]), ("r0:null", ["n"]), ("wd", ["w"]), ("orphan:null", ["o"])]
+        self.assertEqual(null_pairs(groups), [("r0", ["r"], ["n"])])
+        with tempfile.TemporaryDirectory() as root:
+            run = load_run(write_run(root, "a", 0, 0, 0.6, epochs=5), window=20)
+        self.assertAlmostEqual(val_auc_at(3)(run), 0.6)
+        self.assertTrue(math.isnan(val_auc_at(10)(run)))
 
     def test_mean_std_skips_nan(self):
         self.assertEqual(mean_std([1.0, math.nan, 3.0]), (2.0, 1.0))

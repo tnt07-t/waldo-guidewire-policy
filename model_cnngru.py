@@ -31,7 +31,9 @@ once and then calls ``forward_features`` on the cached 512-d vectors.
 Prediction: logits.argmax(dim=-1)  # 0 = no, 1 = yes
 """
 
+import torch
 from torch import nn
+from torch.nn import functional as F
 
 from cnn import FrameEncoder
 from gru import CNNGRUEncoder
@@ -43,8 +45,32 @@ MLP_HIDDEN = 64
 
 
 class CNNGRUModel(nn.Module):
-    def __init__(self, pretrained=True, dropout=0.3):
+    """CNN-GRU policy with optional H4 feature-space regularizers.
+
+    The regularizers (docs/grp1/NEXT_EXPERIMENTS.md, H4) act on the
+    LayerNormed 512-d features in training mode only and add no parameters:
+
+    - ``frame_dropout``: each history step of each case is replaced by zeros
+      (the LayerNorm mean) with this probability; depth/offset stay.
+    - ``feature_dropout``: element-wise dropout on history and goal features.
+    - ``feature_noise``: std of Gaussian noise added to history and goal
+      features, in LayerNorm units.
+
+    At 0 (the default) a regularizer is skipped entirely and draws no random
+    numbers, so default training is unchanged.
+    """
+
+    def __init__(self, pretrained=True, dropout=0.3, feature_noise=0.0,
+                 feature_dropout=0.0, frame_dropout=0.0):
         super().__init__()
+        if feature_noise < 0:
+            raise ValueError("feature_noise must be non-negative")
+        for name, p in (("feature_dropout", feature_dropout), ("frame_dropout", frame_dropout)):
+            if not 0 <= p < 1:
+                raise ValueError("{} must be in [0, 1)".format(name))
+        self.feature_noise = feature_noise
+        self.feature_dropout = feature_dropout
+        self.frame_dropout = frame_dropout
         # Construction order fixes the seeded initialization; keep it so runs
         # reproduce the Phase 1 rung-S results and checkpoints keep their keys.
         self.encoder = CNNGRUEncoder(input_dim=PROJECTION_DIM, hidden_dim=GRU_HIDDEN,
@@ -60,9 +86,28 @@ class CNNGRUModel(nn.Module):
         goal_features = encode_goal(self.encoder.cnn, goal)    # [B, 512] same CNN
         return self.forward_features(history_features, depth, offsets, goal_features)
 
+    def regularize(self, history_features, goal_features):
+        """Training-only H4 regularizers on normalized [B, T, 512] / [B, 512]."""
+        if not self.training:
+            return history_features, goal_features
+        if self.frame_dropout:
+            keep = torch.rand(history_features.shape[:2], device=history_features.device)
+            keep = (keep >= self.frame_dropout).to(history_features.dtype)
+            history_features = history_features * keep[..., None]
+        if self.feature_dropout:
+            history_features = F.dropout(history_features, self.feature_dropout)
+            goal_features = F.dropout(goal_features, self.feature_dropout)
+        if self.feature_noise:
+            history_features = history_features + self.feature_noise * torch.randn_like(
+                history_features)
+            goal_features = goal_features + self.feature_noise * torch.randn_like(goal_features)
+        return history_features, goal_features
+
     def forward_features(self, history_features, depth, offsets, goal_features):
         """Head only: frozen-CNN features in, [B, 2] logits out."""
-        history_features = self.projection(self.feature_norm(history_features))  # [B, T, 64]
-        goal_features = self.projection(self.feature_norm(goal_features))        # [B, 64]
+        history_features, goal_features = self.regularize(
+            self.feature_norm(history_features), self.feature_norm(goal_features))
+        history_features = self.projection(history_features)  # [B, T, 64]
+        goal_features = self.projection(goal_features)        # [B, 64]
         gru_summary = self.encoder.summarize(history_features, depth, offsets)  # [B, 64]
         return self.classifier(gru_summary, goal_features)

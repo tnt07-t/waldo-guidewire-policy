@@ -33,6 +33,17 @@ See [the 2026-11-03 log entry](#2026-11-03---wire-preserving-preprocessing-and-f
 
 ## Progress log
 
+### 2026-11-05 - H4 regularization plan (design only)
+
+Planned H4 in [NEXT_EXPERIMENTS.md](NEXT_EXPERIMENTS.md#h4---regularization-and-how-much-slack-to-allow): seven regularizer families (weight decay, dropout, feature noise, feature dropout, frame dropout, label smoothing, fixed epoch budget), each swept with real and shuffled labels on splits 0-2 x seeds 0-2.
+"Slack" is measured by the shuffled-label null's train bal-acc at each setting, with a pre-registered target region (null 0.55-0.70, real 0.65-0.90); a regularizer passes only if it beats its own null and the R0 baseline on paired last-20 validation AUC, then holds on splits 3-4.
+If no family beats its null, H4 is rejected and work returns to feature changes.
+
+Implemented (local, same day): the four regularizer flags, `--feature-cache`, the `summarize_runs.py` slack block, `--min-effect` and `--at-epochs`, with invented-input tests; details and the 270-run Perlmutter sweep are in [NEXT_EXPERIMENTS.md](NEXT_EXPERIMENTS.md#implementation).
+Feature extraction no longer draws global random numbers, so seeded runs no longer reproduce Phase 0/1 bit for bit; R0 is rerun as part of the sweep.
+
+Not verified: no test has been run (no local execution); no H4 runs exist yet.
+
 ### 2026-11-05 - H3 Phase 1 results; S adopted as the only head
 
 Owner-run on Perlmutter (200 epochs, `--patience 0`, LayerNorm, all other settings default); folders `docs/grp1/results/phase1-{xs,s,m,l}-split*-seed*`, console output in `phase1.log` at the repo root.

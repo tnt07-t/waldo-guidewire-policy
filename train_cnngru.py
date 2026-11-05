@@ -26,6 +26,18 @@ summary.json (settings, best/final epoch, last-window means), curves.png and bes
 (git-ignored). Results hold aggregate metrics only, no images or
 case identifiers.
 
+H4 regularizers (all off by default; docs/grp1/NEXT_EXPERIMENTS.md):
+--feature-noise, --feature-dropout and --frame-dropout act on the frozen
+features in training mode only (see CNNGRUModel); --label-smoothing applies
+to the training loss only, so logged losses stay comparable across runs.
+
+--feature-cache DIR saves the frozen ResNet features of each split and
+partition on first use and loads them afterwards, so sweeps skip image
+decoding and encoding. The cache holds features derived from real images:
+keep it on Perlmutter scratch; a directory inside this repository is
+refused. Feature extraction draws no global random numbers, so a run gives
+the same result with or without the cache.
+
 The test partition is never loaded. Real images and features must remain
 on Perlmutter.
 """
@@ -79,8 +91,10 @@ class PreparedCases(Dataset):
 @torch.no_grad()
 def extract_features(cnn, cases, device, batch_size, num_workers):
     """Encode all images once. Returns CPU tensors keyed like model inputs."""
+    # A private generator keeps extraction from drawing global random numbers
+    # (DataLoader takes a worker base seed), so cached and fresh runs match.
     loader = DataLoader(cases, batch_size=batch_size, shuffle=False,
-                        num_workers=num_workers)
+                        num_workers=num_workers, generator=torch.Generator().manual_seed(0))
     parts = {key: [] for key in ("history", "goal", "depth", "offsets", "label")}
     cnn.eval()
     for batch in loader:
@@ -93,6 +107,53 @@ def extract_features(cnn, cases, device, batch_size, num_workers):
         if not torch.isfinite(features[key]).all():
             raise ValueError("Frozen encoder returned non-finite {} features".format(key))
     return features
+
+
+FEATURE_KEYS = ("history", "goal", "depth", "offsets", "label")
+# Bump when anything that changes cached features changes (encoder, prep).
+CACHE_VERSION = 1
+
+
+def cache_metadata(data_dir, split_position, partition, size):
+    """What a cached feature file must match to be reused."""
+    return {"version": CACHE_VERSION, "data_dir": str(Path(data_dir).expanduser().resolve()),
+            "split_position": split_position,
+            "partition": partition, "preprocessor": "dinov2", "size": size,
+            "encoder": "resnet18-torchvision-default-frozen-avgpool"}
+
+
+def cache_path(cache_dir, metadata):
+    return Path(cache_dir) / "split{}-{}-{}{}-v{}.pt".format(
+        metadata["split_position"], metadata["partition"], metadata["preprocessor"],
+        metadata["size"], metadata["version"])
+
+
+def check_cache_dir(cache_dir):
+    """Refuse a cache inside the repository: it holds real-image features."""
+    resolved = Path(cache_dir).expanduser().resolve()
+    if resolved == REPO_ROOT or REPO_ROOT in resolved.parents:
+        raise ValueError("--feature-cache must be outside the repository "
+                         "(features from real images must not be committed)")
+    return resolved
+
+
+def save_cached_features(path, features, metadata):
+    path.parent.mkdir(parents=True, exist_ok=True)
+    tmp = path.with_suffix(".tmp")
+    torch.save({"metadata": metadata,
+                "features": {key: features[key].cpu() for key in FEATURE_KEYS}}, tmp)
+    tmp.replace(path)  # atomic, so a killed run never leaves a partial cache
+
+
+def load_cached_features(path, metadata):
+    """Cached CPU features, or None if absent; a mismatched file is an error."""
+    if not path.is_file():
+        return None
+    payload = torch.load(path, map_location="cpu")
+    if payload.get("metadata") != metadata:
+        raise ValueError("Feature cache {} was made with {}, expected {}".format(
+            path, payload.get("metadata"), metadata))
+    return payload["features"]
 
 
 def class_weights(labels):
@@ -204,13 +265,15 @@ def format_epoch(epoch, epochs, train, val, lr, seconds, best):
 
 
 def train_model(model, train, val, *, epochs, batch_size, lr, weight_decay,
-                grad_clip, patience, seed, log=print):
+                grad_clip, patience, seed, label_smoothing=0.0, log=print):
     """Train the head on cached features, optionally with early stopping.
 
     ``train`` / ``val``: dicts of tensors on the model's device with keys
     history [N, T, 512], goal [N, 512], depth [N, T], offsets [N, T], label [N].
     ``patience``: stop after this many epochs without a new best; 0 runs
     all ``epochs``.
+    ``label_smoothing`` applies to the training loss only; logged losses are
+    plain class-weighted cross-entropy.
     Selection: highest validation balanced accuracy, ties -> lower val loss.
     Returns the per-epoch rows, best epoch/metrics and the best state_dict
     (the model is left holding the best weights).
@@ -230,7 +293,8 @@ def train_model(model, train, val, *, epochs, batch_size, lr, weight_decay,
             idx = order[i:i + batch_size]
             logits = model.forward_features(train["history"][idx], train["depth"][idx],
                                             train["offsets"][idx], train["goal"][idx])
-            loss = F.cross_entropy(logits, train["label"][idx], weight=weight)
+            loss = F.cross_entropy(logits, train["label"][idx], weight=weight,
+                                   label_smoothing=label_smoothing)
             optimizer.zero_grad(set_to_none=True)
             loss.backward()
             torch.nn.utils.clip_grad_norm_(params, grad_clip)
@@ -268,6 +332,23 @@ def describe_partition(name, data):
         name, len(data["label"]), counts[0], CLASS_NAMES[0], counts[1], CLASS_NAMES[1])
 
 
+# Regularization settings that differ from these defaults are tagged in the
+# default run name, e.g. cnngru-wd0.1-fn0.5-null-split0-seed0-<timestamp>.
+REGULARIZER_TAGS = (("weight_decay", "wd", 1e-2), ("dropout", "do", 0.3),
+                    ("feature_noise", "fn", 0.0), ("feature_dropout", "fd", 0.0),
+                    ("frame_dropout", "frd", 0.0), ("label_smoothing", "ls", 0.0))
+
+
+def default_run_name(args, timestamp=None):
+    tags = ["{}{:g}".format(tag, getattr(args, name))
+            for name, tag, default in REGULARIZER_TAGS if getattr(args, name) != default]
+    if args.shuffle_train_labels:
+        tags.append("null")
+    return "-".join(["cnngru", *tags, "split{}".format(args.split_position),
+                     "seed{}".format(args.seed),
+                     timestamp or time.strftime("%Y%m%d-%H%M%S")])
+
+
 def parse_args():
     parser = argparse.ArgumentParser(description=__doc__,
                                      formatter_class=argparse.RawDescriptionHelpFormatter)
@@ -285,11 +366,22 @@ def parse_args():
     parser.add_argument("--lr", type=float, default=1e-3)
     parser.add_argument("--weight-decay", type=float, default=1e-2)
     parser.add_argument("--dropout", type=float, default=0.3)
+    parser.add_argument("--feature-noise", type=float, default=0.0,
+                        help="H4: std of Gaussian noise on normalized features (training only)")
+    parser.add_argument("--feature-dropout", type=float, default=0.0,
+                        help="H4: element-wise dropout on normalized features (training only)")
+    parser.add_argument("--frame-dropout", type=float, default=0.0,
+                        help="H4: probability of zeroing each history step (training only)")
+    parser.add_argument("--label-smoothing", type=float, default=0.0,
+                        help="H4: label smoothing of the training loss")
     parser.add_argument("--grad-clip", type=float, default=1.0)
     parser.add_argument("--feature-batch-size", type=int, default=8,
                         help="Cases per frozen-ResNet forward during feature extraction")
     parser.add_argument("--num-workers", type=int, default=4,
                         help="DataLoader workers for image decoding/preparation")
+    parser.add_argument("--feature-cache",
+                        help="Directory outside the repo for cached frozen-ResNet features "
+                             "(e.g. on $SCRATCH); reused when split/partition/size match")
     parser.add_argument("--shuffle-train-labels", action="store_true",
                         help="Shuffled-label null: permute training labels across cases "
                              "(seeded by --seed); validation labels stay real")
@@ -297,7 +389,7 @@ def parse_args():
                         help="Report mean/std of validation metrics over the last N epochs")
     parser.add_argument("--run-name",
                         help="Folder name under docs/grp1/results (default: "
-                             "cnngru[-null]-split<S>-seed<N>-<timestamp>)")
+                             "cnngru[-<regularizers>][-null]-split<S>-seed<N>-<timestamp>)")
     args = parser.parse_args()
 
     if not args.data_dir:
@@ -307,11 +399,17 @@ def parse_args():
             parser.error("--{} must be positive".format(name.replace("_", "-")))
     if args.patience < 0:
         parser.error("--patience must be 0 (off) or positive")
-    if not 0 <= args.dropout < 1:
-        parser.error("--dropout must be in [0, 1)")
-    args.run_name = args.run_name or "cnngru{}-split{}-seed{}-{}".format(
-        "-null" if args.shuffle_train_labels else "",
-        args.split_position, args.seed, time.strftime("%Y%m%d-%H%M%S"))
+    for name in ("dropout", "feature_dropout", "frame_dropout", "label_smoothing"):
+        if not 0 <= getattr(args, name) < 1:
+            parser.error("--{} must be in [0, 1)".format(name.replace("_", "-")))
+    if args.feature_noise < 0:
+        parser.error("--feature-noise must be non-negative")
+    if args.feature_cache:
+        try:
+            args.feature_cache = str(check_cache_dir(args.feature_cache))
+        except ValueError as exc:
+            parser.error(str(exc))
+    args.run_name = args.run_name or default_run_name(args)
     if Path(args.run_name).name != args.run_name or args.run_name in (".", ".."):
         parser.error("--run-name must be a plain folder name")
     if (RESULTS_DIR / args.run_name).exists():
@@ -359,18 +457,29 @@ def main():
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     log("Run folder: {}".format(run_dir.relative_to(REPO_ROOT)))
 
-    model = CNNGRUModel(dropout=args.dropout).to(device)
+    model = CNNGRUModel(dropout=args.dropout, feature_noise=args.feature_noise,
+                        feature_dropout=args.feature_dropout,
+                        frame_dropout=args.frame_dropout).to(device)
     prepare = DINOv2Preprocessor(size=args.size)
     data = {}
     for name in ("train", "validation"):
         start = time.perf_counter()
-        raw = GuidewireDataset(args.data_dir, split_position=args.split_position,
-                               partition=name)
-        data[name] = {key: value.to(device) for key, value in extract_features(
-            model.encoder.cnn, PreparedCases(raw, prepare), device,
-            args.feature_batch_size, args.num_workers).items()}
-        log("Encoded {} in {:.1f}s".format(
-            describe_partition(name, data[name]), time.perf_counter() - start))
+        metadata = cache_metadata(args.data_dir, args.split_position, name, args.size)
+        path = cache_path(args.feature_cache, metadata) if args.feature_cache else None
+        features = load_cached_features(path, metadata) if path else None
+        source = "Loaded cached"
+        if features is None:
+            raw = GuidewireDataset(args.data_dir, split_position=args.split_position,
+                                   partition=name)
+            features = extract_features(model.encoder.cnn, PreparedCases(raw, prepare),
+                                        device, args.feature_batch_size, args.num_workers)
+            source = "Encoded"
+            if path:
+                save_cached_features(path, features, metadata)
+                source = "Encoded and cached"
+        data[name] = {key: value.to(device) for key, value in features.items()}
+        log("{} {} in {:.1f}s".format(
+            source, describe_partition(name, data[name]), time.perf_counter() - start))
 
     if args.shuffle_train_labels:
         real = data["train"]["label"]
@@ -384,6 +493,10 @@ def main():
     trainable = sum(p.numel() for p in model.parameters() if p.requires_grad)
     log("Device: {} | split {} | seed {}".format(device, args.split_position, args.seed))
     log("Trainable parameters: {:,}".format(trainable))
+    log("Regularization: weight decay {:g} | dropout {:g} | feature noise {:g} | "
+        "feature dropout {:g} | frame dropout {:g} | label smoothing {:g}".format(
+            args.weight_decay, args.dropout, args.feature_noise, args.feature_dropout,
+            args.frame_dropout, args.label_smoothing))
     log("Metadata mean [depth_mm, offset_s]: {} std: {}".format(
         [round(v, 3) for v in model.encoder.meta_mean.tolist()],
         [round(v, 3) for v in model.encoder.meta_std.tolist()]))
@@ -396,7 +509,8 @@ def main():
         model, data["train"], data["validation"],
         epochs=args.epochs, batch_size=args.batch_size, lr=args.lr,
         weight_decay=args.weight_decay, grad_clip=args.grad_clip,
-        patience=args.patience, seed=args.seed, log=log)
+        patience=args.patience, seed=args.seed,
+        label_smoothing=args.label_smoothing, log=log)
 
     best = result["best"]
     log()
@@ -422,8 +536,11 @@ def main():
         writer = csv.DictWriter(handle, fieldnames=list(result["rows"][0]))
         writer.writeheader()
         writer.writerows(result["rows"])
-    # data_dir is a personal absolute path; keep it out of the shareable summary.
-    run_args = {key: value for key, value in vars(args).items() if key != "data_dir"}
+    # data_dir and feature_cache are personal absolute paths; keep them out of
+    # the shareable summary (feature_cache_used records whether one was used).
+    run_args = {key: value for key, value in vars(args).items()
+                if key not in ("data_dir", "feature_cache")}
+    run_args["feature_cache_used"] = bool(args.feature_cache)
     summary = {"args": run_args, "device": str(device),
                "trainable_parameters": trainable,
                "class_weights": weight.tolist(),

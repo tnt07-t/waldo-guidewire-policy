@@ -1,19 +1,33 @@
 """Invented-input checks for the CNN-GRU training pieces (no dataset needed)."""
 
+import argparse
 import math
+import tempfile
 import unittest
+from pathlib import Path
 
 import torch
 
 from model_cnngru import CNNGRUModel
-from train_cnngru import (binary_metrics, class_weights, roc_auc, shuffled_labels,
-                          train_model, window_summary)
+from train_cnngru import (REPO_ROOT, binary_metrics, cache_metadata, cache_path,
+                          check_cache_dir, class_weights, default_run_name,
+                          load_cached_features, roc_auc, save_cached_features,
+                          shuffled_labels, train_model, window_summary)
 
 
-def tiny_model(dropout=0.3):
+def tiny_model(dropout=0.3, **regularizers):
     torch.manual_seed(0)
     # pretrained=False: random ResNet-18, no weight download.
-    return CNNGRUModel(pretrained=False, dropout=dropout).eval()
+    return CNNGRUModel(pretrained=False, dropout=dropout, **regularizers).eval()
+
+
+def invented_features(n=8, seed=0):
+    generator = torch.Generator().manual_seed(seed)
+    return {"history": torch.randn(n, 6, 512, generator=generator).abs(),
+            "goal": torch.randn(n, 512, generator=generator),
+            "depth": torch.randn(n, 6, generator=generator),
+            "offsets": torch.randn(n, 6, generator=generator),
+            "label": torch.arange(n) % 2}
 
 
 def trainable_count(model):
@@ -44,6 +58,138 @@ class HeadTests(unittest.TestCase):
         self.assertEqual(model.encoder.gru.input_size, 64 + 2)
         self.assertEqual(model.encoder.gru.num_layers, 1)
         self.assertEqual(model.classifier.mlp[1].in_features, 64 + 64)
+
+
+class RegularizerTests(unittest.TestCase):
+    ALL_ON = {"feature_noise": 0.5, "feature_dropout": 0.3, "frame_dropout": 0.3}
+
+    def forward(self, model, data):
+        return model.forward_features(data["history"], data["depth"], data["offsets"],
+                                      data["goal"])
+
+    def test_defaults_draw_no_random_numbers(self):
+        # Default settings must train exactly as before H4: in training mode
+        # the regularizers return their inputs and leave the global RNG alone.
+        model = tiny_model().train()
+        history, goal = torch.randn(4, 6, 512), torch.randn(4, 512)
+        torch.manual_seed(5)
+        out_history, out_goal = model.regularize(history, goal)
+        after = torch.rand(3)
+        self.assertIs(out_history, history)
+        self.assertIs(out_goal, goal)
+        torch.manual_seed(5)
+        self.assertTrue(torch.equal(after, torch.rand(3)))
+
+    def test_inactive_in_eval_mode(self):
+        data = invented_features()
+        plain, regularized = tiny_model(), tiny_model(**self.ALL_ON)
+        with torch.no_grad():
+            self.assertTrue(torch.equal(self.forward(plain, data),
+                                        self.forward(regularized, data)))
+
+    def test_active_in_training_mode(self):
+        model = tiny_model(dropout=0.0, **self.ALL_ON).train()
+        data = invented_features()
+        with torch.no_grad():
+            first, second = self.forward(model, data), self.forward(model, data)
+        self.assertFalse(torch.equal(first, second))
+
+    def test_each_regularizer_alone_changes_training_forward(self):
+        data = invented_features()
+        for name, value in self.ALL_ON.items():
+            with self.subTest(regularizer=name), torch.no_grad():
+                model = tiny_model(dropout=0.0, **{name: value}).train()
+                self.assertFalse(torch.equal(self.forward(model, data),
+                                             self.forward(model, data)))
+
+    def test_frame_dropout_zeroes_whole_history_steps_only(self):
+        model = tiny_model(frame_dropout=0.5).train()
+        history, goal = torch.randn(64, 6, 512) + 3, torch.randn(64, 512)
+        torch.manual_seed(1)
+        out_history, out_goal = model.regularize(history, goal)
+        dropped = (out_history == 0).all(dim=-1)
+        kept = torch.isclose(out_history, history).all(dim=-1)
+        self.assertTrue((dropped | kept).all())
+        self.assertTrue(0.3 < dropped.float().mean().item() < 0.7)
+        self.assertTrue(torch.equal(out_goal, goal))
+
+    def test_no_new_parameters_or_state(self):
+        self.assertEqual(set(tiny_model().state_dict()),
+                         set(tiny_model(**self.ALL_ON).state_dict()))
+
+    def test_invalid_settings_rejected(self):
+        for kwargs in ({"feature_noise": -0.1}, {"feature_dropout": 1.0},
+                       {"frame_dropout": -0.1}):
+            with self.subTest(**kwargs), self.assertRaises(ValueError):
+                CNNGRUModel(pretrained=False, **kwargs)
+
+    def test_label_smoothing_changes_training_only(self):
+        data = invented_features(n=16)
+        results = []
+        for smoothing in (0.0, 0.2):
+            model = tiny_model(dropout=0.0)
+            model.encoder.set_metadata_stats(data["depth"], data["offsets"])
+            results.append(train_model(model, data, data, epochs=3, batch_size=4, lr=1e-2,
+                                       weight_decay=0.0, grad_clip=1.0, patience=0, seed=0,
+                                       label_smoothing=smoothing, log=lambda line: None))
+        plain, smoothed = (r["rows"][-1]["train_loss"] for r in results)
+        self.assertNotEqual(plain, smoothed)
+        # Logged losses are plain cross-entropy: with lr 0 the weights never
+        # change, so the logged loss must not depend on smoothing.
+        model = tiny_model(dropout=0.0)
+        model.encoder.set_metadata_stats(data["depth"], data["offsets"])
+        zero_lr = [train_model(model, data, data, epochs=1, batch_size=4, lr=0.0,
+                               weight_decay=0.0, grad_clip=1.0, patience=0, seed=0,
+                               label_smoothing=s, log=lambda line: None)["rows"][0]["train_loss"]
+                   for s in (0.0, 0.2)]
+        self.assertEqual(zero_lr[0], zero_lr[1])
+
+
+class FeatureCacheTests(unittest.TestCase):
+    def test_round_trip_and_metadata_check(self):
+        features = invented_features()
+        metadata = cache_metadata("/data/copy", 2, "train", 518)
+        with tempfile.TemporaryDirectory() as root:
+            path = cache_path(root, metadata)
+            self.assertIsNone(load_cached_features(path, metadata))
+            save_cached_features(path, features, metadata)
+            loaded = load_cached_features(path, metadata)
+            for key, value in features.items():
+                self.assertTrue(torch.equal(loaded[key], value))
+            other = cache_metadata("/data/copy", 2, "train", 224)
+            save_cached_features(path, features, other)  # same name, wrong content
+            with self.assertRaises(ValueError):
+                load_cached_features(path, metadata)
+
+    def test_file_name_separates_split_partition_and_size(self):
+        names = {cache_path("/c", cache_metadata("/d", split, part, size)).name
+                 for split in (0, 1) for part in ("train", "validation") for size in (224, 518)}
+        self.assertEqual(len(names), 8)
+
+    def test_cache_inside_repository_refused(self):
+        with self.assertRaises(ValueError):
+            check_cache_dir(REPO_ROOT / "cache")
+        with self.assertRaises(ValueError):
+            check_cache_dir(REPO_ROOT)
+        with tempfile.TemporaryDirectory() as root:
+            self.assertEqual(check_cache_dir(root), Path(root).resolve())
+
+
+class RunNameTests(unittest.TestCase):
+    def args(self, **overrides):
+        values = {"weight_decay": 1e-2, "dropout": 0.3, "feature_noise": 0.0,
+                  "feature_dropout": 0.0, "frame_dropout": 0.0, "label_smoothing": 0.0,
+                  "shuffle_train_labels": False, "split_position": 1, "seed": 2}
+        values.update(overrides)
+        return argparse.Namespace(**values)
+
+    def test_defaults_keep_old_name(self):
+        self.assertEqual(default_run_name(self.args(), "T"), "cnngru-split1-seed2-T")
+
+    def test_non_default_regularizers_tagged(self):
+        name = default_run_name(self.args(weight_decay=0.1, feature_noise=0.5,
+                                          label_smoothing=0.1, shuffle_train_labels=True), "T")
+        self.assertEqual(name, "cnngru-wd0.1-fn0.5-ls0.1-null-split1-seed2-T")
 
 
 class FeatureNormTests(unittest.TestCase):
