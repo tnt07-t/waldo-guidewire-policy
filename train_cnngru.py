@@ -11,10 +11,18 @@ Pipeline:
 4. After every epoch, print one line of train and validation metrics
    (both computed in eval mode, so dropout does not distort the train
    numbers).
+5. Summarize the run three ways: the best epoch (a max over many noisy
+   validation scores, so optimistic), the final epoch, and the mean/std
+   over the last --summary-window epochs (the less optimistic number).
+
+--shuffle-train-labels runs the shuffled-label null: training labels are
+permuted across cases (seeded by --seed) so no feature-label association
+is left; validation labels stay real. Its validation scores show what pure
+noise reaches under the same protocol.
 
 Every run writes to its own folder docs/grp1/results/<run-name>/:
 train.log (the terminal output), metrics.csv (one row per epoch),
-summary.json (settings + best epoch), curves.png and best_model.pt
+summary.json (settings, best/final epoch, last-window means), curves.png and best_model.pt
 (git-ignored). Results hold aggregate metrics only, no images or
 case identifiers.
 
@@ -93,6 +101,42 @@ def class_weights(labels):
     if (counts == 0).any():
         raise ValueError("Training partition must contain both classes")
     return (len(labels) / (2 * counts)).float()
+
+
+def shuffled_labels(labels, seed):
+    """Shuffled-label null: permute labels across cases with a seeded generator.
+
+    Class counts (and so class weights) are unchanged; only the pairing of
+    labels with features is broken.
+    """
+    order = torch.randperm(len(labels), generator=torch.Generator().manual_seed(seed))
+    return labels.cpu()[order].to(labels.device)
+
+
+WINDOW_METRICS = ("train_bal_acc", "val_bal_acc", "val_auc", "val_loss")
+
+
+def window_summary(rows, window):
+    """Mean and population std of WINDOW_METRICS over the last ``window`` epochs.
+
+    ``rows`` are per-epoch dicts as in metrics.csv (values may be strings).
+    A shorter run uses all its epochs; NaN values (e.g. AUC with one class)
+    are skipped, and a metric with no finite value gets NaN mean and std.
+    """
+    if not rows or window <= 0:
+        raise ValueError("Need at least one epoch row and a positive window")
+    tail = rows[-window:]
+    summary = {"window": len(tail), "first_epoch": int(tail[0]["epoch"]),
+               "last_epoch": int(tail[-1]["epoch"])}
+    for key in WINDOW_METRICS:
+        values = [float(row[key]) for row in tail if not math.isnan(float(row[key]))]
+        if values:
+            mean = sum(values) / len(values)
+            std = math.sqrt(sum((v - mean) ** 2 for v in values) / len(values))
+        else:
+            mean = std = math.nan
+        summary[key] = {"mean": mean, "std": std}
+    return summary
 
 
 def roc_auc(scores, labels):
@@ -246,21 +290,27 @@ def parse_args():
                         help="Cases per frozen-ResNet forward during feature extraction")
     parser.add_argument("--num-workers", type=int, default=4,
                         help="DataLoader workers for image decoding/preparation")
+    parser.add_argument("--shuffle-train-labels", action="store_true",
+                        help="Shuffled-label null: permute training labels across cases "
+                             "(seeded by --seed); validation labels stay real")
+    parser.add_argument("--summary-window", type=int, default=20,
+                        help="Report mean/std of validation metrics over the last N epochs")
     parser.add_argument("--run-name",
                         help="Folder name under docs/grp1/results "
-                             "(default: cnngru-split<S>-seed<N>-<timestamp>)")
+                             "(default: cnngru[-null]-split<S>-seed<N>-<timestamp>)")
     args = parser.parse_args()
 
     if not args.data_dir:
         parser.error("Set DATA_DIR or provide --data-dir")
-    for name in ("epochs", "batch_size", "feature_batch_size"):
+    for name in ("epochs", "batch_size", "feature_batch_size", "summary_window"):
         if getattr(args, name) <= 0:
             parser.error("--{} must be positive".format(name.replace("_", "-")))
     if args.patience < 0:
         parser.error("--patience must be 0 (off) or positive")
     if not 0 <= args.dropout < 1:
         parser.error("--dropout must be in [0, 1)")
-    args.run_name = args.run_name or "cnngru-split{}-seed{}-{}".format(
+    args.run_name = args.run_name or "cnngru{}-split{}-seed{}-{}".format(
+        "-null" if args.shuffle_train_labels else "",
         args.split_position, args.seed, time.strftime("%Y%m%d-%H%M%S"))
     if Path(args.run_name).name != args.run_name or args.run_name in (".", ".."):
         parser.error("--run-name must be a plain folder name")
@@ -322,6 +372,13 @@ def main():
         log("Encoded {} in {:.1f}s".format(
             describe_partition(name, data[name]), time.perf_counter() - start))
 
+    if args.shuffle_train_labels:
+        real = data["train"]["label"]
+        data["train"]["label"] = shuffled_labels(real, args.seed)
+        log("NULL RUN: training labels shuffled across cases with seed {} "
+            "({} of {} keep their real label); validation labels are real.".format(
+                args.seed, (data["train"]["label"] == real).sum().item(), len(real)))
+
     model.encoder.set_metadata_stats(data["train"]["depth"], data["train"]["offsets"])
     weight = class_weights(data["train"]["label"].cpu())
     trainable = sum(p.numel() for p in model.parameters() if p.requires_grad)
@@ -349,6 +406,17 @@ def main():
     log("Validation confusion (rows true, cols pred; RETRACT, ADVANCE):")
     for name, row in zip(CLASS_NAMES, best["val"]["confusion"]):
         log("  {:<8} {}".format(name, row))
+    final = result["rows"][-1]
+    log("Final epoch {}: train bal {:.3f} | val bal {:.3f} auc {:.3f} loss {:.4f}".format(
+        final["epoch"], final["train_bal_acc"], final["val_bal_acc"],
+        final["val_auc"], final["val_loss"]))
+    window = window_summary(result["rows"], args.summary_window)
+    log("Last {} epochs ({}-{}) mean +- std: train bal {:.3f} +- {:.3f} | "
+        "val bal {:.3f} +- {:.3f} auc {:.3f} +- {:.3f} loss {:.4f} +- {:.4f}".format(
+            window["window"], window["first_epoch"], window["last_epoch"],
+            *(window[key][stat] for key in ("train_bal_acc", "val_bal_acc",
+                                            "val_auc", "val_loss")
+              for stat in ("mean", "std"))))
 
     with (run_dir / "metrics.csv").open("w", newline="", encoding="utf-8") as handle:
         writer = csv.DictWriter(handle, fieldnames=list(result["rows"][0]))
@@ -361,7 +429,8 @@ def main():
                "class_weights": weight.tolist(),
                "meta_mean": model.encoder.meta_mean.tolist(),
                "meta_std": model.encoder.meta_std.tolist(),
-               "epochs_run": len(result["rows"]), "best": best}
+               "epochs_run": len(result["rows"]), "best": best,
+               "final_epoch": final, "last_window": window}
     (run_dir / "summary.json").write_text(json.dumps(summary, indent=2), encoding="utf-8")
     torch.save(result["best_state"], run_dir / "best_model.pt")
     try:

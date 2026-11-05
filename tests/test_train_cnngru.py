@@ -6,7 +6,8 @@ import unittest
 import torch
 
 from model_cnngru import CNNGRUModel
-from train_cnngru import binary_metrics, class_weights, roc_auc, train_model
+from train_cnngru import (binary_metrics, class_weights, roc_auc, shuffled_labels,
+                          train_model, window_summary)
 
 
 def tiny_model(dropout=0.3):
@@ -107,6 +108,45 @@ class MetricTests(unittest.TestCase):
         self.assertAlmostEqual(metrics["recall_retract"], 1 / 3)
         self.assertAlmostEqual(metrics["recall_advance"], 1.0)
         self.assertAlmostEqual(metrics["bal_acc"], (1 / 3 + 1.0) / 2)
+
+
+class NullAndWindowTests(unittest.TestCase):
+    def test_shuffled_labels_keep_counts_and_weights(self):
+        labels = torch.tensor([0] * 30 + [1] * 70)
+        shuffled = shuffled_labels(labels, seed=0)
+        self.assertTrue(torch.equal(torch.bincount(shuffled), torch.bincount(labels)))
+        self.assertTrue(torch.equal(class_weights(shuffled), class_weights(labels)))
+        self.assertFalse(torch.equal(shuffled, labels))
+
+    def test_shuffled_labels_seeded(self):
+        labels = torch.arange(50) % 2
+        self.assertTrue(torch.equal(shuffled_labels(labels, 3), shuffled_labels(labels, 3)))
+        self.assertFalse(torch.equal(shuffled_labels(labels, 0), shuffled_labels(labels, 1)))
+
+    def test_window_summary_last_epochs(self):
+        rows = [{"epoch": e, "train_bal_acc": 1.0, "val_bal_acc": e / 10,
+                 "val_auc": 0.5, "val_loss": float(e)} for e in range(1, 11)]
+        summary = window_summary(rows, 4)  # epochs 7-10
+        self.assertEqual((summary["window"], summary["first_epoch"],
+                          summary["last_epoch"]), (4, 7, 10))
+        self.assertAlmostEqual(summary["val_bal_acc"]["mean"], 0.85)
+        self.assertAlmostEqual(summary["val_loss"]["std"], math.sqrt(1.25))
+        self.assertEqual(summary["train_bal_acc"]["std"], 0.0)
+
+    def test_window_summary_short_run_strings_and_nan(self):
+        # metrics.csv rows come back as strings; a NaN AUC is skipped.
+        rows = [{"epoch": "1", "train_bal_acc": "0.5", "val_bal_acc": "0.5",
+                 "val_auc": "nan", "val_loss": "0.7"},
+                {"epoch": "2", "train_bal_acc": "0.7", "val_bal_acc": "0.6",
+                 "val_auc": "0.6", "val_loss": "0.6"}]
+        summary = window_summary(rows, 20)
+        self.assertEqual(summary["window"], 2)
+        self.assertAlmostEqual(summary["val_auc"]["mean"], 0.6)
+        self.assertEqual(summary["val_auc"]["std"], 0.0)
+        only_nan = window_summary(rows[:1], 20)
+        self.assertTrue(math.isnan(only_nan["val_auc"]["mean"]))
+        with self.assertRaises(ValueError):
+            window_summary([], 20)
 
 
 class TrainLoopTests(unittest.TestCase):

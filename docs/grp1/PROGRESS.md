@@ -24,6 +24,26 @@ Basic dataset validation has already passed; do not repeat without a concrete re
 
 ## Progress log
 
+### 2026-11-05 - H3 Phase 0 tooling: shuffled-label null and last-N metrics (local)
+
+`train_cnngru.py` gains `--shuffle-train-labels` (seeded permutation of training labels only; class weights unchanged) and `--summary-window` (default 20).
+Every run now also logs and saves `final_epoch` and `last_window` (mean/std of train bal-acc and validation bal-acc, AUC and loss over the last N epochs) in `summary.json`; the default run name gets a `-null` tag for null runs.
+New `summarize_runs.py` aggregates run folders per group and reports paired (split, seed) differences against the first group with the mean > 2 x std decision rule.
+New invented-input tests: four in `tests/test_train_cnngru.py`, five in `tests/test_summarize_runs.py`.
+Perlmutter commands for the 18-run Phase 0 grid (splits 0-2 x seeds 0-2, real and null) are in [NEXT_EXPERIMENTS.md](NEXT_EXPERIMENTS.md#phase-0---make-the-measurement-trustworthy-run-first).
+
+Not verified: no test has been run (no local execution); no Phase 0 runs exist yet.
+No staging/commit/push in this note.
+
+### 2026-11-05 - H3 capacity plan reframed (design only)
+
+The proposed H3 (512 -> 128 projection, GRU hidden 256 x 2 layers, wider MLP, lower dropout) would raise the head from 330,626 to about 970k parameters on 267 training cases while the current head already memorizes training data.
+It is reframed as a capacity ladder (XS / S / M / L) preceded by a shuffled-label null, scored by paired validation AUC over splits 0-2 x seeds 0-2, followed by one-factor ablations of the H3 components and an activation (ReLU / LeakyReLU / GELU) and loss (label smoothing 0.1) check.
+Full plan, predictions and decision rule: [NEXT_EXPERIMENTS.md](NEXT_EXPERIMENTS.md#h3---capacity-reframed-as-a-capacity-ladder).
+
+Not implemented: no code for the projection, ladder rungs, label smoothing, activation option or shuffled-label null exists yet; no runs.
+No staging/commit/push in this note.
+
 ### 2026-11-04 — LayerNorm reference + H2 LR 3e-4 (owner-run Perlmutter)
 
 **Plumbing:** all local synthetic tests passed; Perlmutter inference and two-epoch training smoke passed. Code uses LayerNorm on features; `train_cnngru.py` uses `--run-name` and writes `docs/grp1/results/<run-name>/`; `--patience 0` disables early stopping. Test partition unused.
