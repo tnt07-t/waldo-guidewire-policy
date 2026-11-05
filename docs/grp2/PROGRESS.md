@@ -11,6 +11,15 @@ These are team proposals, not confirmed course requirements. Friday task ownersh
 
 ## Current status and next steps
 
+**2026-11-05 — Standardization restores fit, not generalization:** latest+goal
+LeakyReLU selects epoch 8: train/validation BA .964/.588, AUC .996/.580.
+Final epoch 23 reaches train BA/AUC 1.000/1.000, but validation BA .510,
+AUC .543 and loss 1.1345. Conditioning was a substantial training obstacle under
+the fixed recipe; model width is sufficient to fit training labels. Clear
+generalization failure remains. Input controls still differ in activation and
+normalization, so .588 versus earlier .597/.561 cannot isolate metadata benefit.
+Detailed results and follow-up limits are in the experiment log.
+
 **2026-11-05 — Conditioning experiment prepared:** added training-only per-role
 feature standardization for latest+goal LeakyReLU. Statistics are nontrainable
 checkpoint buffers; validation/inference/diagnostics reuse the training transform.

@@ -75,7 +75,53 @@ under shifted validation inputs and optimization, identical trainable initial
 weights/parameter counts, legacy state loading and standardized checkpoint reload.
 An end-to-end invented-image training/benchmark/health run verifies transform
 persistence without reading earlier history images. Code checks establish no
-real performance result. **Real standardized run: pending.**
+real performance result. **Real standardized run:** completed owner-run
+aggregates are recorded below.
+
+### 2026-11-05 — Standardization restores training fit
+
+Supplied latest+goal LeakyReLU results with training-only feature standardization:
+
+| State / partition | BA | ROC AUC | Unweighted loss |
+|---|---:|---:|---:|
+| Initial / train | .487 | .470 | .7509 |
+| Initial / validation | .547 | .685 | .7058 |
+| Selected epoch 8 / train | .964 | .996 | .1880 |
+| Selected epoch 8 / validation | .588 | .580 | .7652 |
+| Final epoch 23 / train | 1.000 | 1.000 | .0133 |
+| Final epoch 23 / validation | .510 | .543 | 1.1345 |
+
+This supports the input-conditioning hypothesis within the fixed seed/recipe:
+the same 65,730-parameter head now fits training cases, unlike the unstandardized
+LeakyReLU run (final train BA .500, AUC .687). It does not isolate centering from
+scaling or the changed effective regularization in raw feature units. Default
+initialization and architecture were sufficient for strong training fit after
+conditioning; a width increase is not justified as the next response.
+
+Generalization remains weak. Selected train/validation BA gap is .376; continued
+training reaches perfect training classification while validation loss rises to
+1.1345 and BA returns near chance. This is substantially clearer overfitting
+evidence than the earlier stalled runs. The deployed/selected checkpoint remains
+epoch 8; final weights are diagnostic only. Training improvement does not prove
+useful wire/target reasoning or held-out reliability.
+
+Initial validation AUC .685 exceeds selected/final AUC, while selected BA is
+higher than initial BA. Ranking, confidence and fixed-threshold classification
+remain distinct. One random-head initial score on the repeatedly used 80 cases
+is not a valid random-seed selection strategy. No test evaluation occurred.
+
+**Comparison limit:** .588 for standardized LeakyReLU latest+goal cannot isolate
+metadata value against .597 for unstandardized ReLU latest+goal+metadata or .561
+for unstandardized ReLU goal+metadata. Both normalization and activation differ.
+The original no-metadata ReLU collapse must not be interpreted as evidence of
+metadata necessity. Fair input-role conclusions require the same functioning
+conditioning/activation recipe, with parameter-count and selection caveats.
+
+**Next candidate:** align static input controls under the functioning recipe
+before further architecture sweeps. A smaller/regularized-head comparison is
+also plausible given the overfitting, but no extra sweep, normalization extension
+or real run is implemented by this result entry. Reserve final test and avoid
+repeatedly expanding choices on the same validation cases.
 
 ## Confirmed inactive classifier and activation control — 2026-11-05
 
