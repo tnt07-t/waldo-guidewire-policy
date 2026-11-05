@@ -11,6 +11,11 @@ for the eight-configuration static/mean/attention comparison, position on/off,
 widths 32/64/128, fixed final MLP, rationale and results status. The two-model
 commands below remain examples rather than the requested full sweep.
 
+**Next stage (2026-11-04):** inspect the completed fixed-64 run using
+[learning/representation diagnostics](ATTENTION_EXPERIMENTS.md#learning-and-representation-diagnostics--2026-11-04).
+Per-epoch training BA and class behavior precede further capacity changes.
+Width/position sweeps remain deferred; no additional accuracy result is implied.
+
 ## Where the cases come from
 
 The supplied `splits.json` assigns existing cases to partitions. Position 0

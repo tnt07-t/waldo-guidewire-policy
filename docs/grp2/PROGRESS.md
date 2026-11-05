@@ -11,6 +11,16 @@ These are team proposals, not confirmed course requirements. Friday task ownersh
 
 ## Current status and next steps
 
+**2026-11-04 — Attention learning/representation diagnostics:** added complete
+per-epoch train/validation BA, recalls, confusion/prediction counts, probability
+means and eval loss, preserving the checkpoint rule. Initial/final/selected
+metrics are distinct and epoch histories are saved incrementally. Separate
+`temporal_diagnostics.py` inspects existing checkpoints: temporal routing,
+fixed-input interventions, representation spread, training-only metadata
+recoverability and optional one-case spatial perturbations. No architecture
+change or new real result is claimed. Execution/rationale/limitations are in the
+[diagnostic plan](ATTENTION_EXPERIMENTS.md#learning-and-representation-diagnostics--2026-11-04).
+
 **2026-11-03 — End-of-day decision:** share completed tiny/full-run evidence
 and defer the width/position sweep. Larger width remains a hypothesis; current
 logs do not distinguish weak training fit from validation-selected checkpoint

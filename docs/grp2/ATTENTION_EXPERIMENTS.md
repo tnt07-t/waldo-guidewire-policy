@@ -1,5 +1,128 @@
 # CNN–attention development experiments
 
+## Learning and representation diagnostics — 2026-11-04
+
+**Scope:** investigate the fixed-64 attention run before changing architecture.
+The completed tiny fit established working updates; the first full comparison
+did not establish whether training classification improved after the selected
+epoch. No new width, optimizer, input normalization or position choice is selected.
+
+### Per-epoch measurements
+
+`temporal_evaluation.py` now assesses complete training and validation partitions
+after each epoch in evaluation mode with no gradients. Reports include ordinary
+cross-entropy loss, accuracy, balanced accuracy (BA), both class recalls, confusion
+counts, predicted RETRACT/ADVANCE counts and mean ADVANCE probability. BA is the
+mean of the two class recalls. The original dropout-active, class-weighted
+minibatch loss remains separately named and must not be directly equated with
+the new unweighted evaluation loss.
+
+Initial, final-epoch and validation-selected metrics remain distinct. The best
+checkpoint rule remains earliest strictly highest validation BA; training BA
+does not select checkpoints. Standalone `<model>-seed<N>-history.json` is updated
+after each completed epoch so partial progress survives later interruption.
+Additional evaluation changes head-work duration; inference timing and the
+architecture are unchanged. No additional CNN extraction occurs per epoch.
+
+### Fixed-checkpoint diagnostics
+
+`temporal_diagnostics.py` loads an existing ResNet attention checkpoint, defaults
+to the training partition and fits no new action classifier. Features are
+extracted once into RAM. Checkpoint metadata scales must match current training
+metadata. Reports contain:
+
+| Diagnostic | Question | Interpretation limit |
+|---|---|---|
+| Per-head 6×6 temporal routing, latest-query weights and entropy | Are attention weights uniform, concentrated or biased toward particular history steps? | Frame routing is not pixel localization or causal importance; direct goal fusion and residual paths also affect output |
+| Fixed-checkpoint frame/goal/depth/time replacements | Which input edits change probabilities or decisions? | Training means/reversal can create unfamiliar inputs; no-refit sensitivity does not establish necessity or benefit from retraining |
+| Raw/projected/summary spread, effective rank and frame differences | Does representation variation collapse across steps/cases? | Learned scales and different dimensionalities confound direct comparisons; rank is not semantic information content |
+| Inner-training episode-disjoint ridge probes for depth/time | Is known numerical metadata linearly recoverable after projection/summary? | Fixed alpha=1 decoder, not a new navigation classifier; raw input explicitly contains targets; poor decoding does not prove information is absent or task-relevant |
+| Optional 3×3 content occlusion on one training case | Which coarse image edits change the predicted action probability through CNN and head? | Normalized-zero masks may be unfamiliar; sensitivity is not wire detection, correct target reasoning or an attention pixel map |
+
+The metadata probe uses a fixed seed-0 episode holdout inside training only,
+fits scaling/decoder on the remaining training episodes, and excludes constant
+target steps from R². True validation/test is not used to tune the probes.
+No image embeddings, per-case attention weights or checkpoints are persisted by
+the diagnostic runner. Full JSON includes checkpoint configuration/private paths
+and scales and remains on Perlmutter; aggregate Markdown can be reviewed for
+sharing. No test-partition diagnostic option is provided.
+
+Temporal attention receives pooled 512-value image vectors, so no original
+spatial map is available inside that layer. Diagnosing loss of specific wire-tip,
+red-marker or anatomical information requires targeted image controls or
+annotations. The current tools identify candidate bottlenecks and known metadata
+recoverability; semantic loss is not inferred from a lower effective rank.
+
+PyTorch exposes per-head weights through `need_weights=True` and
+`average_attn_weights=False`; inspection recomputes routing from the normal
+layer input without changing the production forward path. Interpretation follows
+the caution in [Jain and Wallace](https://aclanthology.org/N19-1357/) while retaining
+the qualifications discussed by [Wiegreffe and Pinter](https://aclanthology.org/D19-1002/).
+
+### Perlmutter execution order
+
+First inspect the already saved checkpoint; no architecture rerun is needed:
+
+```sh
+python3 -B temporal_diagnostics.py \
+  --checkpoint "$PSCRATCH/waldo-temporal/dev64-01/attention-seed0.pt" \
+  --partition train --device cuda --spatial-case-index 0 \
+  --output-dir "$PSCRATCH/waldo-temporal/diagnostics-dev64-01"
+```
+
+This extracts the 267 training cases but no validation images. Optional spatial
+inspection selects training-local case 0 before observing the map and performs
+63 single-image regional edits (seven images × nine cells). Omit
+`--spatial-case-index 0` for temporal/numerical diagnostics only. Validation
+inspection requires explicit `--partition validation`; use sparingly, after
+training diagnostics, without repeated configuration searches.
+
+Then rerun the fixed development comparison with added epoch measurements:
+
+```sh
+python3 -B temporal_evaluation.py --split-position 0 --device cuda \
+  --models latest_mlp mean_mlp attention --width 64 --classifier-width 64 \
+  --seeds 0 --batch-size 32 --epochs 100 --patience 15 \
+  --lr 0.001 --weight-decay 0.001 --dropout 0.1 \
+  --output-dir "$PSCRATCH/waldo-temporal/dev64-diagnostics-01"
+```
+
+The second run starts fresh heads and repeats the previous recipe to add missing
+measurements. The old run remains preserved. Exact GPU reproducibility is not
+guaranteed. Benchmarking is omitted because architecture/input computation is
+unchanged; prior scoped latency evidence remains separate. Both commands require
+the working environment, DATA_DIR/TORCH_HOME and a GPU compute allocation.
+
+### Verification and result record
+
+All 54 repository synthetic tests passed locally, including eight new diagnostic
+tests. The diagnostic CLI help and diff-format checks passed. The full invented-
+image test trains a checkpoint, reloads the unchanged architecture, generates
+training-only diagnostics and verifies encoder freezing and report creation.
+This verification supplies no guidewire accuracy or real attention map.
+
+The training run also writes `learning_summary.md` (selected versus final train/
+validation BA) and `learning_curves.csv` (per-epoch loss, BA, recalls and prediction
+counts). `diagnostics.json` contains detailed aggregate numerical evidence;
+the diagnostic `summary.md` includes aggregate temporal routing, interventions,
+representation spread and metadata probe results. Optional single-case spatial
+tables are written separately to `spatial_sensitivity.private.md` and remain on
+Perlmutter, along with the full JSON report. Only reviewed aggregate summaries
+are suitable for sharing.
+
+Synthetic tests cover full-forward equality during inspection, per-head weight
+normalization, no model-state changes, a uniform-attention control, a constant
+representation control, irrelevant-frame interventions on latest-only heads,
+known recoverable metadata versus a constant representation, full-checkpoint
+CLI/report flow, per-epoch counts/BA consistency and selected/final separation.
+Spatial tests verify one-image re-encoding and seven 3×3 grids. Synthetic tests
+do not establish real diagnostic outcomes or semantic validity.
+
+**Real results:** pending authenticated Perlmutter execution. No new information
+loss, focus location, model improvement or architecture decision is claimed.
+Record diagnostics, per-epoch curves and one bounded follow-up decision here
+after permitted aggregates are reviewed. No additional model sweep is automatic.
+
 ## Scope and rationale — 2026-11-03
 
 **Updated execution order — 2026-11-03:** following the revised experiment plan,

@@ -6,6 +6,7 @@ new private scratch directory. Existing evaluation.py remains unchanged.
 
 import argparse
 import copy
+import csv
 import hashlib
 import json
 import os
@@ -46,8 +47,23 @@ def probabilities(head, data):
         return head(*data[:3]).softmax(-1)[:, 1].cpu().numpy()
 
 
+def assess(head, data):
+    """Full-partition eval-mode metrics; no updates or dropout sampling."""
+    head.eval()
+    with torch.no_grad():
+        logits = head(*data[:3])
+        probability = logits.softmax(-1)[:, 1].cpu().numpy()
+        result = metrics(data[3].cpu().numpy(), probability)
+        result["loss"] = nn.functional.cross_entropy(logits, data[3]).item()
+        predicted = probability >= .5
+        result["prediction_counts"] = {"retract": int((~predicted).sum()),
+                                       "advance": int(predicted.sum())}
+        result["mean_advance_probability"] = float(probability.mean())
+    return result
+
+
 def fit(head, train, validation, *, epochs=100, patience=15, batch_size=32,
-        lr=0.001, weight_decay=0.001, seed=0):
+        lr=0.001, weight_decay=0.001, seed=0, epoch_callback=None):
     """Train-only weighted loss; select checkpoint by validation BA, ties earliest."""
     if min(epochs, patience, batch_size) < 1 or lr <= 0 or weight_decay < 0:
         raise ValueError("Invalid training budget")
@@ -60,6 +76,7 @@ def fit(head, train, validation, *, epochs=100, patience=15, batch_size=32,
     generator = torch.Generator().manual_seed(seed)
     best_score, best_epoch, best_state = -1., 0, None
     history = []
+    initial_metrics = {"train": assess(head, train), "validation": assess(head, validation)}
     start = time.perf_counter()
     for epoch in range(1, epochs + 1):
         head.train()
@@ -80,22 +97,53 @@ def fit(head, train, validation, *, epochs=100, patience=15, batch_size=32,
             if any(not torch.isfinite(p).all() for p in head.parameters()):
                 raise RuntimeError("Non-finite weights")
             total += loss.item() * len(indices)
-        score = metrics(validation[3].cpu().numpy(), probabilities(head, validation))["balanced_accuracy"]
+        train_metrics, val_metrics = assess(head, train), assess(head, validation)
+        score = val_metrics["balanced_accuracy"]
         history.append({"epoch": epoch, "batch_weighted_loss_mean": total / len(train[3]),
-                        "validation_balanced_accuracy": score})
+                        "validation_balanced_accuracy": score, "train": train_metrics,
+                        "validation": val_metrics})
         if score > best_score:
             best_score, best_epoch = score, epoch
             best_state = copy.deepcopy(head.state_dict())
+        if epoch_callback is not None:
+            epoch_callback(history)
         if epoch - best_epoch >= patience:
             break
+    final_metrics = {"train": history[-1]["train"], "validation": history[-1]["validation"]}
     head.load_state_dict(best_state)
     head.eval()
     return {"best_epoch": best_epoch, "epochs_run": epoch, "history": history,
+            "initial_metrics": initial_metrics,
+            "final_epoch_metrics": final_metrics,
             "training_seconds": time.perf_counter() - start}
 
 
 def write_json(path, value):
     path.write_text(json.dumps(value, indent=2, allow_nan=False) + "\n", encoding="utf-8")
+
+
+def write_learning_reports(directory, results):
+    """Aggregate histories only: readable selected/final comparison and CSV."""
+    lines = ['# Learning diagnostics', '',
+             'Full-partition evaluation mode; train and validation loss are unweighted cross-entropy.', '',
+             '| Model | Best epoch | Epochs | Selected train BA | Selected validation BA | Final train BA | Final validation BA |',
+             '|---|---:|---:|---:|---:|---:|---:|']
+    with (directory/'learning_curves.csv').open('w',newline='',encoding='utf-8') as handle:
+        writer = csv.writer(handle)
+        writer.writerow(['model','epoch','partition','loss','balanced_accuracy','retract_recall','advance_recall','predicted_retract','predicted_advance'])
+        for name,r in results.items():
+            if 'history' not in r:
+                continue
+            final = r['final_epoch_metrics']
+            lines.append('| {} | {} | {} | {:.3f} | {:.3f} | {:.3f} | {:.3f} |'.format(
+                name,r['best_epoch'],r['epochs_run'],r['train']['balanced_accuracy'],r['validation']['balanced_accuracy'],
+                final['train']['balanced_accuracy'],final['validation']['balanced_accuracy']))
+            for row in r['history']:
+                for partition in ('train','validation'):
+                    m=row[partition]
+                    writer.writerow([name,row['epoch'],partition,m['loss'],m['balanced_accuracy'],m['retract_recall'],
+                                     m['advance_recall'],m['prediction_counts']['retract'],m['prediction_counts']['advance']])
+    (directory/'learning_summary.md').write_text('\n'.join(lines)+'\n',encoding='utf-8')
 
 
 def benchmark(case, prepare, encoder, head, scale, device, *, warmup=5, repeats=20):
@@ -240,7 +288,7 @@ def main(argv=None):
             versions[package] = importlib.metadata.version(package)
         except importlib.metadata.PackageNotFoundError:
             versions[package] = None
-    report = {"purpose": "development validation; no test predictions", "config": config,
+    report = {"format_version": 2, "purpose": "development validation; no test predictions", "config": config,
               "git_commit": git.stdout.strip(), "git_dirty": bool(dirty.stdout.strip()),
               "python": platform.python_version(), "torch": torch.__version__,
               "versions": versions,
@@ -268,11 +316,13 @@ def main(argv=None):
                                position_embeddings=variant["position_embeddings"],
                                classifier_width=variant["classifier_width"]).to(args.device)
             result = fit(head, train, validation, epochs=args.epochs, patience=args.patience,
-                         batch_size=args.batch_size, lr=args.lr, weight_decay=args.weight_decay, seed=seed)
+                         batch_size=args.batch_size, lr=args.lr, weight_decay=args.weight_decay, seed=seed,
+                         epoch_callback=lambda history: write_json(
+                             args.output_dir / (variant["name"] + "-seed" + str(seed) + "-history.json"), history))
             train_p, val_p = probabilities(head, train), probabilities(head, validation)
             key = variant["name"] + ":seed=" + str(seed)
-            result.update(variant=variant, train=metrics(train[3].cpu().numpy(), train_p),
-                          validation=metrics(validation[3].cpu().numpy(), val_p),
+            result.update(variant=variant, train=assess(head, train),
+                          validation=assess(head, validation),
                           validation_balanced_accuracy_95pct=episode_interval(
                               validation[3].cpu().numpy(), val_p, val_features[args.encoder]["episode"]),
                           trainable_parameters=sum(p.numel() for p in head.parameters()))
@@ -289,6 +339,7 @@ def main(argv=None):
                        args.output_dir / (variant["name"] + "-seed" + str(seed) + ".pt"))
             write_json(args.output_dir / "metrics.json", report)
             write_json(args.output_dir / "validation_predictions.private.json", predictions)
+            write_learning_reports(args.output_dir,report['results'])
             print(key, "validation BA", result["validation"]["balanced_accuracy"], flush=True)
     if backbone.training or any(p.requires_grad or p.grad is not None for p in backbone.parameters()) or any(
             not torch.equal(v.detach().cpu(), snapshot[k]) for k, v in backbone.state_dict().items()):
