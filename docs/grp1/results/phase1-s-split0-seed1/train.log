@@ -1,0 +1,217 @@
+Run folder: docs/grp1/results/phase1-s-split0-seed1
+Encoded train: 267 cases (97 RETRACT, 170 ADVANCE) in 24.0s
+Encoded validation: 80 cases (34 RETRACT, 46 ADVANCE) in 8.0s
+Device: cuda | split 0 | seed 1
+Head: capacity S: projection 512 -> 64 shared | GRU 64 x 1 layer(s) | MLP 128 -> 64 -> 2
+Trainable parameters: 67,586
+Metadata mean [depth_mm, offset_s]: [-10.945, -1.935] std: [10.916, 1.354]
+Class weights [RETRACT, ADVANCE]: [1.376, 0.785]
+Metrics: loss is class-weighted CE; bal = balanced accuracy; rec R/A = validation recall for RETRACT/ADVANCE.
+epoch    1/200 | train loss 0.7034 acc 0.363 bal 0.500 | val loss 0.6889 acc 0.425 bal 0.500 auc 0.482 rec R/A 1.00/0.00 | lr 1.0e-03 0.3s  *best
+epoch    2/200 | train loss 0.6824 acc 0.674 bal 0.554 | val loss 0.7195 acc 0.575 bal 0.500 auc 0.372 rec R/A 0.00/1.00 | lr 1.0e-03 0.1s
+epoch    3/200 | train loss 0.6906 acc 0.363 bal 0.500 | val loss 0.6939 acc 0.425 bal 0.500 auc 0.401 rec R/A 1.00/0.00 | lr 1.0e-03 0.1s
+epoch    4/200 | train loss 0.6831 acc 0.610 bal 0.590 | val loss 0.7102 acc 0.550 bal 0.509 auc 0.377 rec R/A 0.24/0.78 | lr 1.0e-03 0.1s  *best
+epoch    5/200 | train loss 0.6923 acc 0.363 bal 0.500 | val loss 0.6926 acc 0.425 bal 0.500 auc 0.402 rec R/A 1.00/0.00 | lr 1.0e-03 0.0s
+epoch    6/200 | train loss 0.6722 acc 0.629 bal 0.665 | val loss 0.6987 acc 0.450 bal 0.472 auc 0.429 rec R/A 0.62/0.33 | lr 1.0e-03 0.0s
+epoch    7/200 | train loss 0.6639 acc 0.584 bal 0.638 | val loss 0.6976 acc 0.412 bal 0.439 auc 0.469 rec R/A 0.62/0.26 | lr 1.0e-03 0.0s
+epoch    8/200 | train loss 0.6600 acc 0.479 bal 0.578 | val loss 0.7168 acc 0.400 bal 0.428 auc 0.417 rec R/A 0.62/0.24 | lr 1.0e-03 0.0s
+epoch    9/200 | train loss 0.6399 acc 0.697 bal 0.649 | val loss 0.7609 acc 0.588 bal 0.545 auc 0.430 rec R/A 0.26/0.83 | lr 1.0e-03 0.1s  *best
+epoch   10/200 | train loss 0.6683 acc 0.449 bal 0.565 | val loss 0.7379 acc 0.325 bal 0.371 auc 0.432 rec R/A 0.68/0.07 | lr 1.0e-03 0.0s
+epoch   11/200 | train loss 0.6287 acc 0.599 bal 0.663 | val loss 0.7347 acc 0.350 bal 0.385 auc 0.442 rec R/A 0.62/0.15 | lr 1.0e-03 0.1s
+epoch   12/200 | train loss 0.6117 acc 0.727 bal 0.675 | val loss 0.8099 acc 0.562 bal 0.524 auc 0.447 rec R/A 0.26/0.78 | lr 1.0e-03 0.1s
+epoch   13/200 | train loss 0.6147 acc 0.584 bal 0.660 | val loss 0.7721 acc 0.400 bal 0.425 auc 0.451 rec R/A 0.59/0.26 | lr 1.0e-03 0.1s
+epoch   14/200 | train loss 0.6462 acc 0.697 bal 0.591 | val loss 0.9736 acc 0.562 bal 0.493 auc 0.437 rec R/A 0.03/0.96 | lr 1.0e-03 0.1s
+epoch   15/200 | train loss 0.6028 acc 0.719 bal 0.633 | val loss 0.9277 acc 0.550 bal 0.494 auc 0.475 rec R/A 0.12/0.87 | lr 1.0e-03 0.1s
+epoch   16/200 | train loss 0.5789 acc 0.742 bal 0.693 | val loss 0.8295 acc 0.550 bal 0.497 auc 0.486 rec R/A 0.15/0.85 | lr 1.0e-03 0.1s
+epoch   17/200 | train loss 0.5574 acc 0.663 bal 0.702 | val loss 0.7872 acc 0.525 bal 0.529 auc 0.471 rec R/A 0.56/0.50 | lr 1.0e-03 0.0s
+epoch   18/200 | train loss 0.5215 acc 0.730 bal 0.751 | val loss 0.8362 acc 0.575 bal 0.569 auc 0.489 rec R/A 0.53/0.61 | lr 1.0e-03 0.1s  *best
+epoch   19/200 | train loss 0.5063 acc 0.768 bal 0.751 | val loss 0.8281 acc 0.588 bal 0.572 auc 0.508 rec R/A 0.47/0.67 | lr 1.0e-03 0.1s  *best
+epoch   20/200 | train loss 0.5294 acc 0.663 bal 0.726 | val loss 0.7936 acc 0.425 bal 0.442 auc 0.475 rec R/A 0.56/0.33 | lr 1.0e-03 0.0s
+epoch   21/200 | train loss 0.4834 acc 0.757 bal 0.789 | val loss 0.7944 acc 0.438 bal 0.449 auc 0.469 rec R/A 0.53/0.37 | lr 1.0e-03 0.1s
+epoch   22/200 | train loss 0.5526 acc 0.760 bal 0.681 | val loss 1.0420 acc 0.562 bal 0.512 auc 0.526 rec R/A 0.18/0.85 | lr 1.0e-03 0.1s
+epoch   23/200 | train loss 0.4363 acc 0.820 bal 0.823 | val loss 0.8804 acc 0.475 bal 0.478 auc 0.464 rec R/A 0.50/0.46 | lr 1.0e-03 0.1s
+epoch   24/200 | train loss 0.3942 acc 0.850 bal 0.831 | val loss 0.8564 acc 0.588 bal 0.572 auc 0.561 rec R/A 0.47/0.67 | lr 1.0e-03 0.1s
+epoch   25/200 | train loss 0.3724 acc 0.850 bal 0.849 | val loss 0.8652 acc 0.588 bal 0.584 auc 0.561 rec R/A 0.56/0.61 | lr 1.0e-03 0.1s  *best
+epoch   26/200 | train loss 0.3577 acc 0.809 bal 0.830 | val loss 0.9703 acc 0.525 bal 0.526 auc 0.497 rec R/A 0.53/0.52 | lr 1.0e-03 0.0s
+epoch   27/200 | train loss 0.3321 acc 0.850 bal 0.860 | val loss 1.0456 acc 0.575 bal 0.569 auc 0.552 rec R/A 0.53/0.61 | lr 1.0e-03 0.1s
+epoch   28/200 | train loss 0.3169 acc 0.899 bal 0.892 | val loss 1.1460 acc 0.562 bal 0.547 auc 0.516 rec R/A 0.44/0.65 | lr 1.0e-03 0.1s
+epoch   29/200 | train loss 0.3650 acc 0.858 bal 0.817 | val loss 1.2764 acc 0.575 bal 0.558 auc 0.460 rec R/A 0.44/0.67 | lr 1.0e-03 0.1s
+epoch   30/200 | train loss 0.3973 acc 0.727 bal 0.781 | val loss 1.0023 acc 0.500 bal 0.527 auc 0.542 rec R/A 0.71/0.35 | lr 1.0e-03 0.1s
+epoch   31/200 | train loss 0.3018 acc 0.835 bal 0.866 | val loss 1.1442 acc 0.475 bal 0.486 auc 0.501 rec R/A 0.56/0.41 | lr 1.0e-03 0.1s
+epoch   32/200 | train loss 0.2371 acc 0.925 bal 0.919 | val loss 1.2048 acc 0.562 bal 0.554 auc 0.552 rec R/A 0.50/0.61 | lr 1.0e-03 0.1s
+epoch   33/200 | train loss 0.2295 acc 0.925 bal 0.912 | val loss 1.4031 acc 0.550 bal 0.536 auc 0.513 rec R/A 0.44/0.63 | lr 1.0e-03 0.1s
+epoch   34/200 | train loss 0.2365 acc 0.899 bal 0.918 | val loss 1.3969 acc 0.537 bal 0.544 auc 0.498 rec R/A 0.59/0.50 | lr 1.0e-03 0.1s
+epoch   35/200 | train loss 0.1948 acc 0.944 bal 0.932 | val loss 1.4579 acc 0.562 bal 0.551 auc 0.527 rec R/A 0.47/0.63 | lr 1.0e-03 0.1s
+epoch   36/200 | train loss 0.2059 acc 0.921 bal 0.918 | val loss 1.6121 acc 0.537 bal 0.533 auc 0.483 rec R/A 0.50/0.57 | lr 1.0e-03 0.1s
+epoch   37/200 | train loss 0.2913 acc 0.910 bal 0.879 | val loss 1.8876 acc 0.575 bal 0.550 auc 0.510 rec R/A 0.38/0.72 | lr 1.0e-03 0.1s
+epoch   38/200 | train loss 0.2742 acc 0.910 bal 0.879 | val loss 2.0105 acc 0.525 bal 0.503 auc 0.467 rec R/A 0.35/0.65 | lr 1.0e-03 0.1s
+epoch   39/200 | train loss 0.1742 acc 0.948 bal 0.932 | val loss 1.6174 acc 0.550 bal 0.536 auc 0.510 rec R/A 0.44/0.63 | lr 1.0e-03 0.1s
+epoch   40/200 | train loss 0.1710 acc 0.948 bal 0.932 | val loss 1.8697 acc 0.512 bal 0.499 auc 0.514 rec R/A 0.41/0.59 | lr 1.0e-03 0.1s
+epoch   41/200 | train loss 0.2366 acc 0.910 bal 0.885 | val loss 2.0962 acc 0.537 bal 0.517 auc 0.455 rec R/A 0.38/0.65 | lr 1.0e-03 0.1s
+epoch   42/200 | train loss 0.2251 acc 0.910 bal 0.879 | val loss 2.1889 acc 0.575 bal 0.546 auc 0.485 rec R/A 0.35/0.74 | lr 1.0e-03 0.1s
+epoch   43/200 | train loss 0.1138 acc 0.955 bal 0.962 | val loss 1.9077 acc 0.487 bal 0.485 auc 0.460 rec R/A 0.47/0.50 | lr 1.0e-03 0.0s
+epoch   44/200 | train loss 0.1276 acc 0.921 bal 0.936 | val loss 1.9688 acc 0.500 bal 0.504 auc 0.480 rec R/A 0.53/0.48 | lr 1.0e-03 0.1s
+epoch   45/200 | train loss 0.0608 acc 0.993 bal 0.990 | val loss 2.3092 acc 0.512 bal 0.499 auc 0.482 rec R/A 0.41/0.59 | lr 1.0e-03 0.1s
+epoch   46/200 | train loss 0.1485 acc 0.921 bal 0.938 | val loss 2.1838 acc 0.450 bal 0.457 auc 0.485 rec R/A 0.50/0.41 | lr 1.0e-03 0.1s
+epoch   47/200 | train loss 0.0518 acc 0.981 bal 0.983 | val loss 2.3660 acc 0.487 bal 0.485 auc 0.462 rec R/A 0.47/0.50 | lr 1.0e-03 0.1s
+epoch   48/200 | train loss 0.0644 acc 0.985 bal 0.979 | val loss 2.8897 acc 0.525 bal 0.506 auc 0.440 rec R/A 0.38/0.63 | lr 1.0e-03 0.1s
+epoch   49/200 | train loss 0.0362 acc 0.989 bal 0.987 | val loss 2.6538 acc 0.512 bal 0.507 auc 0.446 rec R/A 0.47/0.54 | lr 1.0e-03 0.1s
+epoch   50/200 | train loss 0.1672 acc 0.955 bal 0.938 | val loss 2.9383 acc 0.525 bal 0.499 auc 0.451 rec R/A 0.32/0.67 | lr 1.0e-03 0.1s
+epoch   51/200 | train loss 0.0546 acc 0.985 bal 0.982 | val loss 2.5198 acc 0.512 bal 0.507 auc 0.436 rec R/A 0.47/0.54 | lr 1.0e-03 0.1s
+epoch   52/200 | train loss 0.0219 acc 0.996 bal 0.997 | val loss 2.8213 acc 0.512 bal 0.507 auc 0.453 rec R/A 0.47/0.54 | lr 1.0e-03 0.1s
+epoch   53/200 | train loss 0.1398 acc 0.963 bal 0.948 | val loss 3.5692 acc 0.537 bal 0.490 auc 0.467 rec R/A 0.18/0.80 | lr 1.0e-03 0.0s
+epoch   54/200 | train loss 0.0468 acc 0.989 bal 0.985 | val loss 2.9327 acc 0.537 bal 0.529 auc 0.451 rec R/A 0.47/0.59 | lr 1.0e-03 0.1s
+epoch   55/200 | train loss 0.0093 acc 1.000 bal 1.000 | val loss 3.2679 acc 0.512 bal 0.503 auc 0.448 rec R/A 0.44/0.57 | lr 1.0e-03 0.1s
+epoch   56/200 | train loss 0.0067 acc 1.000 bal 1.000 | val loss 3.4478 acc 0.475 bal 0.459 auc 0.455 rec R/A 0.35/0.57 | lr 1.0e-03 0.0s
+epoch   57/200 | train loss 0.0033 acc 1.000 bal 1.000 | val loss 3.4429 acc 0.512 bal 0.499 auc 0.450 rec R/A 0.41/0.59 | lr 1.0e-03 0.1s
+epoch   58/200 | train loss 0.0026 acc 1.000 bal 1.000 | val loss 3.2518 acc 0.500 bal 0.496 auc 0.473 rec R/A 0.47/0.52 | lr 1.0e-03 0.0s
+epoch   59/200 | train loss 0.0024 acc 1.000 bal 1.000 | val loss 3.4681 acc 0.512 bal 0.503 auc 0.467 rec R/A 0.44/0.57 | lr 1.0e-03 0.0s
+epoch   60/200 | train loss 0.0068 acc 0.996 bal 0.997 | val loss 3.4720 acc 0.487 bal 0.489 auc 0.473 rec R/A 0.50/0.48 | lr 1.0e-03 0.0s
+epoch   61/200 | train loss 0.0021 acc 1.000 bal 1.000 | val loss 3.5245 acc 0.512 bal 0.499 auc 0.457 rec R/A 0.41/0.59 | lr 1.0e-03 0.0s
+epoch   62/200 | train loss 0.0020 acc 1.000 bal 1.000 | val loss 3.4269 acc 0.487 bal 0.481 auc 0.490 rec R/A 0.44/0.52 | lr 1.0e-03 0.0s
+epoch   63/200 | train loss 0.0021 acc 1.000 bal 1.000 | val loss 3.5456 acc 0.475 bal 0.478 auc 0.455 rec R/A 0.50/0.46 | lr 1.0e-03 0.0s
+epoch   64/200 | train loss 0.0311 acc 0.985 bal 0.988 | val loss 3.0382 acc 0.475 bal 0.486 auc 0.476 rec R/A 0.56/0.41 | lr 1.0e-03 0.1s
+epoch   65/200 | train loss 0.0056 acc 1.000 bal 1.000 | val loss 3.8024 acc 0.475 bal 0.478 auc 0.453 rec R/A 0.50/0.46 | lr 1.0e-03 0.0s
+epoch   66/200 | train loss 0.0026 acc 1.000 bal 1.000 | val loss 4.0060 acc 0.487 bal 0.470 auc 0.457 rec R/A 0.35/0.59 | lr 1.0e-03 0.0s
+epoch   67/200 | train loss 0.0004 acc 1.000 bal 1.000 | val loss 3.8909 acc 0.500 bal 0.488 auc 0.470 rec R/A 0.41/0.57 | lr 1.0e-03 0.0s
+epoch   68/200 | train loss 0.0041 acc 1.000 bal 1.000 | val loss 3.9071 acc 0.463 bal 0.467 auc 0.471 rec R/A 0.50/0.43 | lr 1.0e-03 0.0s
+epoch   69/200 | train loss 0.0004 acc 1.000 bal 1.000 | val loss 4.2896 acc 0.475 bal 0.463 auc 0.474 rec R/A 0.38/0.54 | lr 1.0e-03 0.0s
+epoch   70/200 | train loss 0.0004 acc 1.000 bal 1.000 | val loss 4.2901 acc 0.487 bal 0.485 auc 0.462 rec R/A 0.47/0.50 | lr 1.0e-03 0.0s
+epoch   71/200 | train loss 0.0009 acc 1.000 bal 1.000 | val loss 4.4696 acc 0.475 bal 0.463 auc 0.460 rec R/A 0.38/0.54 | lr 1.0e-03 0.0s
+epoch   72/200 | train loss 0.0004 acc 1.000 bal 1.000 | val loss 4.3168 acc 0.500 bal 0.496 auc 0.475 rec R/A 0.47/0.52 | lr 1.0e-03 0.0s
+epoch   73/200 | train loss 0.0062 acc 1.000 bal 1.000 | val loss 3.8550 acc 0.475 bal 0.478 auc 0.483 rec R/A 0.50/0.46 | lr 1.0e-03 0.0s
+epoch   74/200 | train loss 0.0005 acc 1.000 bal 1.000 | val loss 4.3546 acc 0.487 bal 0.478 auc 0.435 rec R/A 0.41/0.54 | lr 1.0e-03 0.0s
+epoch   75/200 | train loss 0.0003 acc 1.000 bal 1.000 | val loss 4.3908 acc 0.463 bal 0.456 auc 0.464 rec R/A 0.41/0.50 | lr 1.0e-03 0.0s
+epoch   76/200 | train loss 0.0012 acc 1.000 bal 1.000 | val loss 4.1386 acc 0.500 bal 0.500 auc 0.480 rec R/A 0.50/0.50 | lr 1.0e-03 0.1s
+epoch   77/200 | train loss 0.0002 acc 1.000 bal 1.000 | val loss 4.4414 acc 0.463 bal 0.460 auc 0.450 rec R/A 0.44/0.48 | lr 1.0e-03 0.1s
+epoch   78/200 | train loss 0.0003 acc 1.000 bal 1.000 | val loss 4.3110 acc 0.475 bal 0.463 auc 0.446 rec R/A 0.38/0.54 | lr 1.0e-03 0.1s
+epoch   79/200 | train loss 0.0002 acc 1.000 bal 1.000 | val loss 4.4412 acc 0.487 bal 0.478 auc 0.439 rec R/A 0.41/0.54 | lr 1.0e-03 0.1s
+epoch   80/200 | train loss 0.0002 acc 1.000 bal 1.000 | val loss 4.5857 acc 0.487 bal 0.478 auc 0.459 rec R/A 0.41/0.54 | lr 1.0e-03 0.1s
+epoch   81/200 | train loss 0.0028 acc 1.000 bal 1.000 | val loss 4.4212 acc 0.475 bal 0.478 auc 0.451 rec R/A 0.50/0.46 | lr 1.0e-03 0.1s
+epoch   82/200 | train loss 0.0001 acc 1.000 bal 1.000 | val loss 4.5696 acc 0.475 bal 0.471 auc 0.487 rec R/A 0.44/0.50 | lr 1.0e-03 0.1s
+epoch   83/200 | train loss 0.0001 acc 1.000 bal 1.000 | val loss 5.1235 acc 0.500 bal 0.492 auc 0.463 rec R/A 0.44/0.54 | lr 1.0e-03 0.1s
+epoch   84/200 | train loss 0.0000 acc 1.000 bal 1.000 | val loss 5.0190 acc 0.475 bal 0.471 auc 0.471 rec R/A 0.44/0.50 | lr 1.0e-03 0.1s
+epoch   85/200 | train loss 0.0001 acc 1.000 bal 1.000 | val loss 4.6813 acc 0.487 bal 0.493 auc 0.479 rec R/A 0.53/0.46 | lr 1.0e-03 0.1s
+epoch   86/200 | train loss 0.0001 acc 1.000 bal 1.000 | val loss 4.8571 acc 0.512 bal 0.499 auc 0.469 rec R/A 0.41/0.59 | lr 1.0e-03 0.1s
+epoch   87/200 | train loss 0.0002 acc 1.000 bal 1.000 | val loss 4.5219 acc 0.512 bal 0.511 auc 0.488 rec R/A 0.50/0.52 | lr 1.0e-03 0.1s
+epoch   88/200 | train loss 0.0002 acc 1.000 bal 1.000 | val loss 4.8150 acc 0.525 bal 0.510 auc 0.489 rec R/A 0.41/0.61 | lr 1.0e-03 0.1s
+epoch   89/200 | train loss 0.0000 acc 1.000 bal 1.000 | val loss 4.6367 acc 0.500 bal 0.492 auc 0.479 rec R/A 0.44/0.54 | lr 1.0e-03 0.0s
+epoch   90/200 | train loss 0.0000 acc 1.000 bal 1.000 | val loss 4.6912 acc 0.475 bal 0.463 auc 0.477 rec R/A 0.38/0.54 | lr 1.0e-03 0.1s
+epoch   91/200 | train loss 0.0043 acc 1.000 bal 1.000 | val loss 4.9600 acc 0.525 bal 0.495 auc 0.463 rec R/A 0.29/0.70 | lr 1.0e-03 0.1s
+epoch   92/200 | train loss 0.0000 acc 1.000 bal 1.000 | val loss 4.9933 acc 0.475 bal 0.455 auc 0.439 rec R/A 0.32/0.59 | lr 1.0e-03 0.1s
+epoch   93/200 | train loss 0.0114 acc 0.993 bal 0.994 | val loss 4.7341 acc 0.463 bal 0.464 auc 0.479 rec R/A 0.47/0.46 | lr 1.0e-03 0.0s
+epoch   94/200 | train loss 0.0001 acc 1.000 bal 1.000 | val loss 5.1072 acc 0.487 bal 0.466 auc 0.433 rec R/A 0.32/0.61 | lr 1.0e-03 0.1s
+epoch   95/200 | train loss 0.0244 acc 0.989 bal 0.985 | val loss 5.4153 acc 0.475 bal 0.436 auc 0.418 rec R/A 0.18/0.70 | lr 1.0e-03 0.1s
+epoch   96/200 | train loss 0.0004 acc 1.000 bal 1.000 | val loss 5.5637 acc 0.438 bal 0.415 auc 0.406 rec R/A 0.26/0.57 | lr 1.0e-03 0.0s
+epoch   97/200 | train loss 0.0001 acc 1.000 bal 1.000 | val loss 5.0756 acc 0.450 bal 0.441 auc 0.412 rec R/A 0.38/0.50 | lr 1.0e-03 0.0s
+epoch   98/200 | train loss 0.0009 acc 1.000 bal 1.000 | val loss 5.6211 acc 0.475 bal 0.463 auc 0.401 rec R/A 0.38/0.54 | lr 1.0e-03 0.0s
+epoch   99/200 | train loss 0.0007 acc 1.000 bal 1.000 | val loss 5.1678 acc 0.487 bal 0.481 auc 0.426 rec R/A 0.44/0.52 | lr 1.0e-03 0.0s
+epoch  100/200 | train loss 0.0002 acc 1.000 bal 1.000 | val loss 4.8857 acc 0.512 bal 0.496 auc 0.439 rec R/A 0.38/0.61 | lr 1.0e-03 0.1s
+epoch  101/200 | train loss 0.0057 acc 1.000 bal 1.000 | val loss 5.5328 acc 0.475 bal 0.478 auc 0.416 rec R/A 0.50/0.46 | lr 1.0e-03 0.1s
+epoch  102/200 | train loss 0.0163 acc 0.996 bal 0.995 | val loss 4.4746 acc 0.375 bal 0.372 auc 0.394 rec R/A 0.35/0.39 | lr 1.0e-03 0.0s
+epoch  103/200 | train loss 0.0001 acc 1.000 bal 1.000 | val loss 5.1381 acc 0.475 bal 0.471 auc 0.447 rec R/A 0.44/0.50 | lr 1.0e-03 0.1s
+epoch  104/200 | train loss 0.0001 acc 1.000 bal 1.000 | val loss 5.5785 acc 0.463 bal 0.452 auc 0.433 rec R/A 0.38/0.52 | lr 1.0e-03 0.0s
+epoch  105/200 | train loss 0.0001 acc 1.000 bal 1.000 | val loss 6.0214 acc 0.463 bal 0.452 auc 0.428 rec R/A 0.38/0.52 | lr 1.0e-03 0.0s
+epoch  106/200 | train loss 0.0001 acc 1.000 bal 1.000 | val loss 5.5837 acc 0.463 bal 0.456 auc 0.442 rec R/A 0.41/0.50 | lr 1.0e-03 0.0s
+epoch  107/200 | train loss 0.0002 acc 1.000 bal 1.000 | val loss 4.9925 acc 0.487 bal 0.485 auc 0.441 rec R/A 0.47/0.50 | lr 1.0e-03 0.0s
+epoch  108/200 | train loss 0.0001 acc 1.000 bal 1.000 | val loss 5.4269 acc 0.463 bal 0.441 auc 0.442 rec R/A 0.29/0.59 | lr 1.0e-03 0.0s
+epoch  109/200 | train loss 0.0000 acc 1.000 bal 1.000 | val loss 5.7087 acc 0.450 bal 0.430 auc 0.436 rec R/A 0.29/0.57 | lr 1.0e-03 0.0s
+epoch  110/200 | train loss 0.0000 acc 1.000 bal 1.000 | val loss 5.6814 acc 0.438 bal 0.426 auc 0.419 rec R/A 0.35/0.50 | lr 1.0e-03 0.0s
+epoch  111/200 | train loss 0.0001 acc 1.000 bal 1.000 | val loss 6.4098 acc 0.463 bal 0.444 auc 0.421 rec R/A 0.32/0.57 | lr 1.0e-03 0.0s
+epoch  112/200 | train loss 0.0000 acc 1.000 bal 1.000 | val loss 5.9501 acc 0.475 bal 0.463 auc 0.438 rec R/A 0.38/0.54 | lr 1.0e-03 0.0s
+epoch  113/200 | train loss 0.0002 acc 1.000 bal 1.000 | val loss 6.1220 acc 0.450 bal 0.445 auc 0.433 rec R/A 0.41/0.48 | lr 1.0e-03 0.1s
+epoch  114/200 | train loss 0.0000 acc 1.000 bal 1.000 | val loss 5.9665 acc 0.475 bal 0.459 auc 0.445 rec R/A 0.35/0.57 | lr 1.0e-03 0.0s
+epoch  115/200 | train loss 0.0000 acc 1.000 bal 1.000 | val loss 5.7100 acc 0.463 bal 0.452 auc 0.443 rec R/A 0.38/0.52 | lr 1.0e-03 0.0s
+epoch  116/200 | train loss 0.0000 acc 1.000 bal 1.000 | val loss 5.5305 acc 0.450 bal 0.441 auc 0.454 rec R/A 0.38/0.50 | lr 1.0e-03 0.0s
+epoch  117/200 | train loss 0.0004 acc 1.000 bal 1.000 | val loss 5.9776 acc 0.475 bal 0.451 auc 0.452 rec R/A 0.29/0.61 | lr 1.0e-03 0.0s
+epoch  118/200 | train loss 0.0000 acc 1.000 bal 1.000 | val loss 5.7315 acc 0.450 bal 0.437 auc 0.457 rec R/A 0.35/0.52 | lr 1.0e-03 0.0s
+epoch  119/200 | train loss 0.0001 acc 1.000 bal 1.000 | val loss 5.4868 acc 0.463 bal 0.441 auc 0.451 rec R/A 0.29/0.59 | lr 1.0e-03 0.0s
+epoch  120/200 | train loss 0.0287 acc 0.989 bal 0.991 | val loss 5.8970 acc 0.475 bal 0.474 auc 0.444 rec R/A 0.47/0.48 | lr 1.0e-03 0.0s
+epoch  121/200 | train loss 0.0030 acc 1.000 bal 1.000 | val loss 5.2606 acc 0.487 bal 0.466 auc 0.463 rec R/A 0.32/0.61 | lr 1.0e-03 0.1s
+epoch  122/200 | train loss 0.0167 acc 0.993 bal 0.994 | val loss 4.8888 acc 0.500 bal 0.500 auc 0.467 rec R/A 0.50/0.50 | lr 1.0e-03 0.0s
+epoch  123/200 | train loss 0.0001 acc 1.000 bal 1.000 | val loss 6.3599 acc 0.475 bal 0.463 auc 0.430 rec R/A 0.38/0.54 | lr 1.0e-03 0.0s
+epoch  124/200 | train loss 0.0000 acc 1.000 bal 1.000 | val loss 6.2942 acc 0.450 bal 0.441 auc 0.429 rec R/A 0.38/0.50 | lr 1.0e-03 0.0s
+epoch  125/200 | train loss 0.0000 acc 1.000 bal 1.000 | val loss 6.3555 acc 0.450 bal 0.441 auc 0.428 rec R/A 0.38/0.50 | lr 1.0e-03 0.0s
+epoch  126/200 | train loss 0.0000 acc 1.000 bal 1.000 | val loss 6.2912 acc 0.450 bal 0.441 auc 0.433 rec R/A 0.38/0.50 | lr 1.0e-03 0.0s
+epoch  127/200 | train loss 0.0000 acc 1.000 bal 1.000 | val loss 6.2152 acc 0.463 bal 0.452 auc 0.438 rec R/A 0.38/0.52 | lr 1.0e-03 0.0s
+epoch  128/200 | train loss 0.0001 acc 1.000 bal 1.000 | val loss 5.2341 acc 0.487 bal 0.489 auc 0.463 rec R/A 0.50/0.48 | lr 1.0e-03 0.0s
+epoch  129/200 | train loss 0.0001 acc 1.000 bal 1.000 | val loss 6.2459 acc 0.475 bal 0.474 auc 0.431 rec R/A 0.47/0.48 | lr 1.0e-03 0.0s
+epoch  130/200 | train loss 0.0003 acc 1.000 bal 1.000 | val loss 5.9002 acc 0.487 bal 0.481 auc 0.454 rec R/A 0.44/0.52 | lr 1.0e-03 0.0s
+epoch  131/200 | train loss 0.0001 acc 1.000 bal 1.000 | val loss 5.9739 acc 0.463 bal 0.448 auc 0.425 rec R/A 0.35/0.54 | lr 1.0e-03 0.0s
+epoch  132/200 | train loss 0.0002 acc 1.000 bal 1.000 | val loss 6.1022 acc 0.438 bal 0.426 auc 0.408 rec R/A 0.35/0.50 | lr 1.0e-03 0.0s
+epoch  133/200 | train loss 0.0000 acc 1.000 bal 1.000 | val loss 6.3871 acc 0.412 bal 0.397 auc 0.422 rec R/A 0.29/0.50 | lr 1.0e-03 0.0s
+epoch  134/200 | train loss 0.0001 acc 1.000 bal 1.000 | val loss 5.9484 acc 0.463 bal 0.441 auc 0.428 rec R/A 0.29/0.59 | lr 1.0e-03 0.0s
+epoch  135/200 | train loss 0.0009 acc 1.000 bal 1.000 | val loss 7.0447 acc 0.450 bal 0.426 auc 0.414 rec R/A 0.26/0.59 | lr 1.0e-03 0.0s
+epoch  136/200 | train loss 0.0009 acc 1.000 bal 1.000 | val loss 6.5966 acc 0.512 bal 0.492 auc 0.454 rec R/A 0.35/0.63 | lr 1.0e-03 0.0s
+epoch  137/200 | train loss 0.0003 acc 1.000 bal 1.000 | val loss 5.5263 acc 0.512 bal 0.499 auc 0.453 rec R/A 0.41/0.59 | lr 1.0e-03 0.0s
+epoch  138/200 | train loss 0.0001 acc 1.000 bal 1.000 | val loss 6.1763 acc 0.487 bal 0.470 auc 0.449 rec R/A 0.35/0.59 | lr 1.0e-03 0.0s
+epoch  139/200 | train loss 0.0001 acc 1.000 bal 1.000 | val loss 5.8466 acc 0.450 bal 0.426 auc 0.433 rec R/A 0.26/0.59 | lr 1.0e-03 0.0s
+epoch  140/200 | train loss 0.0003 acc 1.000 bal 1.000 | val loss 5.4762 acc 0.512 bal 0.480 auc 0.454 rec R/A 0.26/0.70 | lr 1.0e-03 0.0s
+epoch  141/200 | train loss 0.0004 acc 1.000 bal 1.000 | val loss 5.5812 acc 0.475 bal 0.444 auc 0.481 rec R/A 0.24/0.65 | lr 1.0e-03 0.0s
+epoch  142/200 | train loss 0.0001 acc 1.000 bal 1.000 | val loss 6.5491 acc 0.512 bal 0.496 auc 0.461 rec R/A 0.38/0.61 | lr 1.0e-03 0.1s
+epoch  143/200 | train loss 0.0000 acc 1.000 bal 1.000 | val loss 7.2190 acc 0.475 bal 0.451 auc 0.438 rec R/A 0.29/0.61 | lr 1.0e-03 0.0s
+epoch  144/200 | train loss 0.0000 acc 1.000 bal 1.000 | val loss 7.2631 acc 0.463 bal 0.433 auc 0.442 rec R/A 0.24/0.63 | lr 1.0e-03 0.0s
+epoch  145/200 | train loss 0.0000 acc 1.000 bal 1.000 | val loss 6.0807 acc 0.487 bal 0.474 auc 0.458 rec R/A 0.38/0.57 | lr 1.0e-03 0.0s
+epoch  146/200 | train loss 0.0000 acc 1.000 bal 1.000 | val loss 5.9509 acc 0.500 bal 0.485 auc 0.456 rec R/A 0.38/0.59 | lr 1.0e-03 0.0s
+epoch  147/200 | train loss 0.0000 acc 1.000 bal 1.000 | val loss 6.1608 acc 0.487 bal 0.470 auc 0.452 rec R/A 0.35/0.59 | lr 1.0e-03 0.0s
+epoch  148/200 | train loss 0.0000 acc 1.000 bal 1.000 | val loss 6.2638 acc 0.500 bal 0.477 auc 0.456 rec R/A 0.32/0.63 | lr 1.0e-03 0.0s
+epoch  149/200 | train loss 0.0000 acc 1.000 bal 1.000 | val loss 6.1640 acc 0.475 bal 0.448 auc 0.466 rec R/A 0.26/0.63 | lr 1.0e-03 0.0s
+epoch  150/200 | train loss 0.0000 acc 1.000 bal 1.000 | val loss 6.4185 acc 0.487 bal 0.455 auc 0.461 rec R/A 0.24/0.67 | lr 1.0e-03 0.0s
+epoch  151/200 | train loss 0.0000 acc 1.000 bal 1.000 | val loss 6.6439 acc 0.500 bal 0.465 auc 0.459 rec R/A 0.24/0.70 | lr 1.0e-03 0.0s
+epoch  152/200 | train loss 0.0001 acc 1.000 bal 1.000 | val loss 6.3151 acc 0.438 bal 0.423 auc 0.440 rec R/A 0.32/0.52 | lr 1.0e-03 0.0s
+epoch  153/200 | train loss 0.0000 acc 1.000 bal 1.000 | val loss 6.3803 acc 0.475 bal 0.455 auc 0.440 rec R/A 0.32/0.59 | lr 1.0e-03 0.0s
+epoch  154/200 | train loss 0.0000 acc 1.000 bal 1.000 | val loss 6.0638 acc 0.525 bal 0.506 auc 0.454 rec R/A 0.38/0.63 | lr 1.0e-03 0.0s
+epoch  155/200 | train loss 0.0004 acc 1.000 bal 1.000 | val loss 5.6365 acc 0.512 bal 0.499 auc 0.474 rec R/A 0.41/0.59 | lr 1.0e-03 0.0s
+epoch  156/200 | train loss 0.0000 acc 1.000 bal 1.000 | val loss 6.6731 acc 0.512 bal 0.488 auc 0.438 rec R/A 0.32/0.65 | lr 1.0e-03 0.0s
+epoch  157/200 | train loss 0.0014 acc 1.000 bal 1.000 | val loss 6.6117 acc 0.500 bal 0.504 auc 0.446 rec R/A 0.53/0.48 | lr 1.0e-03 0.0s
+epoch  158/200 | train loss 0.0010 acc 1.000 bal 1.000 | val loss 7.6298 acc 0.463 bal 0.437 auc 0.450 rec R/A 0.26/0.61 | lr 1.0e-03 0.0s
+epoch  159/200 | train loss 0.0000 acc 1.000 bal 1.000 | val loss 6.0852 acc 0.463 bal 0.460 auc 0.466 rec R/A 0.44/0.48 | lr 1.0e-03 0.0s
+epoch  160/200 | train loss 0.0000 acc 1.000 bal 1.000 | val loss 6.0542 acc 0.438 bal 0.438 auc 0.447 rec R/A 0.44/0.43 | lr 1.0e-03 0.0s
+epoch  161/200 | train loss 0.0000 acc 1.000 bal 1.000 | val loss 6.3030 acc 0.487 bal 0.470 auc 0.443 rec R/A 0.35/0.59 | lr 1.0e-03 0.0s
+epoch  162/200 | train loss 0.0000 acc 1.000 bal 1.000 | val loss 6.4353 acc 0.463 bal 0.448 auc 0.432 rec R/A 0.35/0.54 | lr 1.0e-03 0.0s
+epoch  163/200 | train loss 0.0000 acc 1.000 bal 1.000 | val loss 5.8341 acc 0.487 bal 0.478 auc 0.465 rec R/A 0.41/0.54 | lr 1.0e-03 0.0s
+epoch  164/200 | train loss 0.0000 acc 1.000 bal 1.000 | val loss 6.2632 acc 0.463 bal 0.456 auc 0.425 rec R/A 0.41/0.50 | lr 1.0e-03 0.0s
+epoch  165/200 | train loss 0.0004 acc 1.000 bal 1.000 | val loss 5.9251 acc 0.500 bal 0.469 auc 0.444 rec R/A 0.26/0.67 | lr 1.0e-03 0.0s
+epoch  166/200 | train loss 0.0004 acc 1.000 bal 1.000 | val loss 6.6988 acc 0.487 bal 0.478 auc 0.442 rec R/A 0.41/0.54 | lr 1.0e-03 0.0s
+epoch  167/200 | train loss 0.0001 acc 1.000 bal 1.000 | val loss 7.8188 acc 0.525 bal 0.483 auc 0.472 rec R/A 0.21/0.76 | lr 1.0e-03 0.0s
+epoch  168/200 | train loss 0.0000 acc 1.000 bal 1.000 | val loss 6.8237 acc 0.487 bal 0.466 auc 0.473 rec R/A 0.32/0.61 | lr 1.0e-03 0.0s
+epoch  169/200 | train loss 0.0000 acc 1.000 bal 1.000 | val loss 6.7022 acc 0.487 bal 0.481 auc 0.452 rec R/A 0.44/0.52 | lr 1.0e-03 0.1s
+epoch  170/200 | train loss 0.0000 acc 1.000 bal 1.000 | val loss 6.9224 acc 0.487 bal 0.470 auc 0.459 rec R/A 0.35/0.59 | lr 1.0e-03 0.0s
+epoch  171/200 | train loss 0.0000 acc 1.000 bal 1.000 | val loss 7.0130 acc 0.475 bal 0.455 auc 0.460 rec R/A 0.32/0.59 | lr 1.0e-03 0.1s
+epoch  172/200 | train loss 0.0000 acc 1.000 bal 1.000 | val loss 6.7931 acc 0.450 bal 0.434 auc 0.452 rec R/A 0.32/0.54 | lr 1.0e-03 0.0s
+epoch  173/200 | train loss 0.0000 acc 1.000 bal 1.000 | val loss 6.7460 acc 0.438 bal 0.419 auc 0.453 rec R/A 0.29/0.54 | lr 1.0e-03 0.0s
+epoch  174/200 | train loss 0.0000 acc 1.000 bal 1.000 | val loss 6.8040 acc 0.463 bal 0.441 auc 0.450 rec R/A 0.29/0.59 | lr 1.0e-03 0.0s
+epoch  175/200 | train loss 0.0000 acc 1.000 bal 1.000 | val loss 6.8678 acc 0.463 bal 0.441 auc 0.455 rec R/A 0.29/0.59 | lr 1.0e-03 0.0s
+epoch  176/200 | train loss 0.0000 acc 1.000 bal 1.000 | val loss 6.8102 acc 0.450 bal 0.430 auc 0.457 rec R/A 0.29/0.57 | lr 1.0e-03 0.0s
+epoch  177/200 | train loss 0.0000 acc 1.000 bal 1.000 | val loss 6.1060 acc 0.500 bal 0.500 auc 0.472 rec R/A 0.50/0.50 | lr 1.0e-03 0.0s
+epoch  178/200 | train loss 0.0000 acc 1.000 bal 1.000 | val loss 6.8836 acc 0.525 bal 0.503 auc 0.475 rec R/A 0.35/0.65 | lr 1.0e-03 0.0s
+epoch  179/200 | train loss 0.0000 acc 1.000 bal 1.000 | val loss 6.5277 acc 0.550 bal 0.540 auc 0.471 rec R/A 0.47/0.61 | lr 1.0e-03 0.0s
+epoch  180/200 | train loss 0.0000 acc 1.000 bal 1.000 | val loss 6.2548 acc 0.525 bal 0.514 auc 0.480 rec R/A 0.44/0.59 | lr 1.0e-03 0.0s
+epoch  181/200 | train loss 0.0000 acc 1.000 bal 1.000 | val loss 5.8871 acc 0.525 bal 0.522 auc 0.478 rec R/A 0.50/0.54 | lr 1.0e-03 0.0s
+epoch  182/200 | train loss 0.0000 acc 1.000 bal 1.000 | val loss 6.1135 acc 0.562 bal 0.551 auc 0.484 rec R/A 0.47/0.63 | lr 1.0e-03 0.0s
+epoch  183/200 | train loss 0.0000 acc 1.000 bal 1.000 | val loss 6.4276 acc 0.512 bal 0.496 auc 0.485 rec R/A 0.38/0.61 | lr 1.0e-03 0.0s
+epoch  184/200 | train loss 0.0000 acc 1.000 bal 1.000 | val loss 6.7739 acc 0.537 bal 0.517 auc 0.465 rec R/A 0.38/0.65 | lr 1.0e-03 0.0s
+epoch  185/200 | train loss 0.0003 acc 1.000 bal 1.000 | val loss 7.4000 acc 0.512 bal 0.480 auc 0.465 rec R/A 0.26/0.70 | lr 1.0e-03 0.0s
+epoch  186/200 | train loss 0.0000 acc 1.000 bal 1.000 | val loss 6.1748 acc 0.487 bal 0.478 auc 0.466 rec R/A 0.41/0.54 | lr 1.0e-03 0.1s
+epoch  187/200 | train loss 0.0180 acc 0.993 bal 0.994 | val loss 6.0995 acc 0.475 bal 0.467 auc 0.425 rec R/A 0.41/0.52 | lr 1.0e-03 0.1s
+epoch  188/200 | train loss 0.0001 acc 1.000 bal 1.000 | val loss 7.3034 acc 0.500 bal 0.473 auc 0.433 rec R/A 0.29/0.65 | lr 1.0e-03 0.1s
+epoch  189/200 | train loss 0.0000 acc 1.000 bal 1.000 | val loss 7.5266 acc 0.500 bal 0.485 auc 0.418 rec R/A 0.38/0.59 | lr 1.0e-03 0.1s
+epoch  190/200 | train loss 0.0007 acc 1.000 bal 1.000 | val loss 7.4133 acc 0.487 bal 0.458 auc 0.438 rec R/A 0.26/0.65 | lr 1.0e-03 0.1s
+epoch  191/200 | train loss 0.0001 acc 1.000 bal 1.000 | val loss 6.5661 acc 0.425 bal 0.419 auc 0.430 rec R/A 0.38/0.46 | lr 1.0e-03 0.1s
+epoch  192/200 | train loss 0.0000 acc 1.000 bal 1.000 | val loss 6.8581 acc 0.537 bal 0.510 auc 0.452 rec R/A 0.32/0.70 | lr 1.0e-03 0.1s
+epoch  193/200 | train loss 0.0000 acc 1.000 bal 1.000 | val loss 6.8544 acc 0.512 bal 0.492 auc 0.443 rec R/A 0.35/0.63 | lr 1.0e-03 0.1s
+epoch  194/200 | train loss 0.0000 acc 1.000 bal 1.000 | val loss 7.6710 acc 0.425 bal 0.412 auc 0.397 rec R/A 0.32/0.50 | lr 1.0e-03 0.1s
+epoch  195/200 | train loss 0.0009 acc 1.000 bal 1.000 | val loss 7.4561 acc 0.525 bal 0.487 auc 0.428 rec R/A 0.24/0.74 | lr 1.0e-03 0.1s
+epoch  196/200 | train loss 0.0052 acc 0.996 bal 0.995 | val loss 7.0190 acc 0.500 bal 0.477 auc 0.453 rec R/A 0.32/0.63 | lr 1.0e-03 0.1s
+epoch  197/200 | train loss 0.0023 acc 1.000 bal 1.000 | val loss 5.8305 acc 0.450 bal 0.445 auc 0.460 rec R/A 0.41/0.48 | lr 1.0e-03 0.1s
+epoch  198/200 | train loss 0.0524 acc 0.985 bal 0.988 | val loss 5.7870 acc 0.463 bal 0.479 auc 0.452 rec R/A 0.59/0.37 | lr 1.0e-03 0.1s
+epoch  199/200 | train loss 0.0005 acc 1.000 bal 1.000 | val loss 5.6832 acc 0.463 bal 0.464 auc 0.440 rec R/A 0.47/0.46 | lr 1.0e-03 0.1s
+epoch  200/200 | train loss 0.0289 acc 0.996 bal 0.995 | val loss 6.3394 acc 0.525 bal 0.491 auc 0.474 rec R/A 0.26/0.72 | lr 1.0e-03 0.0s
+
+Best epoch 25: train bal 0.849 | val bal 0.584 acc 0.588 auc 0.561 loss 0.8652
+Validation confusion (rows true, cols pred; RETRACT, ADVANCE):
+  RETRACT  [19, 15]
+  ADVANCE  [18, 28]
+Final epoch 200: train bal 0.995 | val bal 0.491 auc 0.474 loss 6.3394
+Last 20 epochs (181-200) mean +- std: train bal 0.999 +- 0.003 | val bal 0.480 +- 0.032 auc 0.449 +- 0.023 loss 6.6592 +- 0.6392
+Wrote train.log, metrics.csv, summary.json, curves.png, best_model.pt to docs/grp1/results/phase1-s-split0-seed1
