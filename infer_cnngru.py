@@ -14,7 +14,7 @@ import os
 import torch
 
 from dataset import GuidewireDataset
-from model_cnngru import CNNGRUModel
+from model_cnngru import CNNGRUModel, feature_norm_from_state_dict
 from preprocessing import DINOv2Preprocessor
 
 
@@ -62,9 +62,12 @@ def main():
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     batch = collate(cases, device)
 
-    model = CNNGRUModel().to(device)
-    if args.checkpoint:
-        model.load_state_dict(torch.load(args.checkpoint, map_location=device))
+    state = torch.load(args.checkpoint, map_location=device) if args.checkpoint else None
+    # The checkpoint records which feature normalization it was trained with.
+    feature_norm = feature_norm_from_state_dict(state) if state else "none"
+    model = CNNGRUModel(feature_norm=feature_norm).to(device)
+    if state:
+        model.load_state_dict(state)
     model.eval()
 
     with torch.no_grad():
@@ -74,7 +77,7 @@ def main():
     assert logits.shape == (args.batch_size, 2)
     assert torch.isfinite(logits).all()
 
-    print("Device:", device)
+    print("Device:", device, "| feature norm:", feature_norm)
     print("Logits shape:", tuple(logits.shape))
     print("Predictions:", preds.tolist())
     print("Batch accuracy{}: {:.3f}".format(

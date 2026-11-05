@@ -28,6 +28,27 @@ Owner-run Perlmutter one-case encoder verification passed (2026-11-02): the `cnn
 
 ## Progress log
 
+### 2026-11-05 - H1 / H1b feature normalization option (local)
+
+Hypothesis H1: the raw 512-d frozen-ResNet features are post-ReLU (non-negative, uncentered, uneven per-dimension scale), which saturates the GRU gates and lets the 512 goal values dominate the 128 GRU values in the MLP input.
+Normalizing them should drop train loss clearly below 0.6 and make validation balanced accuracy less jumpy.
+
+`CNNGRUModel(feature_norm=...)` adds one normalization module, shared by every history frame and the goal, applied in `forward_features` before the GRU and the MLP:
+- `none` (H0): identity; state_dict and initialization are unchanged, so earlier checkpoints still load.
+- `layer` (H1): `nn.LayerNorm(512)` per sample across the 512 dimensions (1,024 extra trainable parameters).
+- `zscore` (H1b): per-dimension training-set mean/std pooled over history frames and goals, fitted with `set_feature_stats` and stored as buffers, like the metadata statistics.
+
+Depth/offset metadata is not part of it; it is already standardized and is concatenated after the 512 features are normalized.
+`train_cnngru.py --feature-norm {none,layer,zscore}` (default `none`); the default run name is now `cnngru-<norm>-split<S>-seed<N>-<timestamp>`.
+Every run also logs the raw training-feature scale (mean, mean L2, zero fraction, per-dimension std min/median/max and their ratio) and stores it as `raw_feature_scale` in `summary.json`.
+`infer_cnngru.py` detects the normalization from the checkpoint keys.
+Optimizer, lr, weight decay and dropout are unchanged so only the normalization varies between H0, H1 and H1b.
+
+Comparison protocol: same split, seeds 0-2 for each of H0/H1/H1b; compare final and best train loss, best validation balanced accuracy (mean +- std over seeds), and the epoch-to-epoch std of validation balanced accuracy over the last 20 epochs.
+
+Not verified: the new invented-input tests in `tests/test_train_cnngru.py` have not been run; no H0/H1/H1b Perlmutter runs exist yet.
+No staging/commit/push in this note.
+
 ### 2026-11-05 - CNN-GRU training script `train_cnngru.py` (local)
 
 Added `train_cnngru.py`, which trains the GRU + MLP head on one split with the frozen ResNet-18.

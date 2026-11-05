@@ -4,7 +4,9 @@ Pipeline:
 1. Prepare train and validation cases with the shared preprocessor and
    encode every goal/history image ONCE with the frozen ResNet-18. The
    features are held in memory only; nothing is written to disk.
-2. Fit depth/offset standardization on the training partition.
+2. Fit depth/offset standardization on the training partition, log the
+   scale of the raw 512-d features, and (``--feature-norm zscore``) fit the
+   per-dimension feature standardization on the training partition too.
 3. Train the GRU + MLP head with class-weighted cross-entropy, AdamW,
    gradient clipping and early stopping on validation balanced accuracy.
 4. After every epoch, print one line of train and validation metrics
@@ -36,7 +38,7 @@ from torch.nn import functional as F
 from torch.utils.data import DataLoader, Dataset
 
 from dataset import GuidewireDataset
-from model_cnngru import CNNGRUModel
+from model_cnngru import FEATURE_NORMS, CNNGRUModel
 from preprocessing import DINOv2Preprocessor
 
 CLASS_NAMES = ("RETRACT", "ADVANCE")  # label 0, label 1
@@ -84,6 +86,28 @@ def extract_features(cnn, cases, device, batch_size, num_workers):
         if not torch.isfinite(features[key]).all():
             raise ValueError("Frozen encoder returned non-finite {} features".format(key))
     return features
+
+
+def feature_scale_report(history, goal):
+    """Scale of raw frozen-ResNet features, pooled over history frames + goals.
+
+    std_ratio is max / min per-dimension std over non-constant dimensions; a
+    large ratio means a few dimensions dominate unless features are z-scored.
+    """
+    dim = goal.shape[-1]
+    features = torch.cat([history.reshape(-1, dim), goal.reshape(-1, dim)]).double()
+    std = features.std(dim=0, unbiased=False)
+    varying = std[std > 1e-6]
+    return {
+        "mean": features.mean().item(),
+        "mean_l2": features.norm(dim=-1).mean().item(),
+        "zero_fraction": (features == 0).double().mean().item(),
+        "constant_dims": int((std <= 1e-6).sum().item()),
+        "std_min": varying.min().item() if len(varying) else math.nan,
+        "std_median": varying.median().item() if len(varying) else math.nan,
+        "std_max": varying.max().item() if len(varying) else math.nan,
+        "std_ratio": (varying.max() / varying.min()).item() if len(varying) else math.nan,
+    }
 
 
 def class_weights(labels):
@@ -238,13 +262,17 @@ def parse_args():
     parser.add_argument("--weight-decay", type=float, default=1e-2)
     parser.add_argument("--dropout", type=float, default=0.3)
     parser.add_argument("--grad-clip", type=float, default=1.0)
+    parser.add_argument("--feature-norm", choices=FEATURE_NORMS, default="none",
+                        help="Normalization of the 512-d features before the GRU and MLP: "
+                             "none (H0), layer = LayerNorm (H1), "
+                             "zscore = training-set per-dimension mean/std (H1b)")
     parser.add_argument("--feature-batch-size", type=int, default=8,
                         help="Cases per frozen-ResNet forward during feature extraction")
     parser.add_argument("--num-workers", type=int, default=4,
                         help="DataLoader workers for image decoding/preparation")
     parser.add_argument("--run-name",
                         help="Folder name under docs/grp1/results "
-                             "(default: cnngru-split<S>-seed<N>-<timestamp>)")
+                             "(default: cnngru-<norm>-split<S>-seed<N>-<timestamp>)")
     args = parser.parse_args()
 
     if not args.data_dir:
@@ -254,8 +282,8 @@ def parse_args():
             parser.error("--{} must be positive".format(name.replace("_", "-")))
     if not 0 <= args.dropout < 1:
         parser.error("--dropout must be in [0, 1)")
-    args.run_name = args.run_name or "cnngru-split{}-seed{}-{}".format(
-        args.split_position, args.seed, time.strftime("%Y%m%d-%H%M%S"))
+    args.run_name = args.run_name or "cnngru-{}-split{}-seed{}-{}".format(
+        args.feature_norm, args.split_position, args.seed, time.strftime("%Y%m%d-%H%M%S"))
     if Path(args.run_name).name != args.run_name or args.run_name in (".", ".."):
         parser.error("--run-name must be a plain folder name")
     if (RESULTS_DIR / args.run_name).exists():
@@ -303,7 +331,7 @@ def main():
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     log("Run folder: {}".format(run_dir.relative_to(REPO_ROOT)))
 
-    model = CNNGRUModel(dropout=args.dropout).to(device)
+    model = CNNGRUModel(dropout=args.dropout, feature_norm=args.feature_norm).to(device)
     prepare = DINOv2Preprocessor(size=args.size)
     data = {}
     for name in ("train", "validation"):
@@ -317,13 +345,20 @@ def main():
             describe_partition(name, data[name]), time.perf_counter() - start))
 
     model.encoder.set_metadata_stats(data["train"]["depth"], data["train"]["offsets"])
+    if args.feature_norm == "zscore":
+        model.set_feature_stats(data["train"]["history"], data["train"]["goal"])
+    feature_scale = feature_scale_report(data["train"]["history"], data["train"]["goal"])
     weight = class_weights(data["train"]["label"].cpu())
     trainable = sum(p.numel() for p in model.parameters() if p.requires_grad)
-    log("Device: {} | split {} | seed {}".format(device, args.split_position, args.seed))
+    log("Device: {} | split {} | seed {} | feature norm {}".format(
+        device, args.split_position, args.seed, args.feature_norm))
     log("Trainable parameters: {:,}".format(trainable))
     log("Metadata mean [depth_mm, offset_s]: {} std: {}".format(
         [round(v, 3) for v in model.encoder.meta_mean.tolist()],
         [round(v, 3) for v in model.encoder.meta_std.tolist()]))
+    log("Raw train features: mean {mean:.3f} | mean L2 {mean_l2:.2f} | zeros {zero_fraction:.3f}"
+        " | per-dim std min/median/max {std_min:.4f}/{std_median:.4f}/{std_max:.4f}"
+        " (ratio {std_ratio:.1f}, {constant_dims} constant dims)".format(**feature_scale))
     log("Class weights [{}, {}]: {}".format(
         *CLASS_NAMES, [round(v, 3) for v in weight.tolist()]))
     log("Metrics: loss is class-weighted CE; bal = balanced accuracy; "
@@ -355,6 +390,7 @@ def main():
                "class_weights": weight.tolist(),
                "meta_mean": model.encoder.meta_mean.tolist(),
                "meta_std": model.encoder.meta_std.tolist(),
+               "raw_feature_scale": feature_scale,
                "epochs_run": len(result["rows"]), "best": best}
     (run_dir / "summary.json").write_text(json.dumps(summary, indent=2), encoding="utf-8")
     torch.save(result["best_state"], run_dir / "best_model.pt")
