@@ -28,6 +28,17 @@ Owner-run Perlmutter one-case encoder verification passed (2026-11-02): the `cnn
 
 ## Progress log
 
+### 2026-11-05 - LayerNorm adopted as the only feature normalization (local)
+
+Following the split-0 results below, `CNNGRUModel` now always applies one shared `nn.LayerNorm(512)` to every history frame and the goal in `forward_features`, before the GRU and the MLP.
+The `feature_norm` option, the `none` and `zscore` paths (`FeatureStandardizer`, `set_feature_stats`, `feature_norm_from_state_dict`), `--feature-norm`, and the raw-feature-scale log were removed.
+Default run names are back to `cnngru-split<S>-seed<N>-<timestamp>`.
+Checkpoints from the earlier `layer` runs keep the same `feature_norm.weight` / `feature_norm.bias` keys and still load; `none` and `zscore` checkpoints no longer do.
+Reason: LayerNorm fixes the H0 underfitting and was the more stable of the two normalizations; its validation gain over H0 (0.586 vs 0.548 mean) is still within noise, so further work should target overfitting.
+
+Not verified: the simplified `tests/test_train_cnngru.py` has not been run; no training run with this code exists yet.
+No staging/commit/push in this note.
+
 ### 2026-11-05 - H1 / H1b feature normalization option and results
 
 Hypothesis H1: the raw 512-d frozen-ResNet features are post-ReLU (non-negative, uncentered, uneven per-dimension scale), which saturates the GRU gates and lets the 512 goal values dominate the 128 GRU values in the MLP input.

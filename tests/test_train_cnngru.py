@@ -5,84 +5,35 @@ import unittest
 
 import torch
 
-from model_cnngru import FEATURE_NORMS, CNNGRUModel, feature_norm_from_state_dict
-from train_cnngru import (binary_metrics, class_weights, feature_scale_report, roc_auc,
-                          train_model)
+from model_cnngru import CNNGRUModel
+from train_cnngru import binary_metrics, class_weights, roc_auc, train_model
 
 
-def tiny_model(dropout=0.3, feature_norm="none"):
+def tiny_model(dropout=0.3):
     torch.manual_seed(0)
     # pretrained=False: random ResNet-18, no weight download.
-    return CNNGRUModel(pretrained=False, dropout=dropout, feature_norm=feature_norm).eval()
+    return CNNGRUModel(pretrained=False, dropout=dropout).eval()
 
 
 class FeatureNormTests(unittest.TestCase):
-    def test_unknown_kind_rejected(self):
-        with self.assertRaises(ValueError):
-            tiny_model(feature_norm="batch")
-
-    def test_none_adds_no_state(self):
-        model = tiny_model()
-        self.assertFalse(any(k.startswith("feature_norm.") for k in model.state_dict()))
-        with self.assertRaises(ValueError):
-            model.set_feature_stats(torch.randn(2, 6, 512), torch.randn(2, 512))
-
     def test_layer_norm_centers_each_vector(self):
-        model = tiny_model(feature_norm="layer")
+        model = tiny_model()
         features = torch.rand(3, 6, 512) * 5 + 2  # positive, uncentered like post-ReLU
         out = model.feature_norm(features)
         self.assertTrue(torch.allclose(out.mean(dim=-1), torch.zeros(3, 6), atol=1e-4))
         self.assertTrue(torch.allclose(out.std(dim=-1, unbiased=False),
                                        torch.ones(3, 6), atol=1e-3))
 
-    def test_zscore_is_identity_until_fitted(self):
-        model = tiny_model(feature_norm="zscore")
-        features = torch.rand(4, 512)
-        self.assertTrue(torch.equal(model.feature_norm(features), features))
-
-    def test_zscore_pools_history_and_goal(self):
-        model = tiny_model(feature_norm="zscore")
-        scale = torch.linspace(0.1, 10.0, 512)  # per-dimension scale spread 100x
-        history = torch.rand(5, 6, 512) * scale + 3
-        goal = torch.rand(5, 512) * scale + 3
-        model.set_feature_stats(history, goal)
-        pooled = model.feature_norm(torch.cat([history.reshape(-1, 512), goal]))
-        self.assertTrue(torch.allclose(pooled.mean(dim=0), torch.zeros(512), atol=1e-3))
-        self.assertTrue(torch.allclose(pooled.std(dim=0, unbiased=False),
-                                       torch.ones(512), atol=1e-3))
-
-    def test_zscore_constant_dim_keeps_unit_std(self):
-        model = tiny_model(feature_norm="zscore")
-        history, goal = torch.rand(3, 6, 512), torch.rand(3, 512)
-        history[..., 7] = 0.0
-        goal[:, 7] = 0.0
-        model.set_feature_stats(history, goal)
-        self.assertEqual(model.feature_norm.std[7].item(), 1.0)
-
-    def test_checkpoint_round_trip_and_detection(self):
-        for kind in FEATURE_NORMS:
-            with self.subTest(kind=kind):
-                model = tiny_model(feature_norm=kind)
-                if kind == "zscore":
-                    model.set_feature_stats(torch.rand(3, 6, 512) * 4, torch.rand(3, 512))
-                state = model.state_dict()
-                self.assertEqual(feature_norm_from_state_dict(state), kind)
-                restored = tiny_model(feature_norm=kind)
-                restored.load_state_dict(state)
-                for key, value in state.items():
-                    self.assertTrue(torch.equal(restored.state_dict()[key], value))
-
-    def test_feature_scale_report(self):
-        history = torch.zeros(2, 3, 4)
-        history[..., 0] = torch.tensor([[1.0, 3.0, 1.0], [3.0, 1.0, 3.0]])
-        history[..., 1] = torch.tensor([[10.0, 30.0, 10.0], [30.0, 10.0, 30.0]])
-        goal = torch.tensor([[1.0, 10.0, 0.0, 0.0], [3.0, 30.0, 0.0, 0.0]])
-        report = feature_scale_report(history, goal)
-        self.assertEqual(report["constant_dims"], 2)
-        self.assertAlmostEqual(report["std_min"], 1.0)
-        self.assertAlmostEqual(report["std_max"], 10.0)
-        self.assertAlmostEqual(report["std_ratio"], 10.0)
-        self.assertAlmostEqual(report["zero_fraction"], 0.5)
+    def test_layer_norm_is_trainable_and_saved(self):
+        model = tiny_model()
+        self.assertTrue(all(p.requires_grad for p in model.feature_norm.parameters()))
+        with torch.no_grad():
+            model.feature_norm.weight.mul_(2.0)
+            model.feature_norm.bias.add_(0.5)
+        restored = tiny_model()
+        restored.load_state_dict(model.state_dict())
+        self.assertTrue(torch.equal(restored.feature_norm.weight, model.feature_norm.weight))
+        self.assertTrue(torch.equal(restored.feature_norm.bias, model.feature_norm.bias))
 
 
 class MetadataStatsTests(unittest.TestCase):
@@ -113,23 +64,17 @@ class MetadataStatsTests(unittest.TestCase):
 
 class ForwardPathTests(unittest.TestCase):
     def test_feature_path_matches_image_path(self):
+        model = tiny_model()
         history = torch.randn(2, 6, 3, 32, 32)
         goal = torch.randn(2, 3, 32, 32)
         depth, offsets = torch.randn(2, 6), torch.randn(2, 6)
-        for kind in FEATURE_NORMS:
-            with self.subTest(kind=kind):
-                model = tiny_model(feature_norm=kind)
-                with torch.no_grad():
-                    history_features = model.encoder.cnn(history)
-                    goal_features = model.encoder.cnn(goal)
-                    if kind == "zscore":
-                        model.set_feature_stats(history_features, goal_features)
-                    direct = model(history, depth, offsets, goal)
-                    cached = model.forward_features(history_features, depth, offsets,
-                                                    goal_features)
-                self.assertEqual(tuple(direct.shape), (2, 2))
-                self.assertTrue(torch.isfinite(direct).all())
-                self.assertTrue(torch.allclose(direct, cached, atol=1e-5))
+        with torch.no_grad():
+            direct = model(history, depth, offsets, goal)
+            cached = model.forward_features(model.encoder.cnn(history), depth, offsets,
+                                            model.encoder.cnn(goal))
+        self.assertEqual(tuple(direct.shape), (2, 2))
+        self.assertTrue(torch.isfinite(direct).all())
+        self.assertTrue(torch.allclose(direct, cached, atol=1e-5))
 
     def test_backbone_stays_frozen(self):
         model = tiny_model()
@@ -178,19 +123,15 @@ class TrainLoopTests(unittest.TestCase):
             "offsets": torch.randn(n, 6, generator=generator),
             "label": labels,
         }
-        for kind in FEATURE_NORMS:
-            with self.subTest(kind=kind):
-                model = tiny_model(dropout=0.1, feature_norm=kind)
-                model.encoder.set_metadata_stats(data["depth"], data["offsets"])
-                if kind == "zscore":
-                    model.set_feature_stats(data["history"], data["goal"])
-                lines = []
-                result = train_model(model, data, data, epochs=60, batch_size=8, lr=1e-2,
-                                     weight_decay=1e-2, grad_clip=1.0, patience=60, seed=0,
-                                     log=lines.append)
-                self.assertEqual(result["best"]["val"]["bal_acc"], 1.0)
-                self.assertEqual(len(lines), len(result["rows"]))
-                self.assertIn("val loss", lines[0])
+        model = tiny_model(dropout=0.1)
+        model.encoder.set_metadata_stats(data["depth"], data["offsets"])
+        lines = []
+        result = train_model(model, data, data, epochs=60, batch_size=8, lr=1e-2,
+                             weight_decay=1e-2, grad_clip=1.0, patience=0, seed=0,
+                             log=lines.append)
+        self.assertEqual(result["best"]["val"]["bal_acc"], 1.0)
+        self.assertEqual(len(lines), len(result["rows"]))
+        self.assertIn("val loss", lines[0])
 
     def test_early_stopping_restores_best(self):
         model = tiny_model()
