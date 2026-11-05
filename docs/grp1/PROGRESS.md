@@ -20,9 +20,42 @@ Frozen ResNet-18 + GRU + goal MLP policy trains with `train_cnngru.py` (CNN froz
 
 Basic dataset validation has already passed; do not repeat without a concrete reason. Current-input baseline and multi-split reporting remain open.
 
-**Immediate next steps:** treat H2 as negative/null for LR-only gains on this split; prioritize regularization / less overfitting or a current-input baseline before more capacity. Do not use the test partition. Log any further matched ablations here.
+**Completed H3 Phase 0, split 0 only (owner-run):** the real-label model does not beat the shuffled-label null (last-20 validation AUC 0.451 real vs 0.545 null, mean over seeds 0-2), so the earlier ~0.61 best-epoch scores are selection noise and the frozen pooled features show no detectable signal on this split.
+Details are in the [Phase 0 log entry](#2026-11-05---h3-phase-0-results-split-0-only-owner-run-perlmutter).
+
+**Immediate next steps:** skip the Phase 1 capacity ladder above rung S; prioritize feature changes (512-d bottleneck, spatial pooling, `--remove-maxpool`, 224 input, light layer4 fine-tune) and run Phase 0 on splits 1-2 so comparisons are not single-split. Do not use the test partition. Log any further matched ablations here.
 
 ## Progress log
+
+### 2026-11-05 - H3 Phase 0 results, split 0 only (owner-run Perlmutter)
+
+Six runs on split 0 (seeds 0-2, real and shuffled-label null), LayerNorm, 200 epochs, `--patience 0`, all other settings at their defaults.
+Folders: `docs/grp1/results/phase0-{real,null}-split0-seed{0,1,2}`; full console output in `phase0-split0.log` at the repo root.
+Splits 1-2 of the planned 18-run grid have not been run.
+Null runs kept 149 / 143 / 153 of 267 training labels unchanged by chance (seeds 0 / 1 / 2).
+
+| Metric | Real (seeds 0/1/2) | Real mean | Null (seeds 0/1/2) | Null mean |
+| --- | --- | --- | --- | --- |
+| Best-epoch val bal-acc | 0.608 / 0.579 / 0.571 | 0.586 | 0.568 / 0.659 / 0.598 | 0.608 |
+| Best-epoch val AUC | 0.499 / 0.492 / 0.460 | 0.484 | 0.472 / 0.634 / 0.556 | 0.554 |
+| Last-20 val bal-acc | 0.488 / 0.449 / 0.493 | 0.477 | 0.527 / 0.549 / 0.513 | 0.530 |
+| Last-20 val AUC | 0.467 / 0.436 / 0.449 | 0.451 | 0.502 / 0.592 / 0.540 | 0.545 |
+| Last-20 val loss | 5.28 / 5.44 / 6.38 | 5.70 | 6.06 / 5.32 / 4.35 | 5.24 |
+| Last-20 train bal-acc | 0.999 / 1.000 / 1.000 | 1.000 | 1.000 / 1.000 / 1.000 | 1.000 |
+
+Means were computed by hand from `summary.json`; `summarize_runs.py` has not been run on these folders.
+The best-epoch values of the real runs exactly match the earlier H1 `cnngru-layer-split0-seed*` runs, so training is deterministic per (split, seed).
+
+Reading:
+- Real does not beat null on any metric; the paired real - null difference in last-20 validation AUC is negative (about -0.09), so the decision rule answers `no`.
+- The ~0.58-0.61 best-epoch validation bal-acc reported for H1 / H1b / H2 is reached by shuffled labels too, so it is selection noise from taking the max over many epochs on 80 validation cases.
+- The head memorizes shuffled labels as fast as real ones (train loss down to about 1e-7), so training accuracy carries no information about signal.
+- Validation loss is above training loss from epoch 1 and rises steadily; there is no early phase where validation improves.
+- Last-20 validation AUC of the real runs sits below 0.5 on all three seeds; seeds share one split, so this is weak evidence and may be chance, but it is consistent with an episode-level shortcut that does not transfer.
+- Next work follows the `no` branch: change what the CNN emits (dimensionality bottleneck, spatial pooling, `--remove-maxpool`, 224 input, light layer4 fine-tune) rather than adding capacity, and run splits 1-2 before trusting any gain.
+
+Not verified: unit-test output for `tests/test_train_cnngru.py` and `tests/test_summarize_runs.py` was not reported; the `layernorm-reference-*` and `h2-lr3e4-*` folders cited above are not committed under `docs/grp1/results/`.
+No staging/commit/push in this note.
 
 ### 2026-11-05 - H3 Phase 0 tooling: shuffled-label null and last-N metrics (local)
 
