@@ -1,5 +1,82 @@
 # CNN–attention development experiments
 
+## Agreed regularization sequence — 2026-11-05
+
+The standardized latest+goal run establishes strong training fit with weak
+validation generalization. Current regularization already includes hidden dropout
+.1, AdamW weight decay .001 and earliest-best validation BA checkpoint selection
+with patience 15. The final epoch is not the selected deployment state; reducing
+patience alone does not automatically improve the already retained epoch-8 model.
+
+**First agreed change:** increase hidden dropout .1→.3, retaining feature
+standardization, LeakyReLU, default initialization, 64-unit width, AdamW .001,
+weight decay .001, seed 0, batch 32 and the existing stopping/selection budget.
+This tests sensitivity to hidden co-adaptation rather than adding capacity.
+Dropout is identity in evaluation mode, so this introduces no additional inference
+layer or trainable parameters. It may underfit or fail to improve validation.
+No dropout sweep is proposed. Stronger weight decay or a smaller head are separate
+candidates; LayerNorm changes activation conditioning and is not a substitute
+for an explicitly tested regularization choice.
+
+```sh
+python3 -B temporal_evaluation.py --split-position 0 --device cuda \
+  --models latest_goal_mlp --width 64 --classifier-width 64 \
+  --classifier-activation leaky_relu --feature-normalization standard \
+  --seeds 0 --batch-size 32 --epochs 100 --patience 15 \
+  --lr 0.001 --weight-decay 0.001 --dropout 0.3 --benchmark \
+  --output-dir "$PSCRATCH/waldo-temporal/latest-goal-standardized-drop03-01"
+```
+
+Compare selected validation BA, both recalls, AUC and loss with the completed
+dropout-.1 run, plus selected/final training curves. A smaller train/validation
+gap caused only by worse training is not evidence of improvement. Single-seed,
+reused-validation results remain exploratory; test is reserved. The existing
+runner already supports this command; no code change is needed.
+**Execution/result: configured, real run pending.**
+
+### Conditional AdamW comparison
+
+If the dropout result does not show useful validation improvement, inspect the
+complete selected/final metrics before initiating one weight-decay comparison.
+Increase AdamW weight decay .001→.01 and restore dropout to .1, holding learning
+rate .001 and all remaining settings fixed. This tests stronger decoupled
+parameter decay, not a larger optimizer learning rate. The shrinkage per step
+depends on learning rate and update count; tenfold decay is a bounded candidate,
+not a guarantee of sufficient regularization or improved generalization.
+
+```sh
+python3 -B temporal_evaluation.py --split-position 0 --device cuda \
+  --models latest_goal_mlp --width 64 --classifier-width 64 \
+  --classifier-activation leaky_relu --feature-normalization standard \
+  --seeds 0 --batch-size 32 --epochs 100 --patience 15 \
+  --lr 0.001 --weight-decay 0.01 --dropout 0.1 --benchmark \
+  --output-dir "$PSCRATCH/waldo-temporal/latest-goal-standardized-wd01-01"
+```
+
+Primary comparison remains validation-selected BA versus the completed .588
+baseline, alongside both recalls, AUC and loss. Lower training scores alone are
+not success; tiny differences on one reused validation split are inconclusive.
+Do not automatically combine stronger dropout and decay or widen the search.
+The second run is conditional on reviewing the first; no automatic job chain or
+new GPU allocation is initiated. Both configurations use existing CLI options.
+**AdamW comparison execution/result: not run.**
+
+### What is standardized
+
+For each training case, the frozen CNN produces 512 latest-image features and
+512 marked-goal features. The training matrix has 267 rows and 1024 columns.
+Per-column population mean/std are fitted on these rows only, separately by
+image role. Learned feature coordinates are numerical pattern responses, not
+explicit wire-tip/target coordinates or individual pixels. The same saved affine
+transform is applied to validation/inference. Constant-channel guarding uses
+scale 1 when training std ≤ 1e-6.
+
+This stage occurs after the existing pretrained pixel preparation and frozen
+CNN, before the MLP. It does not standardize or modify original images, labels,
+case IDs, or the red marker. Depth/time is excluded from this model and is not
+part of the 1024 standardized columns. Statistics are nontrainable checkpoint
+buffers, not additional learned weights or validation-fitted quantities.
+
 ## Training-only image-feature standardization — 2026-11-05
 
 **Question:** does conditioning frozen latest/goal embeddings improve the stalled

@@ -11,6 +11,20 @@ These are team proposals, not confirmed course requirements. Friday task ownersh
 
 ## Current status and next steps
 
+**2026-11-05 — Regularization sequence agreed:** first test dropout .3 with
+standardized latest+goal LeakyReLU, decay .001 and learning rate .001. If the
+reviewed result gives no useful validation improvement, next candidate is decay
+.01 with dropout restored to .1. This isolates regularizers and retains the
+existing training/selection budget. No job is chained automatically and neither
+new real result is claimed. Commands and criteria are in the experiment log.
+
+**2026-11-05 — Regularization considered:** the standardized model already uses
+dropout .1, AdamW decay .001 and validation checkpoint selection. Proposed next
+single-factor comparison is dropout .3 with the rest fixed; no new layer/code
+or real run is introduced. Reduced training fit alone is not success. The
+experiment log explains the standardized 267×1024 frozen-image feature matrix
+and records the proposed budget, command and interpretation limits.
+
 **2026-11-05 — Standardization restores fit, not generalization:** latest+goal
 LeakyReLU selects epoch 8: train/validation BA .964/.588, AUC .996/.580.
 Final epoch 23 reaches train BA/AUC 1.000/1.000, but validation BA .510,
