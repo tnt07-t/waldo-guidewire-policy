@@ -262,7 +262,8 @@ def main(argv=None):
     head = FeatureHead(saved['kind'],cfg['feature_dim'],cfg['width'],cfg['dropout'],
                        position_embeddings=cfg.get('position_embeddings',True),
                        classifier_width=cfg.get('classifier_width',cfg['width']),
-                       classifier_activation=cfg.get('classifier_activation','relu')).to(args.device)
+                       classifier_activation=cfg.get('classifier_activation','relu'),
+                       feature_normalization=cfg.get('feature_normalization','none')).to(args.device)
     head.load_state_dict(saved['head_state']); head.eval()
     from dataset import GuidewireDataset
     from cnn import FrameEncoder
@@ -308,12 +309,14 @@ def main(argv=None):
                                  for p in ('temporal_diagnostics.py','temporal_models.py','temporal_evaluation.py','evaluation.py','cnn.py','preprocessing.py','dataset.py')},
                   torch_version=str(torch.__version__), device=args.device)
     report['kind'] = saved['kind']
+    report['feature_normalization'] = cfg.get('feature_normalization','none')
     report['encoder_unchanged'] = True
     args.output_dir.mkdir(parents=True,mode=0o700)
     write_json(args.output_dir/'diagnostics.json',report)
     lines = ['# Temporal diagnostics','', 'Aggregate checkpoint inspection; no semantic localization or final performance claim.', '',
              'Partition: {}. Cases: {}. Checkpoint: {}, epoch {}.'.format(
                  args.partition,len(data[3]),report['checkpoint_role'],report['checkpoint_epoch'])]
+    lines += ['', 'Feature normalization: {}.'.format(report['feature_normalization'])]
     health=report['classifier_health']
     lines += ['', '## Classifier health', '', 'Activation: {}.'.format(health['activation']), '',
               '| Measurement | Value |','|---|---:|']

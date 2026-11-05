@@ -267,8 +267,12 @@ def main(argv=None):
     parser.add_argument("--dropout", type=float, default=0.1)
     parser.add_argument('--classifier-activation',choices=('relu','leaky_relu'),default='relu',
                         help='Final MLP activation only; leaky_relu uses fixed negative slope 0.01')
+    parser.add_argument('--feature-normalization',choices=('none','standard'),default='none',
+                        help='Training-only latest/goal per-column standardization; latest_goal_mlp only')
     parser.add_argument("--benchmark", action="store_true", help="Also time raw-case preparation + encoder + head")
     args = parser.parse_args(argv)
+    if args.feature_normalization == 'standard' and (args.attention_sweep or set(args.models) != {'latest_goal_mlp'}):
+        parser.error('Standardization experiment supports latest_goal_mlp only, without attention sweep')
     if not os.environ.get("PSCRATCH") or args.data_dir is None:
         parser.error("Run on Perlmutter with PSCRATCH and DATA_DIR set")
     scratch = Path(os.environ["PSCRATCH"]).resolve()
@@ -322,6 +326,8 @@ def main(argv=None):
     config = {k: str(v) if isinstance(v, Path) else v for k, v in vars(args).items()}
     config.update(feature_dim=feature_dim, extraction_visual_roles=(('goal + latest' if include_latest else 'goal only')
                                                                 if static_controls else 'goal + six history images'),
+                  feature_normalization_fit_cases=len(train[3]) if args.feature_normalization == 'standard' else None,
+                  feature_normalization_constant_threshold=1e-6 if args.feature_normalization == 'standard' else None,
                   metadata_scaling="train-only population std; no centering",
                   metadata_scale=scale.cpu().tolist(), preparation="RGB full-view 518 bicubic mean padding",
                   encoder_weights="ResNet18_Weights.DEFAULT" if args.encoder == "resnet18" else "vit_small_patch14_dinov2.lvd142m")
@@ -362,7 +368,10 @@ def main(argv=None):
             head = FeatureHead(kind, feature_dim, variant["width"], args.dropout,
                                position_embeddings=variant["position_embeddings"],
                                classifier_width=variant["classifier_width"],
-                               classifier_activation=args.classifier_activation).to(args.device)
+                               classifier_activation=args.classifier_activation,
+                               feature_normalization=args.feature_normalization).to(args.device)
+            if args.feature_normalization == 'standard':
+                head.fit_feature_normalization(train[0],train[1])
             checkpoint_config = dict(config, width=variant["width"],
                                      classifier_width=variant["classifier_width"],
                                      position_embeddings=variant["position_embeddings"])

@@ -1,5 +1,82 @@
 # CNN–attention development experiments
 
+## Training-only image-feature standardization — 2026-11-05
+
+**Question:** does conditioning frozen latest/goal embeddings improve the stalled
+LeakyReLU latest+goal model, without changing information, initialization or
+trainable architecture? The existing unstandardized LeakyReLU run is the
+comparison: final train/validation AUC .687/.478 and BA .500/.500.
+
+### Implemented transform and boundaries
+
+`--feature-normalization standard` is scoped to `latest_goal_mlp`. For each
+of the 512 latest-image channels and 512 goal-image channels separately, fit
+population mean and standard deviation over the 267 training cases. Apply
+`(feature - training_mean) / training_std` before concatenation and the MLP.
+Channels with training std ≤ 1e-6 use scale 1 to avoid amplifying near-constant
+noise. No validation/test examples or labels determine these statistics.
+
+The transform is inside the head. Statistics are nontrainable state buffers,
+fit once before initial assessment/training, retained for validation and saved
+in selected/final checkpoints. Diagnostics, inference and latency measurement
+reuse those buffers without refitting or double normalization. Metadata is still
+excluded. Image preparation, CNN weights, goal marking and original data stay
+unchanged. No feature cache is persisted.
+
+Initialization remains PyTorch default; seed 0 creates exactly the same trainable
+initial parameters as the unstandardized head. Parameter count remains 65,730.
+LeakyReLU slope .01, dropout .1, 64 hidden units, AdamW .001, weight decay .001,
+batch 32, 100-epoch cap, patience 15 and earliest best validation BA remain fixed.
+No Kaiming/Xavier, width, threshold or learning-rate sweep accompanies this test.
+
+Centering removes common role-specific offsets and scaling balances input units.
+This may improve optimization and activation diversity; it does not promise
+generalization. Scaling also changes effective weight regularization in the
+original units, so improvement cannot be attributed solely to activation signs.
+Previously scaled linear probes already generalize weakly. Initialization,
+representation quality and episode-dependent associations remain open questions.
+
+### Perlmutter run
+
+After synchronizing the code and restoring the working environment, DATA_DIR
+and TORCH_HOME, run in an allocated GPU compute shell:
+
+```sh
+python3 -B temporal_evaluation.py --split-position 0 --device cuda \
+  --models latest_goal_mlp --width 64 --classifier-width 64 \
+  --classifier-activation leaky_relu --feature-normalization standard \
+  --seeds 0 --batch-size 32 --epochs 100 --patience 15 \
+  --lr 0.001 --weight-decay 0.001 --dropout 0.1 --benchmark \
+  --output-dir "$PSCRATCH/waldo-temporal/latest-goal-standardized-01"
+cat "$PSCRATCH/waldo-temporal/latest-goal-standardized-01/learning_summary.md"
+```
+
+Inspect initial/selected/final training and validation BA/AUC/loss, prediction
+counts and head health. Training improvements without validation improvements
+would indicate conditioning helps fit while leaving generalization unresolved.
+Validation-only gains on one seed remain provisional. For health inspection:
+
+```sh
+python3 -B temporal_diagnostics.py \
+  --checkpoint "$PSCRATCH/waldo-temporal/latest-goal-standardized-01/latest_goal_mlp-seed0-final.pt" \
+  --partition train --device cuda --health-only \
+  --output-dir "$PSCRATCH/waldo-temporal/latest-goal-standardized-health-01"
+```
+
+Raw/legacy checkpoints keep `feature_normalization=none` and require no new
+buffers. Standardized checkpoints require the matching constructor flag before
+state loading; private statistics remain inside the Perlmutter checkpoint.
+
+### Verification and results
+
+All 65 repository synthetic tests passed. Tests verify training-only role means/
+population scales, constant-channel handling, refusal to refit, unchanged buffers
+under shifted validation inputs and optimization, identical trainable initial
+weights/parameter counts, legacy state loading and standardized checkpoint reload.
+An end-to-end invented-image training/benchmark/health run verifies transform
+persistence without reading earlier history images. Code checks establish no
+real performance result. **Real standardized run: pending.**
+
 ## Confirmed inactive classifier and activation control — 2026-11-05
 
 The final latest+goal checkpoint health report confirms all 64 hidden ReLU units
@@ -47,9 +124,93 @@ claims across models, use the same chosen activation for matched controls under
 a predeclared budget. A LeakyReLU run versus metadata-enabled ReLU runs changes
 activation as well as information and cannot isolate metadata value.
 
-**Real activation-comparison result: pending.** No new GPU training has been
-launched by assistant tools. ReLU results remain preserved and explicitly marked
-as a training failure. No width or normalization change is selected.
+**Real activation-comparison result:** the owner-run learning summary is recorded
+below; detailed checkpoint health remains to inspect. No GPU training was launched
+by assistant tools. ReLU results remain preserved and explicitly marked as a
+training failure. No width or normalization change is selected.
+
+### 2026-11-05 — LeakyReLU classification result
+
+Supplied latest+goal LeakyReLU learning summary reports selected epoch 1,
+16 epochs completed, selected train/validation BA .500/.500 and final
+train/validation BA .500/.500. The activation change did not improve reported
+classification under the fixed budget. No claim of restored training is justified.
+
+The summary alone does not establish constant probabilities, zero gradients or
+inactive LeakyReLU outputs. Inspect the final checkpoint activation identity,
+probability spread/AUC and gradients before selecting another remedy. A nonzero
+negative-input derivative addresses ReLU gating but does not guarantee sufficient
+optimization, discrimination or generalization. No additional activation/width/
+learning-rate sweep or budget extension is selected from these scores.
+
+### 2026-11-05 — LeakyReLU gradient and score inspection
+
+Supplied final training health report confirms LeakyReLU slope .01, zero
+always-zero units and nonzero hidden/output loss gradients. Hidden preactivations
+remain negative (-7.8185782 to -.27501884), so all inspected hidden responses
+operate on the small-slope linear branch. Mean ADVANCE probability .50686008,
+std .00083268579, range [.50448966,.50840682], training ROC AUC .68684051 and
+weighted eval loss .69267392. Gradient L2: hidden weight .0021314595, hidden bias
+.000049902665, output weight .0043457444, output bias .0095920376.
+
+The zero-gradient mechanism is resolved at this inspected state. Scores now
+rank training cases, but all remain above .5, so thresholded training BA remains
+.500. Neither useful validation ranking nor a complete classifier fix follows
+from training AUC. This corrects any interpretation of unchanged BA as proof
+that LeakyReLU had no effect. Negative preactivations do not mean zero LeakyReLU
+output or absent gradients.
+
+PyTorch Linear already initializes weights; local source confirms default
+`kaiming_uniform_(a=sqrt(5))`, equivalent to uniform ±1/sqrt(fan_in), with bounded
+random bias. This is not the activation-matched He gain for ReLU/LeakyReLU.
+An explicit Kaiming hidden-weight initialization matched to slope .01 is a
+plausible controlled experiment, not a guaranteed correction. Xavier is another
+variance-scaling choice; no evidence yet selects either. Initialization affects
+the starting state and cannot ensure the optimizer avoids negative responses
+later. Input centering/scaling and optimization remain possible contributors.
+
+**Next evidence:** inspect already saved final validation ROC AUC alongside
+training AUC, score means/counts and loss before adding a new training variant.
+Keep the .5 threshold unchanged for this comparison. If initialization is tested,
+predeclare one hidden-layer scheme with activation/optimizer/budget fixed and
+inspect initial versus final activation statistics. Do not simultaneously change
+initialization, feature normalization, activation and learning rate or treat
+training AUC as validation improvement.
+
+### 2026-11-05 — Initial, selected and final ranking comparison
+
+Supplied aggregate metrics for latest+goal LeakyReLU:
+
+| State / partition | BA | ROC AUC | Unweighted loss |
+|---|---:|---:|---:|
+| Initial / train | .500 | .508 | .7074 |
+| Initial / validation | .485 | .641 | .6965 |
+| Selected / train | .500 | .595 | .7463 |
+| Selected / validation | .500 | .543 | .7276 |
+| Final / train | .500 | .687 | .6890 |
+| Final / validation | .500 | .478 | .6913 |
+
+Training ranking improves while validation ranking declines; the full failure
+cannot be reduced to scores lying above the fixed .5 threshold. LeakyReLU
+resolves the strict gate failure but does not restore validation discrimination.
+Validation AUC near .5 gives no evidence that threshold tuning is a sufficient
+remedy. Loss and AUC measure different properties: moving probabilities near .5
+can reduce loss while ordering cases less usefully. Initial validation AUC .641
+is one random-initialization result on the reused 80 cases, not a validated
+untrained-model strategy or a reason to select random seeds using validation.
+
+Initialization remains a possible conditioning factor, but final-state negative
+preactivations do not prove poor initialization; initially useful validation
+ranking deteriorates with training. Shared overfitting/episode-dependent input
+associations and optimization remain plausible contributors. No cause is proven.
+Avoid broad initialization/activation/threshold searches on these same cases.
+
+One candidate next test is training-only feature centering/scaling while keeping
+LeakyReLU, default initialization and optimization fixed. This would test input
+conditioning, not establish an expected accuracy improvement; prior scaled linear
+probes already generalize weakly. Normalizer statistics must be fitted only on
+training and saved for inference. This candidate is not implemented or run, and
+no new model-selection choice is established by the current report.
 
 **Verification:** all 61 repository synthetic tests passed. A same-weight negative-
 preactivation control verifies zero hidden-weight gradients under ReLU and nonzero

@@ -50,6 +50,11 @@ not a new input source.
 
 ## Matched baselines and scope
 
+**Conditioning test (2026-11-05):** `--feature-normalization standard` enables
+training-only latest/goal embedding standardization for `latest_goal_mlp` only.
+Statistics travel with checkpoint buffers; default is `none`. See the
+[fixed comparison](ATTENTION_EXPERIMENTS.md#training-only-image-feature-standardization--2026-11-05).
+
 **Input-role controls (2026-11-04):** `latest_goal_mlp` uses latest+goal images
 without metadata; `goal_metadata_mlp` uses goal+depth/time without history images.
 The existing `latest_mlp` retains latest+goal+metadata. See the
@@ -292,7 +297,8 @@ cfg = saved["config"]
 head = FeatureHead(saved["kind"], cfg["feature_dim"], cfg["width"], cfg["dropout"],
                    position_embeddings=cfg.get("position_embeddings", True),
                    classifier_width=cfg.get("classifier_width", cfg["width"]),
-                   classifier_activation=cfg.get("classifier_activation", "relu"))
+                   classifier_activation=cfg.get("classifier_activation", "relu"),
+                   feature_normalization=cfg.get("feature_normalization", "none"))
 head.load_state_dict(saved["head_state"])
 policy = FrozenPolicy(FrameEncoder(), head).to(device).eval()
 meta = torch.tensor(list(zip(case["depth_relative_mm"], case["history_offsets_s"])),

@@ -11,6 +11,36 @@ These are team proposals, not confirmed course requirements. Friday task ownersh
 
 ## Current status and next steps
 
+**2026-11-05 — Conditioning experiment prepared:** added training-only per-role
+feature standardization for latest+goal LeakyReLU. Statistics are nontrainable
+checkpoint buffers; validation/inference/diagnostics reuse the training transform.
+Initialization, parameter count, metadata exclusion and optimization stay fixed.
+All 65 synthetic tests pass, including leakage/refit guards and end-to-end reload.
+Real run pending; see the
+[standardization protocol](ATTENTION_EXPERIMENTS.md#training-only-image-feature-standardization--2026-11-05).
+
+**2026-11-05 — Ranking generalization fails:** latest+goal LeakyReLU train AUC
+improves .508→.687 while validation AUC declines .641→.478; selected validation
+AUC .543. Restored gradients do not imply restored generalization, and the
+failure is not only threshold alignment. Initial random-head validation ranking
+is not a model-selection strategy. No initialization/threshold sweep is chosen;
+feature conditioning remains a candidate for a single controlled follow-up.
+
+**2026-11-05 — LeakyReLU restores gradient flow:** final latest+goal health shows
+no zero-output hidden units and nonzero hidden/output gradients. Training AUC
+.687, but all scores remain .5045–.5084 and BA stays .500. The gate failure is
+resolved; validation usefulness remains unestablished. Default Linear initialization
+was verified; activation-matched Kaiming is a candidate, not a chosen fix. Next
+inspect saved validation AUC before another training change. Detailed numerical
+results and initialization limits are in the experiment log.
+
+**2026-11-05 — LeakyReLU result:** latest+goal selected/final training and
+validation BA remain .500 after 16 epochs (best epoch 1). No classification
+improvement demonstrated under the fixed recipe. Final checkpoint activation,
+probability spread/AUC and gradients remain to inspect; identical BA does not
+establish that the original zero-gradient mechanism persists. No new training
+configuration is selected yet.
+
 **2026-11-05 — Inactive ReLU confirmed:** final latest+goal head has 64/64 hidden
 units inactive on training, negative preactivations throughout, constant .50386977
 ADVANCE probability, AUC .500 and zero hidden/output-weight loss gradients.

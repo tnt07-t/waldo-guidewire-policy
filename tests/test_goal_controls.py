@@ -77,6 +77,11 @@ class GoalControlTests(unittest.TestCase):
                       '--classifier-activation','leaky_relu','--benchmark'])
                 diagnostic_main(['--data-dir',str(data),'--checkpoint',str(root/'run'/'latest_goal_mlp-seed0-final.pt'),
                                  '--output-dir',str(root/'health'),'--device','cpu','--health-only'])
+                main(['--data-dir',str(data),'--output-dir',str(root/'normalized'),'--split-position','0',
+                      '--models','latest_goal_mlp','--device','cpu','--epochs','2','--benchmark',
+                      '--classifier-activation','leaky_relu','--feature-normalization','standard'])
+                diagnostic_main(['--data-dir',str(data),'--checkpoint',str(root/'normalized'/'latest_goal_mlp-seed0-final.pt'),
+                                 '--output-dir',str(root/'normalized-health'),'--device','cpu','--health-only'])
             report=json.loads((root/'run'/'metrics.json').read_text())
             self.assertTrue(report['encoder_unchanged'])
             self.assertEqual(report['config']['extraction_visual_roles'],'goal + latest')
@@ -95,6 +100,11 @@ class GoalControlTests(unittest.TestCase):
             self.assertEqual(health['classifier_health']['activation'],'LeakyReLU')
             self.assertNotIn('routing',health)
             self.assertTrue(health['encoder_unchanged'])
+            normalized=torch.load(root/'normalized'/'latest_goal_mlp-seed0-final.pt',weights_only=True)
+            self.assertTrue(normalized['head_state']['normalization_fitted'])
+            self.assertEqual(normalized['config']['feature_normalization_fit_cases'],8)
+            norm_report=json.loads((root/'normalized-health'/'diagnostics.json').read_text())
+            self.assertEqual(norm_report['feature_normalization'],'standard')
 
 
 if __name__=='__main__':

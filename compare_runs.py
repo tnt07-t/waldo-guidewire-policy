@@ -33,6 +33,7 @@ def summarize(paths):
             report.get("git_commit", "unknown"), report.get("git_dirty", "unknown")), ""])
         if config:
             lines.append('Classifier activation: {}.'.format(config.get('classifier_activation','relu')))
+            lines.append('Feature normalization: {}.'.format(config.get('feature_normalization','none')))
             lines.append("Budget: epochs={}, patience={}, lr={}, weight_decay={}, width={}, dropout={}.".format(
                 *(config.get(k, "unknown") for k in ("epochs", "patience", "lr", "weight_decay", "width", "dropout"))))
     lines.extend(["", "Latency entries are synchronized same-case microbenchmarks, not workload-wide p95.",

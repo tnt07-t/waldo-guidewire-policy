@@ -9,13 +9,23 @@ class FeatureHead(nn.Module):
 
     def __init__(self, kind, feature_dim=512, width=64, dropout=0.1,
                  position_embeddings=True, classifier_width=None,
-                 classifier_activation='relu'):
+                 classifier_activation='relu', feature_normalization='none'):
         super().__init__()
         if kind not in ("latest_goal_mlp", "goal_metadata_mlp", "latest_mlp", "mean_mlp", "attention", "gru", "lstm"):
             raise ValueError("Unknown head: " + kind)
         if width <= 0 or width % 4 or feature_dim <= 0:
             raise ValueError("Positive width divisible by four and feature_dim required")
         self.kind, self.feature_dim = kind, feature_dim
+        if feature_normalization not in ('none','standard'):
+            raise ValueError('Unsupported feature normalization')
+        if feature_normalization == 'standard' and kind != 'latest_goal_mlp':
+            raise ValueError('Standardization is currently scoped to latest_goal_mlp')
+        self.feature_normalization = feature_normalization
+        if feature_normalization == 'standard':
+            for role in ('latest','goal'):
+                self.register_buffer(role+'_mean',torch.zeros(feature_dim))
+                self.register_buffer(role+'_scale',torch.ones(feature_dim))
+            self.register_buffer('normalization_fitted',torch.tensor(False))
         classifier_width = width if classifier_width is None else classifier_width
         if classifier_width <= 0:
             raise ValueError("classifier_width must be positive")
@@ -47,6 +57,26 @@ class FeatureHead(nn.Module):
         self.classifier = nn.Sequential(nn.Linear(fused, classifier_width), activation,
                                         nn.Dropout(dropout), nn.Linear(classifier_width, 2))
 
+    @torch.no_grad()
+    def fit_feature_normalization(self, history, goal):
+        """Fit once on training embeddings, separately for latest/goal roles."""
+        if self.feature_normalization != 'standard' or bool(self.normalization_fitted):
+            raise ValueError('Normalization must be enabled and not already fitted')
+        if (history.ndim != 3 or history.shape[1:] != (6,self.feature_dim)
+                or len(history) == 0 or goal.shape != (len(history),self.feature_dim)):
+            raise ValueError('Expected training history [N,6,F] and goal [N,F]')
+        for role,values in (('latest',history[:,-1]),('goal',goal)):
+            if values.dtype != torch.float32 or not torch.isfinite(values).all():
+                raise ValueError('Finite float32 training features required')
+            values=values.double()
+            mean=values.mean(0)
+            scale=values.std(0,unbiased=False)
+            # Fixed numerical guard; do not amplify nearly constant channels.
+            scale=torch.where(scale<=1e-6,torch.ones_like(scale),scale)
+            getattr(self,role+'_mean').copy_(mean.float())
+            getattr(self,role+'_scale').copy_(scale.float())
+        self.normalization_fitted.fill_(True)
+
     def forward(self, history, goal, metadata):
         if (history.ndim != 3 or history.shape[1:] != (6, self.feature_dim)
                 or len(history) == 0 or goal.shape != (len(history), self.feature_dim)
@@ -56,7 +86,13 @@ class FeatureHead(nn.Module):
                for x in (history, goal, metadata)):
             raise ValueError("Inputs must be finite float32 tensors")
         if self.kind == "latest_goal_mlp":
-            fused = torch.cat((history[:, -1],goal),-1)
+            latest=history[:,-1]
+            if self.feature_normalization == 'standard':
+                if not bool(self.normalization_fitted):
+                    raise ValueError('Fit normalization on training features or load fitted checkpoint first')
+                latest=(latest-self.latest_mean)/self.latest_scale
+                goal=(goal-self.goal_mean)/self.goal_scale
+            fused = torch.cat((latest,goal),-1)
         elif self.kind == "goal_metadata_mlp":
             fused = torch.cat((goal, metadata.flatten(1)), -1)
         elif self.kind in ("latest_mlp", "mean_mlp"):
