@@ -7,10 +7,11 @@ MLP. Generalization remains weak: training reaches 100% balanced accuracy while
 validation returns near chance. Higher dropout and weight decay produced no
 clear validation-BA improvement. No final model is selected.
 
-Historical images have not demonstrated a benefit in the tested pipelines.
-Their usefulness remains unresolved because training failures, input conditioning
-and architecture differ across comparisons. Metadata necessity and goal-marker
-understanding are not established.
+DINOv2 mean-history leads latest across seeds 0/1/2: average validation BA
+.612 versus .580, a 3.20-point gain. Seed-0 attention is .565. This supports
+history averaging under the development protocol, without establishing useful
+temporal ordering or generalization across new episodes. Metadata necessity and
+goal-marker understanding remain unresolved.
 
 [Setup and commands](CNN_ATTENTION.md) cover implementation usage. This log records
 completed approaches, evidence and decisions. Earlier logistic probes use a
@@ -248,12 +249,139 @@ No reliable winner is established from small differences on 80 related cases.
 - Keep test reserved. Single-seed, repeatedly selected validation scores and
   incompatible protocols do not establish superiority or that history is noise.
 
+## Nov 5 — DINOv2 temporal-attention comparison
+
+**Reason:** the CNN attention run did not establish a history benefit. Substituting
+DINOv2 tests whether a different frozen visual representation changes temporal
+prediction, while static/mean controls distinguish encoder changes from gains
+specific to attention. DINOv2 Small yields 384 features instead of ResNet's 512;
+projection/late-fusion input sizes and head parameter counts therefore differ.
+Pretraining also differs, preventing a pure CNN-versus-ViT architectural claim.
+
+**Protocol:** the existing runner supports this path; no new model
+implementation is required. The initial comparison keeps the original raw-feature
+ReLU protocol, width 64, seed 0 and the shared budget. This does not transfer the
+standardized static model's improvement to attention. Commands and reporting
+criteria are in [the run guide](CNN_ATTENTION.md#dinov2temporal-attention-comparison--prepared-2026-11-05).
+**Execution:** owner-reported real Perlmutter run completed after installing the
+recorded timm 1.0.30 in a scratch environment and restoring scratch HF cache
+exports. The initial failures occurred before training (missing timm, then cache
+locking); neither is an accuracy result. Exact revision remains in the private report.
+
+| DINOv2 model | Selected train / validation BA | Retract / advance recall | Best / final epoch | Final train / validation BA | Head parameters |
+|---|---|---|---|---|---:|
+| Latest MLP | .694 / .597 | .324 / .870 | 24 / 39 | .775 / .558 | 50,114 |
+| Mean-history MLP | .728 / .627 | .471 / .783 | 40 / 55 | .777 / .536 | 50,114 |
+| Attention | .746 / .565 | .412 / .717 | 22 / 37 | .951 / .478 | 87,490 |
+
+**Interpretation and next decision:** mean pooling exceeds latest by .030 BA
+with the same head parameter count, trading higher retract recall for lower
+advance recall. This is the clearest current lead for historical-image value,
+but does not demonstrate useful visual ordering: mean pooling discards image
+order while metadata retains chronological positions. Attention underperforms
+both controls and reaches .951 training BA with .478 final validation BA,
+supporting overfitting rather than a complete inability to fit training data.
+
+Compared with original ResNet results, DINOv2 latest BA is essentially unchanged,
+mean rises .601→.627 and attention .500→.565. Latest class behavior nevertheless
+changes sharply (ResNet recalls .824/.370 versus DINOv2 .324/.870). Equal BA does
+not imply equivalent decisions. Encoder pretraining, feature distributions and
+head parameter counts differ; no pure architectural superiority follows.
+
+Retain mean pooling as the leading candidate for a bounded replication across
+predeclared seeds before selecting a final method. Do not enlarge attention from
+these scores alone. Repeated validation selection and one seed limit confidence;
+paired episode-level errors and latency remain to review. No new run is started
+or final test result claimed.
+
+## Nov 5 — DINOv2 latest versus mean, three-seed replication
+
+**Reason:** seed-0 mean pooling leads latest by .030 BA with equal head size,
+but a single initialization cannot establish stability. This bounded replication
+adds seeds 1 and 2 for both heads; existing seed 0 is retained. No GRU training
+or additional attention tuning is included.
+
+**Fixed protocol:** frozen DINOv2, split 0, raw features, ReLU, hidden width 64,
+dropout .1, AdamW lr .001 / decay .001, batch 32, at most 100 epochs, patience 15,
+earliest strictly best validation BA. Initial weights/optimizer are fresh per
+model/seed. One invocation reuses extracted features across the four new fits.
+Batch-one latency uses the existing benchmark scope.
+
+**Review rule:** report all three seeds, each paired mean-minus-latest BA,
+mean/sample standard deviation of each model's BA, both recalls and selected/final
+learning behavior. Do not choose the best seed. Consistent positive differences
+would justify further investigation, not prove generalization across unseen
+episodes. Mixed signs would weaken the seed-0 history-benefit interpretation.
+Compare latency before accepting the extra image cost. No further sweep is
+queued; test remains reserved. The owner-reported seeds 1/2 run completed.
+
+| Seed | Latest selected BA | Mean selected BA | Mean minus latest |
+|---|---:|---:|---:|
+| 0 | .5965 | .6266 | +.0301 |
+| 1 | .5825 | .6010 | +.0185 |
+| 2 | .5607 | .6081 | +.0473 |
+| Mean ± sample SD | .5799 ± .0180 | .6119 ± .0132 | +.0320 ± .0145 |
+
+| New model/seed | Selected train BA | Retract / advance recall | Best / final epoch | Final train / validation BA |
+|---|---:|---|---|---|
+| Latest / 1 | .656 | .882 / .283 | 4 / 19 | .700 / .489 |
+| Latest / 2 | .641 | .382 / .739 | 18 / 33 | .795 / .511 |
+| Mean / 1 | .642 | .441 / .761 | 22 / 37 | .764 / .533 |
+| Mean / 2 | .679 | .412 / .804 | 38 / 53 | .775 / .547 |
+
+**Finding and next decision:** mean pooling leads for all three paired seeds,
+with average BA improvement 3.20 percentage points. Equal classifier dimensions,
+shared starting seeds, unchanged metadata and the same frozen encoder strengthen
+the evidence for averaging historical imagery under this protocol. This is not
+evidence for visual order or action-relevant motion reasoning: averaging changes
+image content and can also smooth noisy features.
+
+Latest recall balance is unstable across seeds (seed 1 favors retract sharply).
+Mean recalls are more consistent here but remain advance-biased: retract
+.412–.471, advance .761–.804. Every fit finishes with higher training BA and lower
+validation BA than at selection; overfitting remains. Standard deviations describe
+initialization variation on the same development cases, not confidence intervals
+or uncertainty over unseen episodes. No statistical significance is established.
+
+Retain mean pooling as the leading DINOv2 control and stop this seed comparison.
+Review the latency tradeoff below and paired episode errors, rather than pick a lucky
+seed or expand attention capacity. Attention has only seed-0 evidence and cannot
+be compared as a three-seed mean. No new training is queued.
+
+### Latency and wrap-up
+
+Both DINOv2 reports record clean revision
+`f0e2d37783621699e479b51141660462ce845f95`, with the same training protocol.
+
+| Model | Validation BA, mean ± sample SD | Per-seed total median latency, ms |
+|---|---|---|
+| Latest MLP, seeds 0/1/2 | .580 ± .018 | 45.37 / 45.37 / 45.26 |
+| Mean-history MLP, seeds 0/1/2 | .612 ± .013 | 171.29 / 159.83 / 159.29 |
+| Attention, seed 0 only | .565 | 159.94 |
+
+Averaging the three reported per-seed medians gives 45.33 ms latest and
+163.47 ms mean-history: approximately 3.6 times the latency for a 3.20-point
+average BA gain. These are synchronized same-case batch-one microbenchmarks,
+including preparation/transfer/encoding/head, excluding disk IO, with no feature
+reuse. They are not pooled workload medians or independent latency replications;
+run-to-run timing variation does not identify temporal-head overhead.
+
+**Stopping point:** retain latest as the faster reference and mean pooling as
+the strongest replicated DINOv2 control. Temporal attention has not earned its
+complexity in the tested settings; this does not establish that attention cannot
+help. No final method is selected. Further attention work should test a specific
+training/fusion hypothesis against these controls, rather than expand capacity
+without evidence. GRU implementation/tuning remains separate. Test data stays
+reserved; no further training is queued.
+
 ## Artifacts and verification
 
 Private runs live under `$PSCRATCH/waldo-temporal/`:
 
 | Directory | Evidence |
 |---|---|
+| `dinov2-attention-dev64-01` | DINOv2 latest/mean/attention comparison |
+| `dinov2-latest-mean-seeds12-01` | Latest/mean replication, seeds 1 and 2 |
 | `tiny-attention-01` | Eight-case check |
 | `dev64-01`, `dev64-diagnostics-01` | First comparison and epoch metrics |
 | `attention-state-01` | Selected/final attention checkpoints |

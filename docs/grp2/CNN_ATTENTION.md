@@ -101,6 +101,81 @@ the pipeline finished; class recalls and learning curves determine interpretatio
 When finished, exit the compute shell and allocation shell, then check
 `squeue -u "$USER"`. Cancel only the recorded allocation if still active.
 
+## DINOv2–temporal attention comparison — prepared 2026-11-05
+
+The existing `--encoder dinov2` path substitutes frozen DINOv2 Small/14 for
+ResNet-18. Each image yields 384 features; depth/time produce 386-value steps,
+projected to the same 64-wide temporal encoder. Late fusion joins the 64-value
+summary with the 384-value goal, followed by the 448→64→2 classifier. Backbone
+pretraining and feature dimension differ; this is a comparison of pretrained
+encoder pipelines, not architecture alone.
+
+The first owner-reported DINOv2 comparison completed: latest/mean/attention
+validation BA .597/.627/.565. See the experiment log for recalls, learning behavior
+and limits. Earlier logistic probes use a different classifier protocol. The
+following reproduces the completed settings in an allocated Perlmutter GPU shell
+after the environment and scratch paths above are configured. The successful
+run used timm 1.0.30 in a scratch venv with module packages inherited. Export the
+HF cache before starting Python to avoid the previously observed home-cache
+locking failure; no Hub token was needed.
+
+```sh
+export HF_HOME="${PSCRATCH:?}/waldo-cache/huggingface"
+export HF_HUB_CACHE="$HF_HOME/hub"
+mkdir -p "$HF_HUB_CACHE"
+python3 -B -c "import torch, timm; print('CUDA:', torch.cuda.is_available()); print('timm:', timm.__version__)"
+python3 -B temporal_evaluation.py --split-position 0 --device cuda \
+  --encoder dinov2 --models latest_mlp mean_mlp attention \
+  --width 64 --classifier-width 64 --classifier-activation relu \
+  --feature-normalization none --seeds 0 --batch-size 32 \
+  --epochs 100 --patience 15 --lr .001 --weight-decay .001 --dropout .1 \
+  --benchmark --output-dir "$PSCRATCH/waldo-temporal/dinov2-attention-dev64-01"
+```
+
+These settings match the original CNN comparison. Its selected validation BA
+was .597 latest, .601 mean and .500 attention. Fresh-head ReLU failure remains
+a possibility; inspect train BA and class counts before interpreting a low score
+as an encoder limitation. The successful standardized static recipe is a different
+protocol and standardization is not yet supported for attention.
+
+For a fresh matched CNN reference, repeat the same command with
+`--encoder resnet18` and output `resnet18-attention-dev64-01`. Do not launch either
+run twice or overwrite existing evidence. Review completion and selected/final
+behavior before further experiments. Both runs extract full training/validation
+features; runtime and completion by a particular deadline are not established.
+
+Record selected train/validation BA, both recalls, AUC, selected epoch, final
+behavior, trainable parameter count and preparation/model latency. Compare
+attention between encoders and against each encoder's static/mean controls.
+Keep validation comparisons exploratory and the test partition reserved.
+
+### Latest/mean replication — seeds 1 and 2
+
+Keep the completed seed-0 evidence. From the same working Perlmutter environment,
+the completed replication used four fresh fits without repeating attention or
+changing the training recipe. Commands are a record; reuse requires new output paths:
+
+```sh
+python3 -B temporal_evaluation.py --split-position 0 --device cuda \
+  --encoder dinov2 --models latest_mlp mean_mlp \
+  --width 64 --classifier-width 64 --classifier-activation relu \
+  --feature-normalization none --seeds 1 2 --batch-size 32 \
+  --epochs 100 --patience 15 --lr .001 --weight-decay .001 --dropout .1 \
+  --benchmark --output-dir "$PSCRATCH/waldo-temporal/dinov2-latest-mean-seeds12-01"
+```
+
+Then review `summary.md` and `learning_summary.md`. Combine reports with:
+
+```sh
+python3 -B compare_runs.py \
+  "$PSCRATCH/waldo-temporal/dinov2-attention-dev64-01/metrics.json" \
+  "$PSCRATCH/waldo-temporal/dinov2-latest-mean-seeds12-01/metrics.json" \
+  --output "$PSCRATCH/waldo-temporal/dinov2-latest-mean-ledger-01.md"
+```
+
+This ledger keeps seed rows separate. Assess all seeds and paired BA differences;
+no best-seed selection or automatic follow-up run is planned.
+
 ## Diagnostics and outputs
 
 `temporal_diagnostics.py --help` lists checkpoint-inspection options. Inspect

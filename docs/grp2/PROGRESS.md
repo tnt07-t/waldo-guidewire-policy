@@ -11,6 +11,13 @@ These are team proposals, not confirmed course requirements. Friday task ownersh
 
 ## CNN–attention status — 2026-11-05
 
+**DINOv2 comparison completed:** mean-history MLP leads latest across seeds
+0/1/2, average validation BA .612 versus .580, at approximately 163 versus 45 ms
+same-case latency. DINOv2 attention reaches .565 in seed 0, with substantial
+later overfitting. Mean pooling is a baseline within the attention investigation,
+not a GRU result. Full scores, reasoning and timing limits are in the
+[experiment log](ATTENTION_EXPERIMENTS.md). No further training is queued.
+
 The latest+goal MLP can now fit training data after embedding standardization,
 but generalization remains weak. No final model is selected; reserved test data
 remains untouched. [Experiment results](ATTENTION_EXPERIMENTS.md) hold the evidence;
