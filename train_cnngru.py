@@ -7,8 +7,9 @@ Pipeline:
 2. Fit depth/offset standardization on the training partition, log the
    scale of the raw 512-d features, and (``--feature-norm zscore``) fit the
    per-dimension feature standardization on the training partition too.
-3. Train the GRU + MLP head with class-weighted cross-entropy, AdamW,
-   gradient clipping and early stopping on validation balanced accuracy.
+3. Train the GRU + MLP head with class-weighted cross-entropy, AdamW and
+   gradient clipping for all --epochs (early stopping only with
+   --patience N); keep the epoch with the best validation balanced accuracy.
 4. After every epoch, print one line of train and validation metrics
    (both computed in eval mode, so dropout does not distort the train
    numbers).
@@ -184,10 +185,12 @@ def format_epoch(epoch, epochs, train, val, lr, seconds, best):
 
 def train_model(model, train, val, *, epochs, batch_size, lr, weight_decay,
                 grad_clip, patience, seed, log=print):
-    """Train the head on cached features with early stopping.
+    """Train the head on cached features, optionally with early stopping.
 
     ``train`` / ``val``: dicts of tensors on the model's device with keys
     history [N, T, 512], goal [N, 512], depth [N, T], offsets [N, T], label [N].
+    ``patience``: stop after this many epochs without a new best; 0 runs
+    all ``epochs``.
     Selection: highest validation balanced accuracy, ties -> lower val loss.
     Returns the per-epoch rows, best epoch/metrics and the best state_dict
     (the model is left holding the best weights).
@@ -230,7 +233,7 @@ def train_model(model, train, val, *, epochs, batch_size, lr, weight_decay,
                      **{"val_" + k: v for k, v in val_m.items() if k != "confusion"}})
         log(format_epoch(epoch, epochs, train_m, val_m,
                          optimizer.param_groups[0]["lr"], seconds, improved))
-        if stale >= patience:
+        if patience and stale >= patience:
             log("Early stop: no validation balanced-accuracy gain for {} epochs."
                 .format(patience))
             break
@@ -255,8 +258,9 @@ def parse_args():
     parser.add_argument("--size", type=int, default=518,
                         help="Input size; shared preprocessor requires a multiple of 14")
     parser.add_argument("--epochs", type=int, default=200)
-    parser.add_argument("--patience", type=int, default=20,
-                        help="Epochs without validation balanced-accuracy gain before stopping")
+    parser.add_argument("--patience", type=int, default=0,
+                        help="Epochs without validation balanced-accuracy gain before stopping; "
+                             "0 (default) disables early stopping and runs all --epochs")
     parser.add_argument("--batch-size", type=int, default=16)
     parser.add_argument("--lr", type=float, default=1e-3)
     parser.add_argument("--weight-decay", type=float, default=1e-2)
@@ -277,9 +281,11 @@ def parse_args():
 
     if not args.data_dir:
         parser.error("Set DATA_DIR or provide --data-dir")
-    for name in ("epochs", "patience", "batch_size", "feature_batch_size"):
+    for name in ("epochs", "batch_size", "feature_batch_size"):
         if getattr(args, name) <= 0:
             parser.error("--{} must be positive".format(name.replace("_", "-")))
+    if args.patience < 0:
+        parser.error("--patience must be 0 (off) or positive")
     if not 0 <= args.dropout < 1:
         parser.error("--dropout must be in [0, 1)")
     args.run_name = args.run_name or "cnngru-{}-split{}-seed{}-{}".format(

@@ -208,6 +208,21 @@ class TrainLoopTests(unittest.TestCase):
         for key, value in result["best_state"].items():
             self.assertTrue(torch.equal(model.state_dict()[key], value))
 
+    def test_patience_zero_runs_all_epochs(self):
+        model = tiny_model()
+        n = 8
+        data = {"history": torch.zeros(n, 6, 512), "goal": torch.zeros(n, 512),
+                "depth": torch.zeros(n, 6), "offsets": torch.zeros(n, 6),
+                "label": torch.arange(n) % 2}
+        lines = []
+        # Validation never improves after epoch 1, yet no early stop happens.
+        result = train_model(model, data, data, epochs=12, batch_size=4, lr=0.0,
+                             weight_decay=0.0, grad_clip=1.0, patience=0, seed=0,
+                             log=lines.append)
+        self.assertEqual(len(result["rows"]), 12)
+        self.assertFalse(any(line.startswith("Early stop") for line in lines))
+        self.assertEqual(result["best"]["epoch"], 1)
+
 
 if __name__ == "__main__":
     unittest.main()

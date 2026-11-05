@@ -28,7 +28,7 @@ Owner-run Perlmutter one-case encoder verification passed (2026-11-02): the `cnn
 
 ## Progress log
 
-### 2026-11-05 - H1 / H1b feature normalization option (local)
+### 2026-11-05 - H1 / H1b feature normalization option and results
 
 Hypothesis H1: the raw 512-d frozen-ResNet features are post-ReLU (non-negative, uncentered, uneven per-dimension scale), which saturates the GRU gates and lets the 512 goal values dominate the 128 GRU values in the MLP input.
 Normalizing them should drop train loss clearly below 0.6 and make validation balanced accuracy less jumpy.
@@ -46,7 +46,27 @@ Optimizer, lr, weight decay and dropout are unchanged so only the normalization 
 
 Comparison protocol: same split, seeds 0-2 for each of H0/H1/H1b; compare final and best train loss, best validation balanced accuracy (mean +- std over seeds), and the epoch-to-epoch std of validation balanced accuracy over the last 20 epochs.
 
-Not verified: the new invented-input tests in `tests/test_train_cnngru.py` have not been run; no H0/H1/H1b Perlmutter runs exist yet.
+Owner-run results on Perlmutter (split 0, seeds 0-2, patience 20; 267 train / 80 validation cases):
+
+| Mode | Best val bal acc (seeds 0/1/2) | Mean | Best-epoch val AUC | Lowest train loss |
+| --- | --- | --- | --- | --- |
+| H0 `none` | 0.569 / 0.558 / 0.518 | 0.548 | 0.426 / 0.538 / 0.411 | about 0.65 |
+| H1 `layer` | 0.608 / 0.579 / 0.571 | 0.586 | 0.499 / 0.492 / 0.460 | 0.21 / 0.19 / 0.02 |
+| H1b `zscore` | 0.574 / 0.600 / 0.565 | 0.580 | 0.591 / 0.506 / 0.520 | about 0.0000 |
+
+Raw train features: mean 0.664, mean L2 18.93, no zeros, per-dimension std 0.042 to 0.694 (ratio 16.5), no constant dimensions.
+
+Reading: the optimization half of H1 is confirmed.
+Without normalization the head underfits (train loss stays near 0.65-0.69) and often collapses to predicting one class for the whole validation set.
+Both normalizations let it fit the training set (LayerNorm gradually, z-score memorizes it within about 15 epochs).
+The generalization half is not confirmed.
+The +0.03-0.04 mean validation balanced-accuracy gain is about 3 of 80 cases, within seed spread and the roughly 0.055 binomial standard error, and is a max over many noisy epochs.
+Best-epoch validation AUC stays near 0.5, and validation loss rises from the first few epochs, so the bottleneck is now overfitting / weak signal, not optimization.
+Validation balanced accuracy still swings by 0.1 or more between consecutive epochs.
+
+Follow-up: early stopping is now off by default (`--patience 0` runs all `--epochs`; `--patience N` restores it), still keeping the best-validation epoch.
+
+Not verified: no unit-test output has been reported for `tests/test_train_cnngru.py`, including the new `test_patience_zero_runs_all_epochs`; no full-200-epoch runs exist yet.
 No staging/commit/push in this note.
 
 ### 2026-11-05 - CNN-GRU training script `train_cnngru.py` (local)
