@@ -14,7 +14,7 @@ import os
 import torch
 
 from dataset import GuidewireDataset
-from model_cnngru import CNNGRUModel
+from model_cnngru import CAPACITY_RUNGS, DEFAULT_CAPACITY, CNNGRUModel
 from preprocessing import DINOv2Preprocessor
 
 
@@ -41,6 +41,9 @@ def main():
     parser.add_argument("--size", type=int, default=518,
                         help="Input size; shared preprocessor requires a multiple of 14")
     parser.add_argument("--checkpoint", help="Optional state_dict for CNNGRUModel")
+    parser.add_argument("--capacity", choices=tuple(CAPACITY_RUNGS), default=DEFAULT_CAPACITY,
+                        help="Head size rung the checkpoint was trained with "
+                             "(args.capacity in its summary.json)")
     args = parser.parse_args()
 
     if not args.data_dir:
@@ -62,7 +65,7 @@ def main():
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     batch = collate(cases, device)
 
-    model = CNNGRUModel().to(device)
+    model = CNNGRUModel(capacity=args.capacity).to(device)
     if args.checkpoint:
         model.load_state_dict(torch.load(args.checkpoint, map_location=device))
     model.eval()

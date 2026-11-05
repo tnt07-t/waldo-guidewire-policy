@@ -27,6 +27,19 @@ Details are in the [Phase 0 log entry](#2026-11-05---h3-phase-0-results-split-0-
 
 ## Progress log
 
+### 2026-11-05 - H3 Phase 1 capacity ladder implemented (local)
+
+`model_cnngru.py` gains `CAPACITY_RUNGS` (XS / S / M / L) and `CNNGRUModel(capacity=...)`; `train_cnngru.py` and `infer_cnngru.py` gain `--capacity` (default `M`).
+Rungs with a projection apply one shared `Linear(512 -> p)` after the LayerNorm to every history frame and the goal.
+Trainable parameters: XS 26,114, S 67,586, M 330,626 (unchanged), L 875,074.
+`CNNGRUEncoder` now takes the GRU input width, hidden size, layer count and inter-layer dropout; `GoalClassifier` takes the summary and goal widths, hidden widths and an optional LayerNorm after the first hidden layer.
+Rung M keeps the original modules, state_dict keys and seeded initialization, so existing checkpoints still load and `phase1-m-split0-*` should reproduce `phase0-real-split0-*` exactly.
+Seven new invented-input tests in `tests/test_train_cnngru.py` (`CapacityTests`) cover exact parameter counts, M key compatibility, cached-feature vs image path for every rung, projection sharing, the L layout, and XS learning separable invented features.
+Perlmutter commands for the 42-run grid (4 rungs x splits 0-2 x seeds 0-2, plus the null on splits 1-2) are in [NEXT_EXPERIMENTS.md](NEXT_EXPERIMENTS.md#phase-1---capacity-ladder-tests-the-h3-claim-directly).
+
+Not verified: no test has been run (no local execution); no Phase 1 runs exist yet.
+No staging/commit/push in this note.
+
 ### 2026-11-05 - H3 Phase 0 results, split 0 only (owner-run Perlmutter)
 
 Six runs on split 0 (seeds 0-2, real and shuffled-label null), LayerNorm, 200 epochs, `--patience 0`, all other settings at their defaults.

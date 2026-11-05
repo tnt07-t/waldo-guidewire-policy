@@ -48,23 +48,32 @@ def encode_goal(encoder, goal):
 class GoalClassifier(nn.Module):
     """MLP classifier (yes / no) over the GRU summary and goal features.
 
-    gru_summary [B, 128] + goal_features [B, 512] -> logits [B, 2] (no, yes).
+    gru_summary [B, summary_dim] + goal_features [B, goal_dim] -> logits [B, 2]
+    (no, yes). Defaults give the original 640 -> 128 -> ReLU -> 2 head.
     Train with CrossEntropyLoss, predict with argmax.
 
-    Dropout is applied to the fused 640-d input and to the hidden layer;
-    with ~270 training cases this is the main regularizer of the head.
-    It is inactive in eval mode.
+    Each hidden layer is Linear -> (LayerNorm, first hidden layer only, when
+    ``norm_first_hidden``) -> ReLU -> Dropout. Dropout is also applied to the
+    fused input; with ~270 training cases it is the main regularizer of the
+    head. It is inactive in eval mode.
+
+    With the defaults the Sequential indices (Linear layers at 1 and 4) match
+    checkpoints saved before the width options existed.
     """
 
-    def __init__(self, dropout=0.3):
+    def __init__(self, dropout=0.3, summary_dim=GRU_SUMMARY_DIM,
+                 goal_dim=GOAL_FEATURE_DIM, hidden_dims=(128,), norm_first_hidden=False):
         super().__init__()
-        self.mlp = nn.Sequential(
-            nn.Dropout(dropout),
-            nn.Linear(GRU_SUMMARY_DIM + GOAL_FEATURE_DIM, 128),
-            nn.ReLU(),
-            nn.Dropout(dropout),
-            nn.Linear(128, 2),
-        )
+        layers = [nn.Dropout(dropout)]
+        width = summary_dim + goal_dim
+        for i, hidden in enumerate(hidden_dims):
+            layers.append(nn.Linear(width, hidden))
+            if norm_first_hidden and i == 0:
+                layers.append(nn.LayerNorm(hidden))
+            layers += [nn.ReLU(), nn.Dropout(dropout)]
+            width = hidden
+        layers.append(nn.Linear(width, 2))
+        self.mlp = nn.Sequential(*layers)
 
     def forward(self, gru_summary, goal_features):
         return self.mlp(torch.cat([gru_summary, goal_features], dim=-1))

@@ -146,14 +146,14 @@ Reading the paired `real - null` block:
 ### Phase 1 - capacity ladder (tests the H3 claim directly)
 
 Each rung scales width together; the projection is shared by history frames and goal.
-Parameter counts are estimates.
+Parameter counts are exact trainable counts (checked in `tests/test_train_cnngru.py`).
 
-| Rung | Projection | GRU | MLP | Approx. params |
+| Rung | Projection | GRU | MLP | Trainable params |
 | --- | --- | --- | --- | --- |
-| XS | 512 -> 32 | 32 x 1 layer | 64 -> 32 -> 2 | 25k |
-| S | 512 -> 64 | 64 x 1 | 128 -> 64 -> 2 | 67k |
-| M (current) | none | 128 x 1 | 640 -> 128 -> 2 | 331k |
-| L (H3) | 512 -> 128 | 256 x 2, dropout 0.2 | 384 -> 256 -> LayerNorm -> ReLU -> 64 -> 2 | ~900k |
+| XS | 512 -> 32 | 32 x 1 layer | 64 -> 32 -> 2 | 26,114 |
+| S | 512 -> 64 | 64 x 1 | 128 -> 64 -> 2 | 67,586 |
+| M (current) | none | 128 x 1 | 640 -> 128 -> 2 | 330,626 |
+| L (H3) | 512 -> 128 | 256 x 2, dropout 0.2 | 384 -> 256 -> LayerNorm -> ReLU -> 64 -> 2 | 875,074 |
 
 Keep dropout 0.3, lr, weight decay and loss fixed across rungs so only capacity varies.
 
@@ -161,6 +161,63 @@ Predictions:
 - H3 is supported if L beats M on paired validation AUC.
 - The overfitting diagnosis is supported if validation AUC is flat or falls as capacity grows while every rung above XS still saturates training accuracy.
 - If XS or S matches M, prefer the smaller rung as the new baseline.
+- Phase 0 on split 0 found no signal above the shuffled-label null, so the likeliest outcome is that all rungs are indistinguishable; the ladder is still worth running because XS / S test whether a bottleneck alone recovers any signal.
+
+Implementation:
+- `train_cnngru.py --capacity {XS,S,M,L}` (default `M`) picks the rung from `CAPACITY_RUNGS` in `model_cnngru.py`; `infer_cnngru.py --capacity` must match the checkpoint.
+- The projection is one `Linear(512 -> p)` applied after the shared LayerNorm to every history frame and the goal; rung M uses `nn.Identity`, so its modules, state_dict keys and seeded initialization are the same as before the ladder.
+- Because of that, every `phase1-m-split0-seed*` run should reproduce the matching `phase0-real-split0-seed*` run exactly; a mismatch means the M rung changed and the ladder is not comparable.
+- `summary.json` records `args.capacity`, and `train.log` prints the head layout on a `Head:` line.
+
+Run on Perlmutter (from the repo root, inside a GPU allocation, with `DATA_DIR` set).
+Tests first:
+
+```sh
+python -m unittest discover -s tests -p 'test_train_cnngru.py' -v
+python -m unittest discover -s tests -p 'test_mlp_cnn.py' -v
+```
+
+Grid: 4 rungs x splits 0-2 x seeds 0-2 (36 runs), plus the shuffled-label null on splits 1-2 so Phase 0 also covers three splits (6 runs).
+The `phase1-m-*` runs double as the Phase 0 real runs on splits 1-2.
+Each run re-encodes the images (about 30 s) and trains in about 10-60 s depending on the rung.
+
+```sh
+for split in 0 1 2; do
+  for seed in 0 1 2; do
+    for cap in XS S M L; do
+      python train_cnngru.py --data-dir "$DATA_DIR" --split-position "$split" --seed "$seed" \
+        --epochs 200 --patience 0 --capacity "$cap" \
+        --run-name "phase1-$(echo "$cap" | tr 'A-Z' 'a-z')-split${split}-seed${seed}"
+    done
+    if [ "$split" != 0 ]; then
+      python train_cnngru.py --data-dir "$DATA_DIR" --split-position "$split" --seed "$seed" \
+        --epochs 200 --patience 0 --shuffle-train-labels \
+        --run-name "phase0-null-split${split}-seed${seed}"
+    fi
+  done
+done 2>&1 | tee phase1.log
+```
+
+Summaries (M first, so every other rung is compared with it, paired by split and seed):
+
+```sh
+python summarize_runs.py --window 20 \
+  m='docs/grp1/results/phase1-m-*' \
+  xs='docs/grp1/results/phase1-xs-*' \
+  s='docs/grp1/results/phase1-s-*' \
+  l='docs/grp1/results/phase1-l-*' \
+  null='docs/grp1/results/phase0-null-*'
+```
+
+```sh
+# Reproduction check: rung M on split 0 against the Phase 0 real runs.
+python summarize_runs.py --window 20 \
+  phase0='docs/grp1/results/phase0-real-*' \
+  m='docs/grp1/results/phase1-m-split0-*'
+```
+
+The reproduction check should show every paired difference as exactly 0.
+In the main summary, read the `last-N val auc` paired block for each rung against M, and the `null` group against M for whether M carries any signal on splits 0-2.
 
 ### Phase 2 - isolate H3 components (one factor at a time)
 
