@@ -45,7 +45,7 @@ from torch.nn import functional as F
 from torch.utils.data import DataLoader, Dataset
 
 from dataset import GuidewireDataset
-from model_cnngru import CAPACITY_RUNGS, DEFAULT_CAPACITY, CNNGRUModel, describe_capacity
+from model_cnngru import CNNGRUModel
 from preprocessing import DINOv2Preprocessor
 
 CLASS_NAMES = ("RETRACT", "ADVANCE")  # label 0, label 1
@@ -285,8 +285,6 @@ def parse_args():
     parser.add_argument("--lr", type=float, default=1e-3)
     parser.add_argument("--weight-decay", type=float, default=1e-2)
     parser.add_argument("--dropout", type=float, default=0.3)
-    parser.add_argument("--capacity", choices=tuple(CAPACITY_RUNGS), default=DEFAULT_CAPACITY,
-                        help="Head size rung (Phase 1 capacity ladder); M is the original head")
     parser.add_argument("--grad-clip", type=float, default=1.0)
     parser.add_argument("--feature-batch-size", type=int, default=8,
                         help="Cases per frozen-ResNet forward during feature extraction")
@@ -299,8 +297,7 @@ def parse_args():
                         help="Report mean/std of validation metrics over the last N epochs")
     parser.add_argument("--run-name",
                         help="Folder name under docs/grp1/results (default: "
-                             "cnngru[-<capacity>][-null]-split<S>-seed<N>-<timestamp>, "
-                             "capacity tag omitted for M)")
+                             "cnngru[-null]-split<S>-seed<N>-<timestamp>)")
     args = parser.parse_args()
 
     if not args.data_dir:
@@ -312,8 +309,7 @@ def parse_args():
         parser.error("--patience must be 0 (off) or positive")
     if not 0 <= args.dropout < 1:
         parser.error("--dropout must be in [0, 1)")
-    args.run_name = args.run_name or "cnngru{}{}-split{}-seed{}-{}".format(
-        "" if args.capacity == DEFAULT_CAPACITY else "-" + args.capacity.lower(),
+    args.run_name = args.run_name or "cnngru{}-split{}-seed{}-{}".format(
         "-null" if args.shuffle_train_labels else "",
         args.split_position, args.seed, time.strftime("%Y%m%d-%H%M%S"))
     if Path(args.run_name).name != args.run_name or args.run_name in (".", ".."):
@@ -363,7 +359,7 @@ def main():
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     log("Run folder: {}".format(run_dir.relative_to(REPO_ROOT)))
 
-    model = CNNGRUModel(dropout=args.dropout, capacity=args.capacity).to(device)
+    model = CNNGRUModel(dropout=args.dropout).to(device)
     prepare = DINOv2Preprocessor(size=args.size)
     data = {}
     for name in ("train", "validation"):
@@ -387,7 +383,6 @@ def main():
     weight = class_weights(data["train"]["label"].cpu())
     trainable = sum(p.numel() for p in model.parameters() if p.requires_grad)
     log("Device: {} | split {} | seed {}".format(device, args.split_position, args.seed))
-    log("Head: {}".format(describe_capacity(args.capacity)))
     log("Trainable parameters: {:,}".format(trainable))
     log("Metadata mean [depth_mm, offset_s]: {} std: {}".format(
         [round(v, 3) for v in model.encoder.meta_mean.tolist()],

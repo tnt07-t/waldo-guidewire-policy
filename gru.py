@@ -5,26 +5,21 @@ from torch import nn
 
 from cnn import FrameEncoder
 
-HIDDEN_DIM = 128
-
 
 class CNNGRUEncoder(nn.Module):
     """Frozen ResNet-18 per frame, then a GRU over the frame sequence.
 
-    ``input_dim`` is the width of each frame feature the GRU receives (512
-    for raw ResNet features, smaller when the model projects them first);
+    ``input_dim`` is the width of each frame feature the GRU receives (the
+    model projects the 512-d ResNet features down first);
     two standardized metadata channels [depth_mm, offset_s] are appended
-    at every step. ``dropout`` acts between stacked GRU layers only.
+    at every step.
     """
 
-    def __init__(self, pretrained=True, input_dim=FrameEncoder.feature_dim,
-                 hidden_dim=HIDDEN_DIM, num_layers=1, dropout=0.0):
+    def __init__(self, input_dim, hidden_dim, pretrained=True):
         super().__init__()
         self.cnn = FrameEncoder(pretrained=pretrained)
         self.hidden_dim = hidden_dim
-        self.gru = nn.GRU(input_dim + 2, hidden_dim, num_layers=num_layers,
-                          dropout=dropout if num_layers > 1 else 0.0,
-                          batch_first=True)
+        self.gru = nn.GRU(input_dim + 2, hidden_dim, batch_first=True)
         # Standardization for the [depth_mm, offset_s] pair at every step.
         # Identity until set_metadata_stats() is called with training data.
         # Buffers, so the statistics travel with the checkpoint.
@@ -51,7 +46,7 @@ class CNNGRUEncoder(nn.Module):
         meta = torch.stack([depth, offsets], dim=-1)               # (B, T, 2)
         meta = (meta - self.meta_mean) / self.meta_std
         steps = torch.cat([features, meta.to(features.dtype)], dim=-1)  # (B, T, input_dim + 2)
-        _, h = self.gru(steps)                                     # h: (layers, B, hidden)
+        _, h = self.gru(steps)                                     # h: (1, B, hidden)
         return h[-1]                                               # (B, hidden)
 
     def forward(self, history, depth, offsets):

@@ -163,65 +163,13 @@ Predictions:
 - If XS or S matches M, prefer the smaller rung as the new baseline.
 - Phase 0 on split 0 found no signal above the shuffled-label null, so the likeliest outcome is that all rungs are indistinguishable; the ladder is still worth running because XS / S test whether a bottleneck alone recovers any signal.
 
-Implementation:
-- `train_cnngru.py --capacity {XS,S,M,L}` (default `M`) picks the rung from `CAPACITY_RUNGS` in `model_cnngru.py`; `infer_cnngru.py --capacity` must match the checkpoint.
-- The projection is one `Linear(512 -> p)` applied after the shared LayerNorm to every history frame and the goal; rung M uses `nn.Identity`, so its modules, state_dict keys and seeded initialization are the same as before the ladder.
-- Because of that, every `phase1-m-split0-seed*` run should reproduce the matching `phase0-real-split0-seed*` run exactly; a mismatch means the M rung changed and the ladder is not comparable.
-- `summary.json` records `args.capacity`, and `train.log` prints the head layout on a `Head:` line.
-
-Run on Perlmutter (from the repo root, inside a GPU allocation, with `DATA_DIR` set).
-Tests first:
-
-```sh
-python -m unittest discover -s tests -p 'test_train_cnngru.py' -v
-python -m unittest discover -s tests -p 'test_mlp_cnn.py' -v
-```
-
-Grid: 4 rungs x splits 0-2 x seeds 0-2 (36 runs), plus the shuffled-label null on splits 1-2 so Phase 0 also covers three splits (6 runs).
-The `phase1-m-*` runs double as the Phase 0 real runs on splits 1-2.
-Each run re-encodes the images (about 30 s) and trains in about 10-60 s depending on the rung.
-
-```sh
-for split in 0 1 2; do
-  for seed in 0 1 2; do
-    for cap in XS S M L; do
-      python train_cnngru.py --data-dir "$DATA_DIR" --split-position "$split" --seed "$seed" \
-        --epochs 200 --patience 0 --capacity "$cap" \
-        --run-name "phase1-$(echo "$cap" | tr 'A-Z' 'a-z')-split${split}-seed${seed}"
-    done
-    if [ "$split" != 0 ]; then
-      python train_cnngru.py --data-dir "$DATA_DIR" --split-position "$split" --seed "$seed" \
-        --epochs 200 --patience 0 --shuffle-train-labels \
-        --run-name "phase0-null-split${split}-seed${seed}"
-    fi
-  done
-done 2>&1 | tee phase1.log
-```
-
-Summaries (M first, so every other rung is compared with it, paired by split and seed):
-
-```sh
-python summarize_runs.py --window 20 \
-  m='docs/grp1/results/phase1-m-*' \
-  xs='docs/grp1/results/phase1-xs-*' \
-  s='docs/grp1/results/phase1-s-*' \
-  l='docs/grp1/results/phase1-l-*' \
-  null='docs/grp1/results/phase0-null-*'
-```
-
-```sh
-# Reproduction check: rung M on split 0 against the Phase 0 real runs.
-python summarize_runs.py --window 20 \
-  phase0='docs/grp1/results/phase0-real-*' \
-  m='docs/grp1/results/phase1-m-split0-*'
-```
-
-The reproduction check should show every paired difference as exactly 0.
-In the main summary, read the `last-N val auc` paired block for each rung against M, and the `null` group against M for whether M carries any signal on splits 0-2.
+Outcome (2026-11-05, partial grid, see [PROGRESS.md](PROGRESS.md#2026-11-05---h3-phase-1-results-s-adopted-as-the-only-head)):
+no rung beat the shuffled-label null and all four were within noise of each other, so S was adopted as the fixed head and the `--capacity` option and other rungs were removed from the code.
+The table above and the `phase1-*` result folders remain as the record; the commands that ran the grid used the removed `--capacity` flag and no longer work.
 
 ### Phase 2 - isolate H3 components (one factor at a time)
 
-Start from the best Phase 1 rung and change one factor per run:
+Start from the adopted head (rung S) and change one factor per run:
 
 - projection on / off, and shared with goal vs history only
 - GRU 1 vs 2 layers at fixed hidden size

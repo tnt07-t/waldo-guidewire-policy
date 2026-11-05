@@ -23,12 +23,47 @@ Basic dataset validation has already passed; do not repeat without a concrete re
 **Completed H3 Phase 0, split 0 only (owner-run):** the real-label model does not beat the shuffled-label null (last-20 validation AUC 0.451 real vs 0.545 null, mean over seeds 0-2), so the earlier ~0.61 best-epoch scores are selection noise and the frozen pooled features show no detectable signal on this split.
 Details are in the [Phase 0 log entry](#2026-11-05---h3-phase-0-results-split-0-only-owner-run-perlmutter).
 
-**Immediate next steps:** skip the Phase 1 capacity ladder above rung S; prioritize feature changes (512-d bottleneck, spatial pooling, `--remove-maxpool`, 224 input, light layer4 fine-tune) and run Phase 0 on splits 1-2 so comparisons are not single-split. Do not use the test partition. Log any further matched ablations here.
+**Completed H3 Phase 1, partial grid (owner-run):** no head size (XS / S / M / L) beats the shuffled-label null or another size; S (67,586 parameters) is now the only head in the code.
+Details are in the [Phase 1 log entry](#2026-11-05---h3-phase-1-results-s-adopted-as-the-only-head).
+
+**Immediate next steps:** prioritize feature changes (512-d bottleneck, spatial pooling, `--remove-maxpool`, 224 input, light layer4 fine-tune) and run Phase 0 on splits 1-2 so comparisons are not single-split. Do not use the test partition. Log any further matched ablations here.
 
 **Wire preprocessing (2026-11-03, merged from `andrew/grp1-preprocessing-tickets`):** the goal-centered wire preprocessor and its frozen-feature probe are built and partly evaluated; neither the 256 nor the 512 crop beat the 0.547 full-frame baseline on split 0 validation.
 See [the 2026-11-03 log entry](#2026-11-03---wire-preserving-preprocessing-and-frozen-feature-probe-owner-run-ladder-stopped-early) for results, limits and what was not run.
 
 ## Progress log
+
+### 2026-11-05 - H3 Phase 1 results; S adopted as the only head
+
+Owner-run on Perlmutter (200 epochs, `--patience 0`, LayerNorm, all other settings default); folders `docs/grp1/results/phase1-{xs,s,m,l}-split*-seed*`, console output in `phase1.log` at the repo root.
+The grid stopped early: split 0 seeds 0-2 and split 1 seed 0 exist for every rung, XS also has split 1 seed 1, the `phase1-s-split1-seed1` run has only a header line, and split 2 was not run.
+One shuffled-label null exists on split 1 (`phase0-null-split1-seed0`).
+Means below are over the four (split, seed) pairs every rung completed, computed from `summary.json`; `summarize_runs.py` was not run.
+
+| Rung | Params | Best-epoch val bal-acc | Best-epoch val AUC | Last-20 val bal-acc | Last-20 val AUC |
+| --- | ---: | ---: | ---: | ---: | ---: |
+| XS | 26,114 | 0.572 | 0.468 | 0.485 | 0.466 |
+| S | 67,586 | 0.599 | 0.544 | 0.487 | 0.462 |
+| M | 330,626 | 0.571 | 0.474 | 0.466 | 0.438 |
+| L | 875,074 | 0.574 | 0.458 | 0.449 | 0.463 |
+
+Reading:
+- Last-20 validation AUC is below 0.5 for every rung; the split-1 null reached 0.499, above every rung on that split, so no rung shows signal.
+- Every rung reaches about 1.000 last-20 train bal-acc, so all of them memorize.
+- M and L have the lowest last-20 bal-acc, consistent with the overfitting diagnosis; L does not support H3.
+- S leads on best-epoch scores mainly through split 0 seed 2 (0.665 bal-acc, 0.646 AUC), and best-epoch values are selection noise (Phase 0); on last-20 metrics XS and S tie.
+- `phase1-m-split0-*` reproduces `phase0-real-split0-*` on the best-epoch values, as expected.
+
+Decision (owner): adopt S, following the plan's rule to prefer a smaller rung that matches M; S leaves more room than XS for the planned feature changes.
+`CAPACITY_RUNGS`, `HeadConfig`, `describe_capacity` and `--capacity` were removed from `model_cnngru.py`, `train_cnngru.py` and `infer_cnngru.py`.
+`CNNGRUModel` now always builds the S head (shared `Linear(512 -> 64)` projection, one-layer GRU 64, MLP 128 -> 64 -> 2) in the same construction order and with the same state_dict keys as rung S, so `phase1-s-*` checkpoints still load and seeded runs should reproduce them.
+`CNNGRUEncoder` lost its multi-layer GRU options and `GoalClassifier` its multi-hidden-layer and LayerNorm options.
+Checkpoints from earlier M-sized runs (Phase 0, H0-H2) no longer load.
+`CapacityTests` became `HeadTests` (parameter count, state_dict keys, projection layout); the separable-features training test now puts the label in 16 goal dimensions so it survives the projection.
+Default run names are `cnngru[-null]-split<S>-seed<N>-<timestamp>`.
+
+Not verified: no test has been run (no local execution); no run with the simplified code exists yet.
+No push in this note.
 
 ### 2026-11-05 - H3 Phase 1 capacity ladder implemented (local)
 

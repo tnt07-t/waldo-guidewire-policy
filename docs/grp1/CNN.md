@@ -4,7 +4,7 @@
 
 Owner-run one-case smoke check on Perlmutter passed (2026-11-02). Exact printed device, shapes, optional flags, and remote HEAD were not supplied; do not repeat the completed default check without a relevant change. Real images, tensors, and feature values must stay on Perlmutter. Passing this check does not measure action accuracy.
 
-`mlp_cnn.py` runs the prepared goal through the same frozen ResNet as history (`encode_goal` → `[512]`), then a teammate concatenates with the GRU `[128]` summary for the MLP. Prep is `prepare_case` / `prepared["goal"]`; do not treat the goal as a seventh history step.
+`mlp_cnn.py` runs the prepared goal through the same frozen ResNet as history (`encode_goal` → `[512]`), then `model_cnngru.py` projects history and goal features to 64-d and the MLP fuses the GRU `[64]` summary with the projected goal `[64]`. Prep is `prepare_case` / `prepared["goal"]`; do not treat the goal as a seventh history step.
 
 To test whether those 512-d vectors change under occlusion / marker-region / temporal probes useful for a later GRU, use the separate [CNN_DIAGNOSTICS.md](CNN_DIAGNOSTICS.md) / `cnn_diagnostics.py` path. Those probes do not claim wire detection or action recognition. Do not fold them into `cnn.py`.
 
@@ -140,7 +140,7 @@ from mlp_cnn import encode_goal
 
 # prepared["goal"] already went through DINOv2Preprocessor (same as history).
 goal_features = encode_goal(model.cnn, prepared["goal"])   # ResNet -> [512]
-# teammate: concat(gru_summary [128], goal_features [512]) -> MLP
+# model_cnngru.py: concat(gru_summary [64], projected goal [64]) -> MLP 128 -> 64 -> 2
 ```
 
-Next Group 1 steps: MLP over `concat(gru_128, goal_512)` in `mlp_cnn.py`. See [progress](PROGRESS.md).
+The full CNN-GRU head is in `model_cnngru.py`. See [progress](PROGRESS.md).

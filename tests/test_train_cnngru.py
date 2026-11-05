@@ -5,91 +5,45 @@ import unittest
 
 import torch
 
-from model_cnngru import CAPACITY_RUNGS, CNNGRUModel, describe_capacity
+from model_cnngru import CNNGRUModel
 from train_cnngru import (binary_metrics, class_weights, roc_auc, shuffled_labels,
                           train_model, window_summary)
 
 
-def tiny_model(dropout=0.3, capacity="M"):
+def tiny_model(dropout=0.3):
     torch.manual_seed(0)
     # pretrained=False: random ResNet-18, no weight download.
-    return CNNGRUModel(pretrained=False, dropout=dropout, capacity=capacity).eval()
+    return CNNGRUModel(pretrained=False, dropout=dropout).eval()
 
 
 def trainable_count(model):
     return sum(p.numel() for p in model.parameters() if p.requires_grad)
 
 
-class CapacityTests(unittest.TestCase):
-    # Hand-computed head sizes (LayerNorm 1,024 + projection + GRU + MLP).
-    EXPECTED_PARAMETERS = {"XS": 26_114, "S": 67_586, "M": 330_626, "L": 875_074}
+class HeadTests(unittest.TestCase):
+    def test_parameter_count(self):
+        # LayerNorm 1,024 + projection 32,832 + GRU 25,344 + MLP 8,386.
+        self.assertEqual(trainable_count(tiny_model()), 67_586)
 
-    def test_rung_parameter_counts(self):
-        for name, expected in self.EXPECTED_PARAMETERS.items():
-            with self.subTest(capacity=name):
-                self.assertEqual(trainable_count(tiny_model(capacity=name)), expected)
-
-    def test_rung_m_matches_pre_ladder_head(self):
-        # Same keys as checkpoints saved before the ladder (no projection
-        # weights, MLP Linear layers at Sequential indices 1 and 4).
+    def test_state_dict_keys_match_phase1_rung_s(self):
+        # Same keys as the phase1-s-* checkpoints, so they still load.
         keys = {k for k in tiny_model().state_dict() if not k.startswith("encoder.cnn.")}
         self.assertEqual(keys, {
             "encoder.meta_mean", "encoder.meta_std",
             "encoder.gru.weight_ih_l0", "encoder.gru.weight_hh_l0",
             "encoder.gru.bias_ih_l0", "encoder.gru.bias_hh_l0",
             "feature_norm.weight", "feature_norm.bias",
+            "projection.weight", "projection.bias",
             "classifier.mlp.1.weight", "classifier.mlp.1.bias",
             "classifier.mlp.4.weight", "classifier.mlp.4.bias",
         })
 
-    def test_every_rung_feature_path_matches_image_path(self):
-        history = torch.randn(2, 6, 3, 32, 32)
-        goal = torch.randn(2, 3, 32, 32)
-        depth, offsets = torch.randn(2, 6), torch.randn(2, 6)
-        for name in CAPACITY_RUNGS:
-            with self.subTest(capacity=name), torch.no_grad():
-                model = tiny_model(capacity=name)
-                direct = model(history, depth, offsets, goal)
-                cached = model.forward_features(model.encoder.cnn(history), depth, offsets,
-                                                model.encoder.cnn(goal))
-                self.assertEqual(tuple(direct.shape), (2, 2))
-                self.assertTrue(torch.isfinite(direct).all())
-                self.assertTrue(torch.allclose(direct, cached, atol=1e-5))
-
     def test_projection_is_shared_by_history_and_goal(self):
-        model = tiny_model(capacity="S")
+        model = tiny_model()
         self.assertEqual(tuple(model.projection.weight.shape), (64, 512))
         self.assertEqual(model.encoder.gru.input_size, 64 + 2)
+        self.assertEqual(model.encoder.gru.num_layers, 1)
         self.assertEqual(model.classifier.mlp[1].in_features, 64 + 64)
-
-    def test_rung_l_structure(self):
-        model = tiny_model(capacity="L")
-        self.assertEqual((model.encoder.gru.num_layers, model.encoder.gru.dropout), (2, 0.2))
-        self.assertEqual(model.classifier.mlp[1].in_features, 256 + 128)
-        self.assertIsInstance(model.classifier.mlp[2], torch.nn.LayerNorm)
-        self.assertEqual(sum(isinstance(m, torch.nn.LayerNorm) for m in model.classifier.mlp), 1)
-
-    def test_describe_and_unknown_rung(self):
-        self.assertIn("MLP 640 -> 128 -> 2", describe_capacity("M"))
-        self.assertIn("MLP 384 -> 256 -> 64 -> 2", describe_capacity("L"))
-        with self.assertRaises(ValueError):
-            CNNGRUModel(pretrained=False, capacity="XL")
-
-    def test_smallest_rung_learns_separable_invented_features(self):
-        generator = torch.Generator().manual_seed(2)
-        n = 40
-        labels = torch.arange(n) % 2
-        goal = torch.randn(n, 512, generator=generator)
-        goal[:, :16] += (labels.float() * 6 - 3)[:, None]  # survives LayerNorm + projection
-        data = {"history": torch.randn(n, 6, 512, generator=generator).abs(), "goal": goal,
-                "depth": torch.randn(n, 6, generator=generator),
-                "offsets": torch.randn(n, 6, generator=generator), "label": labels}
-        model = tiny_model(dropout=0.1, capacity="XS")
-        model.encoder.set_metadata_stats(data["depth"], data["offsets"])
-        result = train_model(model, data, data, epochs=60, batch_size=8, lr=1e-2,
-                             weight_decay=1e-2, grad_clip=1.0, patience=0, seed=0,
-                             log=lambda line: None)
-        self.assertEqual(result["best"]["val"]["bal_acc"], 1.0)
 
 
 class FeatureNormTests(unittest.TestCase):
@@ -231,7 +185,7 @@ class TrainLoopTests(unittest.TestCase):
         n = 40
         labels = torch.arange(n) % 2
         goal = torch.randn(n, 512, generator=generator)
-        goal[:, 0] = labels.float() * 6 - 3  # label is readable from one goal feature
+        goal[:, :16] += (labels.float() * 6 - 3)[:, None]  # survives LayerNorm + projection
         data = {
             "history": torch.randn(n, 6, 512, generator=generator).abs(),
             "goal": goal,

@@ -3,18 +3,18 @@
 Goal path (this file):
   prepared goal [B, 3, H, W]  --FrameEncoder (ResNet-18)-->  goal_features [B, 512]
 
-History path (elsewhere):
-  history + depth/time  --CNNGRUEncoder-->  gru_summary [B, 128]
+History path (gru.py):
+  history + depth/time  --CNNGRUEncoder-->  gru_summary [B, 64]
 
-Teammate: concat([gru_summary, goal_features], dim=-1) -> [B, 640] -> MLP -> action.
+model_cnngru.py projects history and goal features to 64-d, then
+GoalClassifier maps concat([gru_summary, goal_projection]) [B, 128] -> logits.
 """
 
 import torch
 from torch import nn
 
-# Matches FrameEncoder.feature_dim / CNNGRUEncoder hidden size.
+# Matches FrameEncoder.feature_dim.
 GOAL_FEATURE_DIM = 512
-GRU_SUMMARY_DIM = 128
 
 def encode_goal(encoder, goal):
     """Run the prepared goal through the shared frozen ResNet (FrameEncoder).
@@ -26,7 +26,7 @@ def encode_goal(encoder, goal):
     Expect a tensor already prepared like history (e.g. ``prepared["goal"]``
     from DINOv2Preprocessor); this function does not resize/normalize.
 
-    Goal is not a GRU time step — only a 512-d vector for MLP fusion.
+    Goal is not a GRU time step - only a 512-d vector for MLP fusion.
     """
     single = goal.ndim == 3
     if single:
@@ -49,31 +49,22 @@ class GoalClassifier(nn.Module):
     """MLP classifier (yes / no) over the GRU summary and goal features.
 
     gru_summary [B, summary_dim] + goal_features [B, goal_dim] -> logits [B, 2]
-    (no, yes). Defaults give the original 640 -> 128 -> ReLU -> 2 head.
+    (no, yes): Dropout -> Linear -> ReLU -> Dropout -> Linear.
     Train with CrossEntropyLoss, predict with argmax.
 
-    Each hidden layer is Linear -> (LayerNorm, first hidden layer only, when
-    ``norm_first_hidden``) -> ReLU -> Dropout. Dropout is also applied to the
-    fused input; with ~270 training cases it is the main regularizer of the
-    head. It is inactive in eval mode.
-
-    With the defaults the Sequential indices (Linear layers at 1 and 4) match
-    checkpoints saved before the width options existed.
+    Dropout on the fused input and the hidden layer is the main regularizer
+    of the head with ~270 training cases. It is inactive in eval mode.
     """
 
-    def __init__(self, dropout=0.3, summary_dim=GRU_SUMMARY_DIM,
-                 goal_dim=GOAL_FEATURE_DIM, hidden_dims=(128,), norm_first_hidden=False):
+    def __init__(self, summary_dim, goal_dim, hidden_dim, dropout=0.3):
         super().__init__()
-        layers = [nn.Dropout(dropout)]
-        width = summary_dim + goal_dim
-        for i, hidden in enumerate(hidden_dims):
-            layers.append(nn.Linear(width, hidden))
-            if norm_first_hidden and i == 0:
-                layers.append(nn.LayerNorm(hidden))
-            layers += [nn.ReLU(), nn.Dropout(dropout)]
-            width = hidden
-        layers.append(nn.Linear(width, 2))
-        self.mlp = nn.Sequential(*layers)
+        self.mlp = nn.Sequential(
+            nn.Dropout(dropout),
+            nn.Linear(summary_dim + goal_dim, hidden_dim),
+            nn.ReLU(),
+            nn.Dropout(dropout),
+            nn.Linear(hidden_dim, 2),
+        )
 
     def forward(self, gru_summary, goal_features):
         return self.mlp(torch.cat([gru_summary, goal_features], dim=-1))
