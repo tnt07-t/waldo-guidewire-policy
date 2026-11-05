@@ -1,0 +1,50 @@
+Run folder: docs/grp1/results/cnngru-zscore-split0-seed1-20261104-224252
+Encoded train: 267 cases (97 RETRACT, 170 ADVANCE) in 43.3s
+Encoded validation: 80 cases (34 RETRACT, 46 ADVANCE) in 14.9s
+Device: cuda | split 0 | seed 1 | feature norm zscore
+Trainable parameters: 329,602
+Metadata mean [depth_mm, offset_s]: [-10.945, -1.935] std: [10.916, 1.354]
+Raw train features: mean 0.664 | mean L2 18.93 | zeros 0.000 | per-dim std min/median/max 0.0421/0.1762/0.6936 (ratio 16.5, 0 constant dims)
+Class weights [RETRACT, ADVANCE]: [1.376, 0.785]
+Metrics: loss is class-weighted CE; bal = balanced accuracy; rec R/A = validation recall for RETRACT/ADVANCE.
+epoch    1/200 | train loss 0.5985 acc 0.629 bal 0.665 | val loss 0.7776 acc 0.412 bal 0.416 auc 0.428 rec R/A 0.44/0.39 | lr 1.0e-03 0.3s  *best
+epoch    2/200 | train loss 0.5385 acc 0.734 bal 0.727 | val loss 0.7849 acc 0.562 bal 0.558 auc 0.425 rec R/A 0.53/0.59 | lr 1.0e-03 0.1s  *best
+epoch    3/200 | train loss 0.4792 acc 0.798 bal 0.786 | val loss 0.8336 acc 0.550 bal 0.536 auc 0.454 rec R/A 0.44/0.63 | lr 1.0e-03 0.0s
+epoch    4/200 | train loss 0.4181 acc 0.790 bal 0.818 | val loss 0.8587 acc 0.525 bal 0.522 auc 0.462 rec R/A 0.50/0.54 | lr 1.0e-03 0.0s
+epoch    5/200 | train loss 0.3553 acc 0.835 bal 0.848 | val loss 0.8150 acc 0.487 bal 0.493 auc 0.504 rec R/A 0.53/0.46 | lr 1.0e-03 0.0s
+epoch    6/200 | train loss 0.2896 acc 0.914 bal 0.910 | val loss 0.9264 acc 0.562 bal 0.551 auc 0.499 rec R/A 0.47/0.63 | lr 1.0e-03 0.0s
+epoch    7/200 | train loss 0.2395 acc 0.910 bal 0.925 | val loss 0.9901 acc 0.525 bal 0.518 auc 0.508 rec R/A 0.47/0.57 | lr 1.0e-03 0.0s
+epoch    8/200 | train loss 0.1785 acc 0.944 bal 0.945 | val loss 1.0879 acc 0.500 bal 0.504 auc 0.472 rec R/A 0.53/0.48 | lr 1.0e-03 0.0s
+epoch    9/200 | train loss 0.1444 acc 0.959 bal 0.965 | val loss 1.1042 acc 0.562 bal 0.547 auc 0.488 rec R/A 0.44/0.65 | lr 1.0e-03 0.0s
+epoch   10/200 | train loss 0.0770 acc 0.993 bal 0.992 | val loss 1.1438 acc 0.525 bal 0.518 auc 0.510 rec R/A 0.47/0.57 | lr 1.0e-03 0.0s
+epoch   11/200 | train loss 0.0911 acc 0.978 bal 0.978 | val loss 1.3545 acc 0.512 bal 0.511 auc 0.552 rec R/A 0.50/0.52 | lr 1.0e-03 0.0s
+epoch   12/200 | train loss 0.0755 acc 0.981 bal 0.976 | val loss 2.3493 acc 0.625 bal 0.593 auc 0.497 rec R/A 0.38/0.80 | lr 1.0e-03 0.1s  *best
+epoch   13/200 | train loss 0.0420 acc 0.993 bal 0.992 | val loss 1.2673 acc 0.525 bal 0.518 auc 0.499 rec R/A 0.47/0.57 | lr 1.0e-03 0.0s
+epoch   14/200 | train loss 0.0703 acc 0.970 bal 0.974 | val loss 2.3262 acc 0.637 bal 0.600 auc 0.506 rec R/A 0.35/0.85 | lr 1.0e-03 0.1s  *best
+epoch   15/200 | train loss 0.0181 acc 1.000 bal 1.000 | val loss 2.2921 acc 0.438 bal 0.446 auc 0.478 rec R/A 0.50/0.39 | lr 1.0e-03 0.0s
+epoch   16/200 | train loss 0.0225 acc 0.996 bal 0.997 | val loss 2.3391 acc 0.500 bal 0.488 auc 0.467 rec R/A 0.41/0.57 | lr 1.0e-03 0.0s
+epoch   17/200 | train loss 0.0110 acc 1.000 bal 1.000 | val loss 1.9271 acc 0.500 bal 0.500 auc 0.543 rec R/A 0.50/0.50 | lr 1.0e-03 0.0s
+epoch   18/200 | train loss 0.0142 acc 0.996 bal 0.995 | val loss 2.3528 acc 0.512 bal 0.499 auc 0.499 rec R/A 0.41/0.59 | lr 1.0e-03 0.0s
+epoch   19/200 | train loss 0.0193 acc 0.996 bal 0.995 | val loss 2.1830 acc 0.438 bal 0.442 auc 0.506 rec R/A 0.47/0.41 | lr 1.0e-03 0.0s
+epoch   20/200 | train loss 0.0046 acc 1.000 bal 1.000 | val loss 2.3032 acc 0.487 bal 0.493 auc 0.535 rec R/A 0.53/0.46 | lr 1.0e-03 0.0s
+epoch   21/200 | train loss 0.0022 acc 1.000 bal 1.000 | val loss 2.4033 acc 0.600 bal 0.587 auc 0.533 rec R/A 0.50/0.67 | lr 1.0e-03 0.0s
+epoch   22/200 | train loss 0.0213 acc 0.996 bal 0.997 | val loss 2.1335 acc 0.537 bal 0.533 auc 0.526 rec R/A 0.50/0.57 | lr 1.0e-03 0.0s
+epoch   23/200 | train loss 0.0034 acc 1.000 bal 1.000 | val loss 2.1896 acc 0.525 bal 0.526 auc 0.552 rec R/A 0.53/0.52 | lr 1.0e-03 0.0s
+epoch   24/200 | train loss 0.0007 acc 1.000 bal 1.000 | val loss 2.3402 acc 0.487 bal 0.485 auc 0.533 rec R/A 0.47/0.50 | lr 1.0e-03 0.0s
+epoch   25/200 | train loss 0.0017 acc 1.000 bal 1.000 | val loss 2.5195 acc 0.500 bal 0.488 auc 0.519 rec R/A 0.41/0.57 | lr 1.0e-03 0.0s
+epoch   26/200 | train loss 0.0059 acc 1.000 bal 1.000 | val loss 2.2419 acc 0.575 bal 0.565 auc 0.558 rec R/A 0.50/0.63 | lr 1.0e-03 0.0s
+epoch   27/200 | train loss 0.0032 acc 1.000 bal 1.000 | val loss 2.9441 acc 0.512 bal 0.503 auc 0.520 rec R/A 0.44/0.57 | lr 1.0e-03 0.0s
+epoch   28/200 | train loss 0.0004 acc 1.000 bal 1.000 | val loss 2.5459 acc 0.525 bal 0.522 auc 0.526 rec R/A 0.50/0.54 | lr 1.0e-03 0.0s
+epoch   29/200 | train loss 0.0003 acc 1.000 bal 1.000 | val loss 2.4325 acc 0.537 bal 0.536 auc 0.540 rec R/A 0.53/0.54 | lr 1.0e-03 0.0s
+epoch   30/200 | train loss 0.0005 acc 1.000 bal 1.000 | val loss 2.6304 acc 0.500 bal 0.504 auc 0.541 rec R/A 0.53/0.48 | lr 1.0e-03 0.0s
+epoch   31/200 | train loss 0.0006 acc 1.000 bal 1.000 | val loss 2.6730 acc 0.562 bal 0.554 auc 0.543 rec R/A 0.50/0.61 | lr 1.0e-03 0.0s
+epoch   32/200 | train loss 0.0002 acc 1.000 bal 1.000 | val loss 2.8059 acc 0.512 bal 0.507 auc 0.536 rec R/A 0.47/0.54 | lr 1.0e-03 0.0s
+epoch   33/200 | train loss 0.0013 acc 1.000 bal 1.000 | val loss 3.0545 acc 0.525 bal 0.514 auc 0.534 rec R/A 0.44/0.59 | lr 1.0e-03 0.0s
+epoch   34/200 | train loss 0.0070 acc 0.996 bal 0.995 | val loss 3.2576 acc 0.525 bal 0.514 auc 0.531 rec R/A 0.44/0.59 | lr 1.0e-03 0.0s
+Early stop: no validation balanced-accuracy gain for 20 epochs.
+
+Best epoch 14: train bal 0.974 | val bal 0.600 acc 0.637 auc 0.506 loss 2.3262
+Validation confusion (rows true, cols pred; RETRACT, ADVANCE):
+  RETRACT  [12, 22]
+  ADVANCE  [7, 39]
+Wrote train.log, metrics.csv, summary.json, curves.png, best_model.pt to docs/grp1/results/cnngru-zscore-split0-seed1-20261104-224252

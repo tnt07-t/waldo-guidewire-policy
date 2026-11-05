@@ -1,0 +1,111 @@
+{
+  "args": {
+    "split_position": 0,
+    "seed": 2,
+    "size": 518,
+    "epochs": 200,
+    "patience": 0,
+    "batch_size": 16,
+    "lr": 0.001,
+    "weight_decay": 0.01,
+    "dropout": 0.3,
+    "grad_clip": 1.0,
+    "feature_batch_size": 8,
+    "num_workers": 4,
+    "shuffle_train_labels": true,
+    "summary_window": 20,
+    "run_name": "phase0-null-split0-seed2"
+  },
+  "device": "cuda",
+  "trainable_parameters": 330626,
+  "class_weights": [
+    1.376288652420044,
+    0.7852941155433655
+  ],
+  "meta_mean": [
+    -10.94519329071045,
+    -1.9354453086853027
+  ],
+  "meta_std": [
+    10.916144371032715,
+    1.3540903329849243
+  ],
+  "epochs_run": 200,
+  "best": {
+    "epoch": 70,
+    "train": {
+      "loss": 0.019259633496403694,
+      "acc": 0.9962546816479401,
+      "bal_acc": 0.9970588088035583,
+      "recall_retract": 1.0,
+      "recall_advance": 0.9941176176071167,
+      "auc": 1.0,
+      "confusion": [
+        [
+          97,
+          0
+        ],
+        [
+          1,
+          169
+        ]
+      ]
+    },
+    "val": {
+      "loss": 2.0860495567321777,
+      "acc": 0.6,
+      "bal_acc": 0.5984654724597931,
+      "recall_retract": 0.5882353186607361,
+      "recall_advance": 0.6086956262588501,
+      "auc": 0.5556265984654731,
+      "confusion": [
+        [
+          20,
+          14
+        ],
+        [
+          18,
+          28
+        ]
+      ]
+    }
+  },
+  "final_epoch": {
+    "epoch": 200,
+    "seconds": 0.04794623696943745,
+    "best": false,
+    "train_loss": 4.3786786818600376e-07,
+    "train_acc": 1.0,
+    "train_bal_acc": 1.0,
+    "train_recall_retract": 1.0,
+    "train_recall_advance": 1.0,
+    "train_auc": 1.0,
+    "val_loss": 4.272157669067383,
+    "val_acc": 0.5375,
+    "val_bal_acc": 0.5249360501766205,
+    "val_recall_retract": 0.44117647409439087,
+    "val_recall_advance": 0.6086956262588501,
+    "val_auc": 0.546994884910486
+  },
+  "last_window": {
+    "window": 20,
+    "first_epoch": 181,
+    "last_epoch": 200,
+    "train_bal_acc": {
+      "mean": 1.0,
+      "std": 0.0
+    },
+    "val_bal_acc": {
+      "mean": 0.5131713517010212,
+      "std": 0.015624330286792172
+    },
+    "val_auc": {
+      "mean": 0.5400255754475703,
+      "std": 0.00381708735462899
+    },
+    "val_loss": {
+      "mean": 4.348441505432129,
+      "std": 0.06152498827863403
+    }
+  }
+}
