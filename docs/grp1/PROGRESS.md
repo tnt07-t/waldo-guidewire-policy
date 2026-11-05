@@ -28,6 +28,24 @@ Owner-run Perlmutter one-case encoder verification passed (2026-11-02): the `cnn
 
 ## Progress log
 
+### 2026-11-05 - CNN-GRU training script `train_cnngru.py` (local)
+
+Added `train_cnngru.py`, which trains the GRU + MLP head on one split with the frozen ResNet-18.
+Every train/validation image is encoded once at startup and the 512-d features are kept in memory only; nothing is written to disk except optional metrics and the checkpoint.
+The test partition is never loaded.
+
+Input fixes:
+- `CNNGRUEncoder` now standardizes `[depth_mm, offset_s]` per channel with training-set mean/std (`set_metadata_stats`), stored as buffers so checkpoints and `infer_cnngru.py` reuse them.
+- `GoalClassifier(dropout=0.3)` applies dropout to the fused 640-d input and the hidden layer.
+- `CNNGRUModel.forward_features` runs the head on cached features; `forward` gives the same output from images.
+
+Training: class-weighted cross-entropy (`n / (2 * count_c)`), AdamW (lr `1e-3`, weight decay `1e-2`), batch 16, gradient clipping at 1.0, up to 200 epochs with early stopping (patience 20) on validation balanced accuracy, ties broken by lower validation loss.
+Each epoch prints train and validation loss, accuracy and balanced accuracy (both in eval mode), plus validation ROC AUC and per-class recall; the best epoch is marked `*best`.
+With `--output-dir` it also writes `metrics.csv`, `summary.json` and `best_model.pt` (a `CNNGRUModel` state_dict).
+
+Not verified: invented-input `tests/test_train_cnngru.py` has not been run; no Perlmutter training run or results exist yet.
+No staging/commit/push in this note.
+
 ### 2026-11-03 - Full CNN-GRU model in `model_cnngru.py` (local)
 
 Added `model_cnngru.py` with `CNNGRUModel(pretrained=True)`, which composes the existing pieces into one yes / no model.

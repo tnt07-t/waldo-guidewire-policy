@@ -50,13 +50,19 @@ class GoalClassifier(nn.Module):
 
     gru_summary [B, 128] + goal_features [B, 512] -> logits [B, 2] (no, yes).
     Train with CrossEntropyLoss, predict with argmax.
+
+    Dropout is applied to the fused 640-d input and to the hidden layer;
+    with ~270 training cases this is the main regularizer of the head.
+    It is inactive in eval mode.
     """
 
-    def __init__(self):
+    def __init__(self, dropout=0.3):
         super().__init__()
         self.mlp = nn.Sequential(
+            nn.Dropout(dropout),
             nn.Linear(GRU_SUMMARY_DIM + GOAL_FEATURE_DIM, 128),
             nn.ReLU(),
+            nn.Dropout(dropout),
             nn.Linear(128, 2),
         )
 

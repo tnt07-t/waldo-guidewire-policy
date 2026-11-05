@@ -7,11 +7,13 @@ Data (one batch of B, after prepare_case + collate):
   goal               [B, 3, H, W]
   label              [B]  (0 = no, 1 = yes)
 
-Training step:
-  logits = model(batch["history"], batch["depth_relative_mm"],
-                 batch["history_offsets_s"], batch["goal"])
-  loss = nn.functional.cross_entropy(logits, batch["label"])
-  loss.backward(); optimizer.step(); optimizer.zero_grad()
+Depth and offsets are standardized inside the encoder with training-set
+statistics (``model.encoder.set_metadata_stats``); the statistics are
+buffers saved in the state_dict, so inference reuses them automatically.
+
+The ResNet is frozen, so training (train_cnngru.py) encodes every image
+once and then calls ``forward_features`` on the cached 512-d vectors.
+``forward`` gives identical outputs from raw prepared images.
 
 Prediction: logits.argmax(dim=-1)  # 0 = no, 1 = yes
 """
@@ -23,12 +25,17 @@ from mlp_cnn import GoalClassifier, encode_goal
 
 
 class CNNGRUModel(nn.Module):
-    def __init__(self, pretrained=True):
+    def __init__(self, pretrained=True, dropout=0.3):
         super().__init__()
         self.encoder = CNNGRUEncoder(pretrained=pretrained)  # history path
-        self.classifier = GoalClassifier()                   # 640 -> 128 -> 2
+        self.classifier = GoalClassifier(dropout=dropout)    # 640 -> 128 -> 2
 
     def forward(self, history, depth, offsets, goal):
-        gru_summary = self.encoder(history, depth, offsets)    # [B, 128]
+        history_features = self.encoder.cnn(history)           # [B, T, 512]
         goal_features = encode_goal(self.encoder.cnn, goal)    # [B, 512] same CNN
-        return self.classifier(gru_summary, goal_features)     # [B, 2] logits
+        return self.forward_features(history_features, depth, offsets, goal_features)
+
+    def forward_features(self, history_features, depth, offsets, goal_features):
+        """Head only: frozen-CNN features in, [B, 2] logits out."""
+        gru_summary = self.encoder.summarize(history_features, depth, offsets)  # [B, 128]
+        return self.classifier(gru_summary, goal_features)
