@@ -8,7 +8,8 @@ class FeatureHead(nn.Module):
     """Common late-goal fusion for static and temporal comparisons."""
 
     def __init__(self, kind, feature_dim=512, width=64, dropout=0.1,
-                 position_embeddings=True, classifier_width=None):
+                 position_embeddings=True, classifier_width=None,
+                 classifier_activation='relu'):
         super().__init__()
         if kind not in ("latest_goal_mlp", "goal_metadata_mlp", "latest_mlp", "mean_mlp", "attention", "gru", "lstm"):
             raise ValueError("Unknown head: " + kind)
@@ -18,6 +19,8 @@ class FeatureHead(nn.Module):
         classifier_width = width if classifier_width is None else classifier_width
         if classifier_width <= 0:
             raise ValueError("classifier_width must be positive")
+        if classifier_activation not in ('relu','leaky_relu'):
+            raise ValueError('Unsupported classifier activation')
         if kind in ("latest_goal_mlp", "goal_metadata_mlp"):
             fused = feature_dim + 12 if kind == "goal_metadata_mlp" else 2 * feature_dim
         elif kind == "latest_mlp":
@@ -40,7 +43,8 @@ class FeatureHead(nn.Module):
                 cls = nn.GRU if kind == "gru" else nn.LSTM
                 self.temporal = cls(width, width, batch_first=True)
             fused = width + feature_dim
-        self.classifier = nn.Sequential(nn.Linear(fused, classifier_width), nn.ReLU(),
+        activation = nn.ReLU() if classifier_activation == 'relu' else nn.LeakyReLU(negative_slope=.01)
+        self.classifier = nn.Sequential(nn.Linear(fused, classifier_width), activation,
                                         nn.Dropout(dropout), nn.Linear(classifier_width, 2))
 
     def forward(self, history, goal, metadata):

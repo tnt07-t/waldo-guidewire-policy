@@ -91,6 +91,25 @@ class DiagnosticTests(unittest.TestCase):
         self.assertGreater(r['gradient_l2']['classifier.0.weight'],0)
         self.assertGreater(r['advance_probability_std'],0)
 
+    def test_leaky_relu_restores_gradients_for_same_negative_preactivations(self):
+        relu=FeatureHead('latest_goal_mlp',8,8,dropout=0)
+        with torch.no_grad():
+            relu.classifier[0].weight.zero_()
+            relu.classifier[0].bias.fill_(-1)
+            relu.classifier[3].bias.copy_(torch.tensor([-.1,.1]))
+        leaky=FeatureHead('latest_goal_mlp',8,8,dropout=0,classifier_activation='leaky_relu')
+        leaky.load_state_dict(relu.state_dict())
+        dead=classifier_health(relu,self.data,self.data)
+        active=classifier_health(leaky,self.data,self.data)
+        self.assertEqual(dead['gradient_l2']['classifier.0.weight'],0)
+        self.assertGreater(active['gradient_l2']['classifier.0.weight'],0)
+        self.assertEqual(active['activation'],'LeakyReLU')
+        self.assertAlmostEqual(active['negative_slope'],.01)
+        before=leaky.classifier[0].weight.detach().clone()
+        fit(leaky,self.data,self.data,epochs=1,patience=1)
+        self.assertFalse(torch.equal(before,leaky.classifier[0].weight))
+        self.assertEqual(sum(p.numel() for p in leaky.parameters()),sum(p.numel() for p in relu.parameters()))
+
     def test_intervention_negative_control_latest_ignores_old_images(self):
         head = FeatureHead('latest_mlp',8,8,dropout=0)
         r = interventions(head,self.data,self.data)

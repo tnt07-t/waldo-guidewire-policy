@@ -11,6 +11,14 @@ These are team proposals, not confirmed course requirements. Friday task ownersh
 
 ## Current status and next steps
 
+**2026-11-05 — Inactive ReLU confirmed:** final latest+goal head has 64/64 hidden
+units inactive on training, negative preactivations throughout, constant .50386977
+ADVANCE probability, AUC .500 and zero hidden/output-weight loss gradients.
+Only output-bias gradient remains. Added an explicit fixed-slope LeakyReLU
+classifier option as one bounded remedy; ReLU default and training recipe remain
+fixed. Real remedy results are pending. See the
+[activation comparison](ATTENTION_EXPERIMENTS.md#confirmed-inactive-classifier-and-activation-control--2026-11-05).
+
 **2026-11-05 — Latest+goal failure narrowed:** every reported epoch has train/
 validation BA .500; predictions switch from all RETRACT to all ADVANCE while
 probabilities approach .5. The loss decline is compatible with near-constant

@@ -66,7 +66,10 @@ partitions, training-only metadata scaling and optimization/selection rules:
 | attention | six history images + goal | aligned per step | projected temporal attention |
 | gru / lstm | six history images + goal | aligned per step | projected one-layer recurrent model |
 
-All heads use ReLU/dropout in the final classifier. GRU/LSTM options are local
+All heads default to ReLU/dropout in the final classifier. An explicit
+`--classifier-activation leaky_relu` comparison retains the MLP and changes only
+the hidden activation (fixed negative slope .01); checkpoint config records the
+choice. GRU/LSTM options are local
 comparison controls, not replacements for existing model code or recorded
 results. The projection changes the architecture relative to the direct
 386-input ViT GRU. Coordinate input/fusion/projection settings with Group 1
@@ -288,7 +291,8 @@ saved = torch.load(checkpoint_path, map_location="cpu", weights_only=True)
 cfg = saved["config"]
 head = FeatureHead(saved["kind"], cfg["feature_dim"], cfg["width"], cfg["dropout"],
                    position_embeddings=cfg.get("position_embeddings", True),
-                   classifier_width=cfg.get("classifier_width", cfg["width"]))
+                   classifier_width=cfg.get("classifier_width", cfg["width"]),
+                   classifier_activation=cfg.get("classifier_activation", "relu"))
 head.load_state_dict(saved["head_state"])
 policy = FrozenPolicy(FrameEncoder(), head).to(device).eval()
 meta = torch.tensor(list(zip(case["depth_relative_mm"], case["history_offsets_s"])),

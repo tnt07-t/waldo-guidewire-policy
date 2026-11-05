@@ -265,6 +265,8 @@ def main(argv=None):
     parser.add_argument("--no-position-embeddings", action="store_true")
     parser.add_argument("--classifier-width", type=int)
     parser.add_argument("--dropout", type=float, default=0.1)
+    parser.add_argument('--classifier-activation',choices=('relu','leaky_relu'),default='relu',
+                        help='Final MLP activation only; leaky_relu uses fixed negative slope 0.01')
     parser.add_argument("--benchmark", action="store_true", help="Also time raw-case preparation + encoder + head")
     args = parser.parse_args(argv)
     if not os.environ.get("PSCRATCH") or args.data_dir is None:
@@ -359,7 +361,8 @@ def main(argv=None):
                 torch.cuda.manual_seed_all(seed)
             head = FeatureHead(kind, feature_dim, variant["width"], args.dropout,
                                position_embeddings=variant["position_embeddings"],
-                               classifier_width=variant["classifier_width"]).to(args.device)
+                               classifier_width=variant["classifier_width"],
+                               classifier_activation=args.classifier_activation).to(args.device)
             checkpoint_config = dict(config, width=variant["width"],
                                      classifier_width=variant["classifier_width"],
                                      position_embeddings=variant["position_embeddings"])

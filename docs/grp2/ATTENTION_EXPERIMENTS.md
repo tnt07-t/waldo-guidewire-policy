@@ -1,5 +1,63 @@
 # CNN–attention development experiments
 
+## Confirmed inactive classifier and activation control — 2026-11-05
+
+The final latest+goal checkpoint health report confirms all 64 hidden ReLU units
+are zero for all 267 training cases. Preactivations range -5.4137635 to
+-.039026309. ADVANCE probability is exactly .50386977 for every case (std 0),
+ROC AUC .500, weighted evaluation loss .6931771. Hidden weight/bias and output
+weight loss-gradient norms are zero; only output-bias gradient is nonzero
+(.0054726447). This establishes an inactive hidden layer at the inspected final
+state, with input-independent output scores. The time/cause of unit death is
+not established by final-state inspection alone.
+
+This run cannot evaluate image information quality or establish metadata
+necessity. Additional metadata changes both input width/initialization and
+optimization geometry; a functioning metadata-enabled control does not prove
+the missing numerical signal caused the inactive-ReLU failure.
+
+### Single-factor remedy to test
+
+Added explicit `--classifier-activation leaky_relu`, fixed negative slope .01.
+The final hidden MLP activation changes; encoder, image inputs, head width,
+parameter count, dropout, optimizer, learning rate, split and selection budget
+remain fixed. ReLU remains the default. Attention's internal GELU is unchanged.
+PyTorch's [LeakyReLU definition](https://docs.pytorch.org/docs/2.15/generated/torch.nn.functional.leaky_relu.html)
+retains a nonzero negative-input slope, directly addressing the zero-gradient
+gate. This does not guarantee good optimization or validation generalization.
+
+Checkpoint config records classifier activation. Diagnostic and inference loaders
+reconstruct that activation; legacy checkpoints without the field use ReLU.
+Both activations have no learned parameters. Start fresh with seed 0 rather than
+continuing the dead checkpoint. No activation/slope sweep is introduced.
+
+```sh
+python3 -B temporal_evaluation.py --split-position 0 --device cuda \
+  --models latest_goal_mlp --width 64 --classifier-width 64 \
+  --classifier-activation leaky_relu --seeds 0 --batch-size 32 \
+  --epochs 100 --patience 15 --lr 0.001 --weight-decay 0.001 \
+  --dropout 0.1 --benchmark \
+  --output-dir "$PSCRATCH/waldo-temporal/latest-goal-leaky-01"
+```
+
+First inspect per-epoch training behavior and classifier health at the final
+checkpoint. Improvement in training discrimination would support resolving this
+mechanical failure; validation BA may remain weak. Before making input-role
+claims across models, use the same chosen activation for matched controls under
+a predeclared budget. A LeakyReLU run versus metadata-enabled ReLU runs changes
+activation as well as information and cannot isolate metadata value.
+
+**Real activation-comparison result: pending.** No new GPU training has been
+launched by assistant tools. ReLU results remain preserved and explicitly marked
+as a training failure. No width or normalization change is selected.
+
+**Verification:** all 61 repository synthetic tests passed. A same-weight negative-
+preactivation control verifies zero hidden-weight gradients under ReLU and nonzero
+gradients plus an optimizer update under LeakyReLU. Parameter counts are unchanged.
+End-to-end static training/checkpoint/diagnostic tests verify activation persistence
+and reconstruction, including the fixed .01 negative slope. No real performance
+claim follows from these synthetic checks.
+
 ## No-metadata MLP training failure inspection — 2026-11-05
 
 Supplied per-epoch history for latest+goal without metadata shows training BA

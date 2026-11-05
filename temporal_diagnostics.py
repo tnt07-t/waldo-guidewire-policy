@@ -184,7 +184,9 @@ def classifier_health(head, data, training):
             hook.remove()
     activation = captured['activation']
     probability = logits.detach().softmax(-1)[:,1]
-    return {"hidden_units": activation.shape[1],
+    return {"activation": head.classifier[1].__class__.__name__,
+            "negative_slope": float(getattr(head.classifier[1],'negative_slope',0.)),
+            "hidden_units": activation.shape[1],
             "units_zero_for_all_cases": int((activation == 0).all(0).sum()),
             "fraction_zero_activations": float((activation == 0).float().mean()),
             "preactivation_min": float(captured['pre'].min()),
@@ -259,7 +261,8 @@ def main(argv=None):
         parser.error('This diagnostic CLI currently supports ResNet checkpoints only')
     head = FeatureHead(saved['kind'],cfg['feature_dim'],cfg['width'],cfg['dropout'],
                        position_embeddings=cfg.get('position_embeddings',True),
-                       classifier_width=cfg.get('classifier_width',cfg['width'])).to(args.device)
+                       classifier_width=cfg.get('classifier_width',cfg['width']),
+                       classifier_activation=cfg.get('classifier_activation','relu')).to(args.device)
     head.load_state_dict(saved['head_state']); head.eval()
     from dataset import GuidewireDataset
     from cnn import FrameEncoder
@@ -312,7 +315,8 @@ def main(argv=None):
              'Partition: {}. Cases: {}. Checkpoint: {}, epoch {}.'.format(
                  args.partition,len(data[3]),report['checkpoint_role'],report['checkpoint_epoch'])]
     health=report['classifier_health']
-    lines += ['', '## Classifier health', '', '| Measurement | Value |','|---|---:|']
+    lines += ['', '## Classifier health', '', 'Activation: {}.'.format(health['activation']), '',
+              '| Measurement | Value |','|---|---:|']
     for key,value in health.items():
         if isinstance(value,(int,float)):
             lines.append('| {} | {:.8g} |'.format(key,value))

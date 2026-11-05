@@ -73,7 +73,8 @@ class GoalControlTests(unittest.TestCase):
                                                         'validation':list(range(8,12)),'test':list(range(12,16))}]))
             with patch.dict(os.environ,{'PSCRATCH':str(root)}),injected_cnn(Encoder):
                 main(['--data-dir',str(data),'--output-dir',str(root/'run'),'--split-position','0',
-                      '--models','latest_goal_mlp','goal_metadata_mlp','--device','cpu','--epochs','2','--benchmark'])
+                      '--models','latest_goal_mlp','goal_metadata_mlp','--device','cpu','--epochs','2',
+                      '--classifier-activation','leaky_relu','--benchmark'])
                 diagnostic_main(['--data-dir',str(data),'--checkpoint',str(root/'run'/'latest_goal_mlp-seed0-final.pt'),
                                  '--output-dir',str(root/'health'),'--device','cpu','--health-only'])
             report=json.loads((root/'run'/'metrics.json').read_text())
@@ -83,13 +84,15 @@ class GoalControlTests(unittest.TestCase):
                 r=report['results'][kind+':seed=0']
                 self.assertEqual(r['latency']['images'],2 if kind=='latest_goal_mlp' else 1)
                 saved=torch.load(root/'run'/(kind+'-seed0.pt'),weights_only=True)
-                head=FeatureHead(kind)
+                head=FeatureHead(kind,classifier_activation=saved['config']['classifier_activation'])
                 head.load_state_dict(saved['head_state'])
+                self.assertIsInstance(head.classifier[1],nn.LeakyReLU)
                 self.assertEqual(r['epochs_run'],2)
                 self.assertTrue((root/'run'/(kind+'-seed0-final.pt')).exists())
             health=json.loads((root/'health'/'diagnostics.json').read_text())
             self.assertEqual(health['kind'],'latest_goal_mlp')
             self.assertEqual(health['classifier_health']['hidden_units'],64)
+            self.assertEqual(health['classifier_health']['activation'],'LeakyReLU')
             self.assertNotIn('routing',health)
             self.assertTrue(health['encoder_unchanged'])
 
