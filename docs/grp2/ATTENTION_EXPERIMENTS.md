@@ -118,10 +118,128 @@ CLI/report flow, per-epoch counts/BA consistency and selected/final separation.
 Spatial tests verify one-image re-encoding and seven 3×3 grids. Synthetic tests
 do not establish real diagnostic outcomes or semantic validity.
 
-**Real results:** pending authenticated Perlmutter execution. No new information
-loss, focus location, model improvement or architecture decision is claimed.
-Record diagnostics, per-epoch curves and one bounded follow-up decision here
-after permitted aggregates are reviewed. No additional model sweep is automatic.
+**Real results:** training-partition diagnostics of the selected epoch-1
+checkpoint were supplied and reviewed below. The new per-epoch development run
+remains pending. No semantic loss, focus location or architecture improvement
+is established. No additional model sweep is automatic.
+
+### 2026-11-04 — Selected-checkpoint training diagnostics
+
+Supplied report covers 267 training cases at selected epoch 1. Latest-query
+attention averaged across cases is near uniform for every head (entries
+.163–.171, compared with uniform 1/6 ≈ .167). Mean weights alone do not establish
+uniform routing in individual cases; per-case variability and average entropy
+in the full private report remain to review.
+
+Training-mean image replacements changed mean ADVANCE probabilities by less
+than .00005 at f1–f5 (displayed .0000), .0005 at f6, .0001 for repeated latest
+imagery, and .0004 for reversed visual history. Goal replacement changed mean
+absolute probability by .0108. Metadata/depth/time replacements displayed .0000.
+Every intervention produced zero prediction flips and zero BA delta. These are
+fixed-checkpoint sensitivities, not controlled retraining or proof inputs lack
+useful information. Rounding masks small nonzero effects. Goal perturbation
+was the largest reported effect but establishes neither correct target use nor
+goal-only superiority.
+
+| Stage | RMS | Between-case std | Effective rank | Depth probe R² | Time probe R² |
+|---|---:|---:|---:|---:|---:|
+| Raw steps | .8401 | .1838 | 41.96 | .395 | .792 |
+| Projected steps | 1.4730 | .1304 | 25.83 | .651 | .456 |
+| Final summary | 1.0021 | .0485 | 21.81 | -.221 | -.126 |
+
+Summary representations retain variation but are less variable across cases;
+different dimensions, learned scales and normalization prevent direct semantic
+loss attribution. Negative summary probe R² means poor held-out linear recovery
+under this fixed decoder. Raw inputs explicitly include the depth/time targets,
+yet raw recovery is imperfect and projected depth recovery is higher: probe
+regularization, correlated features, limited episodes and generalization affect
+the result. Add target-only oracle and training-mean decoder controls before
+using these probes to attribute information loss. Poor linear recovery does not
+establish absence of nonlinear information or task-relevant visual detail.
+
+**Next:** run the unchanged fixed-64 recipe with full per-epoch metrics to
+distinguish weak full-training fit from later generalization failure. Review
+routing entropy/variability and probe controls before any width change.
+Spatial perturbation results remain private and were not supplied here.
+
+### 2026-11-04 — Full per-epoch logging run
+
+Supplied learning summary from the unchanged fixed-64 recipe:
+
+| Model | Best epoch | Epochs run | Selected train BA | Selected validation BA | Final train BA | Final validation BA |
+|---|---:|---:|---:|---:|---:|---:|
+| Latest MLP | 2 | 17 | .577 | .597 | .699 | .478 |
+| Mean-history MLP | 5 | 20 | .596 | .601 | .621 | .487 |
+| Attention | 1 | 16 | .500 | .500 | .636 | .425 |
+
+Attention does improve full-partition training classification after the selected
+epoch, but validation worsens. The same end-point divergence appears in both
+MLP controls. This supports investigating generalization, episode/context shift
+and input reliance before a capacity increase; it does not prove an exclusive
+cause or rule out optimization/capacity limitations. Selected epochs/scores match
+the previously supplied run at displayed precision.
+
+The earlier uniform-routing/sensitivity inspection describes the restored epoch-1
+attention checkpoint only. It cannot characterize final-epoch representations.
+The supplied run saved only the selected head; final metrics were retained, but
+final weights were not separately saved. Any selected-versus-final representation
+comparison needs explicit final-state persistence without changing the selection
+rule. Inspect final recalls, prediction counts and losses from the existing report
+before another training experiment. No 128-width or new regularization result is
+claimed. Latest MLP remains a provisional speed/accuracy reference, not a final
+model or evidence that visual history is intrinsically harmful.
+
+### 2026-11-04 — Final-epoch class behavior
+
+Supplied aggregate final metrics:
+
+| Model / partition | Loss | BA | Retract recall | Advance recall | Predicted retract / advance |
+|---|---:|---:|---:|---:|---|
+| Latest / train | .6580 | .6991 | .7216 | .6765 | 125 / 142 |
+| Latest / validation | .7017 | .4783 | .5000 | .4565 | 42 / 38 |
+| Mean / train | .6462 | .6209 | .3711 | .8706 | 58 / 209 |
+| Mean / validation | .6995 | .4866 | .1471 | .8261 | 13 / 67 |
+| Attention / train | .6617 | .6364 | .5258 | .7471 | 94 / 173 |
+| Attention / validation | .7141 | .4252 | .1765 | .6739 | 21 / 59 |
+
+Attention is not a constant predictor at the final epoch. Both recalls improve
+above chance on training, but validation RETRACT recall is weak and predictions
+favor ADVANCE. Mean has a stronger ADVANCE preference; latest has nearly balanced
+validation prediction counts and still performs poorly. Therefore one-class
+collapse cannot explain all models or all stages. Validation losses exceed the
+.6931 loss of assigning probability .5 to every case; confidence/calibration and
+classification can differ, so this is not proof of absent predictive information.
+Generalization weakness is shared across heads. No result demonstrates that
+earlier images are intrinsically harmful or that width 128 is the remedy.
+
+### Selected versus final checkpoint inspection
+
+The runner now saves `<model>-seed<N>-final.pt` before restoring the selected
+state; the original `<model>-seed<N>.pt` remains the validation-selected model.
+Role/epoch are explicit in checkpoint and diagnostic reports. Final weights are
+for diagnosing learning dynamics, not alternative validation-driven selection.
+Training, early stopping, architecture and selection rule remain unchanged.
+Older runs lack final weights and cannot reconstruct the final head from metrics.
+All 55 synthetic repository tests passed after this change. Tests verify final
+state saving occurs before selected-state restoration and both checkpoint roles
+reload with correct epochs. No new real-data training result is implied.
+
+For a future instrumented run, compare aggregate training diagnostics from:
+
+```sh
+python3 -B temporal_diagnostics.py \
+  --checkpoint "$PSCRATCH/waldo-temporal/dev64-checkpoints-01/attention-seed0.pt" \
+  --partition train --device cuda \
+  --output-dir "$PSCRATCH/waldo-temporal/inspect-selected-01"
+python3 -B temporal_diagnostics.py \
+  --checkpoint "$PSCRATCH/waldo-temporal/dev64-checkpoints-01/attention-seed0-final.pt" \
+  --partition train --device cuda \
+  --output-dir "$PSCRATCH/waldo-temporal/inspect-final-01"
+```
+
+The example input directory must first be produced by the unchanged fixed-64
+training command with that new output suffix. These commands are a run plan,
+not completed results. No extra allocation or retraining has been initiated.
 
 ## Scope and rationale — 2026-11-03
 

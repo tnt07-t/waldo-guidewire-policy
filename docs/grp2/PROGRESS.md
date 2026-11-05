@@ -11,6 +11,31 @@ These are team proposals, not confirmed course requirements. Friday task ownersh
 
 ## Current status and next steps
 
+**2026-11-04 — Final class behavior reviewed:** final attention predicts both
+classes, with train recalls .526/.747 versus validation .176/.674 (retract/advance).
+Mean favors ADVANCE more strongly; latest validation counts are nearly balanced
+and still weak. Constant prediction does not explain final behavior. Added
+separate final-state checkpoint persistence and explicit role/epoch inspection
+for subsequent runs; the selected model and training recipe remain unchanged.
+Existing final weights cannot be recovered from metrics. No new run is claimed.
+
+**2026-11-04 — Per-epoch learning evidence:** unchanged fixed-64 run reproduces
+selected BA at displayed precision. Final train/validation BA: latest .699/.478,
+mean .621/.487, attention .636/.425. Attention learns training labels beyond
+epoch 1 while validation worsens; increasing width is not the first supported
+response. Review class behavior/loss and generalization controls. Earlier routing
+inspection applies only to the selected epoch-1 head. See
+[learning results](ATTENTION_EXPERIMENTS.md#2026-11-04--full-per-epoch-logging-run).
+
+**2026-11-04 — Epoch-1 attention inspection:** supplied training-partition report
+shows near-uniform case-averaged routing and minimal prediction sensitivity to
+visual history/metadata. Goal replacement changed probabilities more (.0108
+mean absolute change), with no flips for any control. Summary depth/time linear
+recovery is weak, but imperfect raw-target recovery limits loss attribution.
+No causal focus or semantic loss is established. Full per-epoch training metrics
+and decoder controls remain next; no width sweep is justified by this report.
+See [diagnostic results](ATTENTION_EXPERIMENTS.md#2026-11-04--selected-checkpoint-training-diagnostics).
+
 **2026-11-04 — Attention learning/representation diagnostics:** added complete
 per-epoch train/validation BA, recalls, confusion/prediction counts, probability
 means and eval loss, preserving the checkpoint rule. Initial/final/selected

@@ -63,7 +63,8 @@ def assess(head, data):
 
 
 def fit(head, train, validation, *, epochs=100, patience=15, batch_size=32,
-        lr=0.001, weight_decay=0.001, seed=0, epoch_callback=None):
+        lr=0.001, weight_decay=0.001, seed=0, epoch_callback=None,
+        final_checkpoint_callback=None):
     """Train-only weighted loss; select checkpoint by validation BA, ties earliest."""
     if min(epochs, patience, batch_size) < 1 or lr <= 0 or weight_decay < 0:
         raise ValueError("Invalid training budget")
@@ -110,6 +111,8 @@ def fit(head, train, validation, *, epochs=100, patience=15, batch_size=32,
         if epoch - best_epoch >= patience:
             break
     final_metrics = {"train": history[-1]["train"], "validation": history[-1]["validation"]}
+    if final_checkpoint_callback is not None:
+        final_checkpoint_callback(head.state_dict(), epoch)
     head.load_state_dict(best_state)
     head.eval()
     return {"best_epoch": best_epoch, "epochs_run": epoch, "history": history,
@@ -315,10 +318,17 @@ def main(argv=None):
             head = FeatureHead(kind, feature_dim, variant["width"], args.dropout,
                                position_embeddings=variant["position_embeddings"],
                                classifier_width=variant["classifier_width"]).to(args.device)
+            checkpoint_config = dict(config, width=variant["width"],
+                                     classifier_width=variant["classifier_width"],
+                                     position_embeddings=variant["position_embeddings"])
             result = fit(head, train, validation, epochs=args.epochs, patience=args.patience,
                          batch_size=args.batch_size, lr=args.lr, weight_decay=args.weight_decay, seed=seed,
                          epoch_callback=lambda history: write_json(
-                             args.output_dir / (variant["name"] + "-seed" + str(seed) + "-history.json"), history))
+                             args.output_dir / (variant["name"] + "-seed" + str(seed) + "-history.json"), history),
+                         final_checkpoint_callback=lambda state, epoch: torch.save(
+                             {"head_state": state, "config": checkpoint_config, "kind": kind,
+                              "seed": seed, "checkpoint_role": "final", "checkpoint_epoch": epoch},
+                             args.output_dir / (variant["name"] + "-seed" + str(seed) + "-final.pt")))
             train_p, val_p = probabilities(head, train), probabilities(head, validation)
             key = variant["name"] + ":seed=" + str(seed)
             result.update(variant=variant, train=assess(head, train),
@@ -331,11 +341,9 @@ def main(argv=None):
                                                encoder, head, scale, args.device)
             report["results"][key] = result
             predictions["advance_probabilities"][key] = val_p.tolist()
-            checkpoint_config = dict(config, width=variant["width"],
-                                     classifier_width=variant["classifier_width"],
-                                     position_embeddings=variant["position_embeddings"])
             torch.save({"head_state": head.state_dict(), "config": checkpoint_config, "kind": kind,
-                        "seed": seed, "best_epoch": result["best_epoch"]},
+                        "seed": seed, "best_epoch": result["best_epoch"],
+                        "checkpoint_role": "selected", "checkpoint_epoch": result["best_epoch"]},
                        args.output_dir / (variant["name"] + "-seed" + str(seed) + ".pt"))
             write_json(args.output_dir / "metrics.json", report)
             write_json(args.output_dir / "validation_predictions.private.json", predictions)

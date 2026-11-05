@@ -248,7 +248,8 @@ def main(argv=None):
             head,encoder,prepared,tuple(x[index:index+1] for x in training))
     verify_frozen(encoder.backbone,snapshot)
     report.update(partition=args.partition, cases=len(data[3]), checkpoint_sha256=hashlib.sha256(args.checkpoint.read_bytes()).hexdigest(),
-                  selected_epoch=saved['best_epoch'], checkpoint_config=cfg,
+                  checkpoint_epoch=saved.get('checkpoint_epoch',saved.get('best_epoch')),
+                  checkpoint_role=saved.get('checkpoint_role','selected'), checkpoint_config=cfg,
                   source_sha256={p:hashlib.sha256((Path(__file__).parent/p).read_bytes()).hexdigest()
                                  for p in ('temporal_diagnostics.py','temporal_models.py','temporal_evaluation.py','evaluation.py','cnn.py','preprocessing.py','dataset.py')},
                   torch_version=str(torch.__version__), device=args.device)
@@ -256,7 +257,8 @@ def main(argv=None):
     args.output_dir.mkdir(parents=True,mode=0o700)
     write_json(args.output_dir/'diagnostics.json',report)
     lines = ['# Temporal diagnostics','', 'Aggregate checkpoint inspection; no semantic localization or final performance claim.', '',
-             'Partition: {}. Cases: {}. Selected epoch: {}.'.format(args.partition,len(data[3]),saved['best_epoch']), '',
+             'Partition: {}. Cases: {}. Checkpoint: {}, epoch {}.'.format(
+                 args.partition,len(data[3]),report['checkpoint_role'],report['checkpoint_epoch']), '',
              '## Latest-query temporal attention', '', '| Head | f1 | f2 | f3 | f4 | f5 | f6 |',
              '|---|---:|---:|---:|---:|---:|---:|']
     for i,row in enumerate(report['routing']['latest_query_mean_per_head']):

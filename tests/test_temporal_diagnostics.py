@@ -1,6 +1,7 @@
 """Invented inputs only: diagnostic consistency, sensitivity and probe controls."""
 import unittest
 import json
+import copy
 import os
 from pathlib import Path
 import tempfile
@@ -109,6 +110,20 @@ class DiagnosticTests(unittest.TestCase):
         for k,v in head.state_dict().items():
             torch.testing.assert_close(v,state[k])
 
+    def test_final_state_is_saved_before_selected_state_restoration(self):
+        head=FeatureHead('latest_mlp',8,8,dropout=0)
+        captured={}
+        def save(state,epoch):
+            captured['state']=copy.deepcopy(state)
+            captured['epoch']=epoch
+        result=fit(head,self.data,self.data,epochs=3,patience=2,
+                   final_checkpoint_callback=save)
+        final=FeatureHead('latest_mlp',8,8,dropout=0)
+        final.load_state_dict(captured['state'])
+        self.assertEqual(captured['epoch'],result['epochs_run'])
+        self.assertAlmostEqual(assess(final,self.data)['loss'],result['final_epoch_metrics']['train']['loss'])
+        self.assertAlmostEqual(assess(head,self.data)['loss'],result['history'][result['best_epoch']-1]['train']['loss'])
+
     def test_spatial_edits_reencode_one_image_at_a_time(self):
         class Encoder(nn.Module):
             def __init__(self):
@@ -151,6 +166,8 @@ class DiagnosticTests(unittest.TestCase):
                             '--models','attention','--device','cpu','--epochs','2','--width','8'])
                 diagnostic_main(['--data-dir',str(data),'--checkpoint',str(root/'run'/'attention-seed0.pt'),
                                  '--output-dir',str(root/'inspect'),'--device','cpu','--spatial-case-index','0'])
+                diagnostic_main(['--data-dir',str(data),'--checkpoint',str(root/'run'/'attention-seed0-final.pt'),
+                                 '--output-dir',str(root/'final-inspect'),'--device','cpu'])
             report=json.loads((root/'inspect'/'diagnostics.json').read_text())
             self.assertEqual(report['partition'],'train')
             self.assertEqual(report['cases'],8)
@@ -162,6 +179,9 @@ class DiagnosticTests(unittest.TestCase):
             self.assertNotIn('row_index',report)
             self.assertTrue((root/'run'/'learning_curves.csv').exists())
             self.assertTrue((root/'run'/'learning_summary.md').exists())
+            final_report=json.loads((root/'final-inspect'/'diagnostics.json').read_text())
+            self.assertEqual(final_report['checkpoint_role'],'final')
+            self.assertEqual(final_report['checkpoint_epoch'],2)
 
 
 if __name__ == '__main__':

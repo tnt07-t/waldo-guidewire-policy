@@ -239,6 +239,9 @@ Neither command has been executed on real data by assistant tools.
 - `validation_predictions.private.json`: aligned case-level predictions; private.
 - `<model>-seed<N>.pt`: selected head weights and reconstruction config/scales;
   private. These do not include encoder weights or optimizer state for resuming.
+- `<model>-seed<N>-final.pt`: final evaluated epoch head for learning diagnostics;
+  private. This does not replace the validation-selected checkpoint. Older runs
+  may lack this file; saved aggregate metrics cannot reconstruct missing weights.
 - `status.json`: extracting/completed marker. A failed run may leave partial
   files; absent completed status is not a successful full comparison.
 
