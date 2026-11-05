@@ -18,7 +18,7 @@ from temporal_evaluation import fit, assess
 from temporal_evaluation import main as train_main
 from temporal_diagnostics import (stages, routing_summary, interventions,
                                   representation_stats, metadata_recoverability,
-                                  spatial_sensitivity)
+                                  spatial_sensitivity, classifier_health)
 from temporal_diagnostics import main as diagnostic_main
 
 
@@ -62,6 +62,34 @@ class DiagnosticTests(unittest.TestCase):
         stats = representation_stats(torch.ones(8,6,4))
         self.assertEqual(stats['effective_rank'],0)
         self.assertEqual(stats['between_case_std_mean'],0)
+
+    def test_dead_relu_health_control_and_no_gradient_mutation(self):
+        head=FeatureHead('latest_goal_mlp',8,8,dropout=0)
+        with torch.no_grad():
+            head.classifier[0].weight.zero_()
+            head.classifier[0].bias.fill_(-1)
+            head.classifier[3].bias.copy_(torch.tensor([-.1,.1]))
+        before={k:v.clone() for k,v in head.state_dict().items()}
+        r=classifier_health(head,self.data,self.data)
+        self.assertEqual(r['units_zero_for_all_cases'],8)
+        self.assertEqual(r['fraction_zero_activations'],1)
+        self.assertLess(r['advance_probability_std'],1e-6)
+        self.assertEqual(r['roc_auc'],.5)
+        self.assertEqual(r['gradient_l2']['classifier.0.weight'],0)
+        self.assertEqual(r['gradient_l2']['classifier.3.weight'],0)
+        self.assertGreater(r['gradient_l2']['classifier.3.bias'],0)
+        self.assertTrue(all(p.grad is None for p in head.parameters()))
+        for k,v in head.state_dict().items():
+            torch.testing.assert_close(v,before[k])
+
+    def test_active_relu_health_control(self):
+        head=FeatureHead('latest_goal_mlp',8,8,dropout=0)
+        with torch.no_grad():
+            head.classifier[0].bias.fill_(3)
+        r=classifier_health(head,self.data,self.data)
+        self.assertLess(r['units_zero_for_all_cases'],8)
+        self.assertGreater(r['gradient_l2']['classifier.0.weight'],0)
+        self.assertGreater(r['advance_probability_std'],0)
 
     def test_intervention_negative_control_latest_ignores_old_images(self):
         head = FeatureHead('latest_mlp',8,8,dropout=0)

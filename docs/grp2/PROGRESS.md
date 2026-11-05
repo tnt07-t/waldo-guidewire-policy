@@ -11,6 +11,23 @@ These are team proposals, not confirmed course requirements. Friday task ownersh
 
 ## Current status and next steps
 
+**2026-11-05 — Latest+goal failure narrowed:** every reported epoch has train/
+validation BA .500; predictions switch from all RETRACT to all ADVANCE while
+probabilities approach .5. The loss decline is compatible with near-constant
+prediction. Added read-only static classifier-health checks for inactive ReLU
+units, score spread and loss gradients; no new training or model change.
+Inactive ReLU remains a hypothesis pending real checkpoint inspection. See
+[failure inspection](ATTENTION_EXPERIMENTS.md#no-metadata-mlp-training-failure-inspection--2026-11-05).
+
+**2026-11-04 — Static input-role results:** latest+goal without metadata selected/
+final BA .500; goal+metadata selected validation .561, final train/validation
+.637/.490; full static reference selected validation .597, final .699/.478.
+The full static reference remains the highest observed point in this comparison.
+Weak no-metadata training fit limits claims about metadata necessity or noise.
+No earlier visual history was processed by these controls. Inspect the existing
+no-metadata learning history before a follow-up; results and limitations are in
+[input-role results](ATTENTION_EXPERIMENTS.md#2026-11-04--completed-static-input-role-comparison).
+
 **2026-11-04 — Static input-role controls prepared:** added latest+goal without
 metadata and goal+metadata without history imagery, alongside the full static
 reference. Hidden MLP/training/checkpoint rules remain fixed; parameter counts

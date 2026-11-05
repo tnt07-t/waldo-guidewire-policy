@@ -15,6 +15,7 @@ import torch
 from sklearn.linear_model import Ridge
 from sklearn.pipeline import make_pipeline
 from sklearn.preprocessing import StandardScaler
+from sklearn.metrics import roc_auc_score
 
 from temporal_evaluation import tensors, assess, probabilities, metadata_scale, write_json
 from temporal_models import FeatureHead
@@ -139,20 +140,64 @@ def metadata_recoverability(representations, metadata, episodes):
 
 
 def diagnose(head, data, training, training_episodes):
+    base = {"classifier_health": classifier_health(head,data,training),
+            "input_sensitivity": interventions(head,data,training)}
+    if head.kind != 'attention':
+        return base
     observed = stages(head, data)
     train_stages = stages(head, training)
     with torch.no_grad():
         weight = head.project.weight
         visual = torch.nn.functional.linear(data[0], weight[:, :-2])
         meta = torch.nn.functional.linear(data[2], weight[:, -2:])
-    return {"routing": routing_summary(observed['attention']),
+    return dict(base, **{"routing": routing_summary(observed['attention']),
             "representations": {name: representation_stats(observed[name]) for name in ('raw_steps','projected_steps','summary')},
             "projected_input_contribution_rms": {"visual": float(visual.square().mean().sqrt()),
                                                   "metadata": float(meta.square().mean().sqrt()),
                                                   "note": "Projection bias and positions excluded; magnitude is not importance."},
-            "input_sensitivity": interventions(head, data, training),
             "metadata_recoverability": metadata_recoverability(
-                {k: train_stages[k] for k in ('raw_steps','projected_steps','summary')}, training[2], training_episodes)}
+                {k: train_stages[k] for k in ('raw_steps','projected_steps','summary')}, training[2], training_episodes)})
+
+
+def classifier_health(head, data, training):
+    """Inspect ReLU activity and balanced-loss gradients without any update."""
+    head.eval()
+    captured = {}
+    def capture(name):
+        def hook(module,inputs,output):
+            captured[name] = output.detach()
+        return hook
+    hooks = [head.classifier[0].register_forward_hook(capture('pre')),
+             head.classifier[1].register_forward_hook(capture('activation'))]
+    try:
+        with torch.enable_grad():
+            logits = head(*data[:3])
+            counts = torch.bincount(training[3],minlength=2)
+            if (counts == 0).any():
+                raise ValueError('Both training classes required for weighted gradient check')
+            weights = len(training[3])/(2*counts.float())
+            loss = torch.nn.functional.cross_entropy(logits,data[3],weight=weights)
+            named = list(head.named_parameters())
+            gradients = torch.autograd.grad(loss,[p for _,p in named],allow_unused=True)
+    finally:
+        for hook in hooks:
+            hook.remove()
+    activation = captured['activation']
+    probability = logits.detach().softmax(-1)[:,1]
+    return {"hidden_units": activation.shape[1],
+            "units_zero_for_all_cases": int((activation == 0).all(0).sum()),
+            "fraction_zero_activations": float((activation == 0).float().mean()),
+            "preactivation_min": float(captured['pre'].min()),
+            "preactivation_max": float(captured['pre'].max()),
+            "mean_advance_probability": float(probability.mean()),
+            "advance_probability_std": float(probability.std(unbiased=False)),
+            "advance_probability_min": float(probability.min()),
+            "advance_probability_max": float(probability.max()),
+            "roc_auc": float(roc_auc_score(data[3].detach().cpu().numpy(), probability.cpu().numpy())),
+            "weighted_eval_loss": float(loss.detach()),
+            "gradient_l2": {name: None if gradient is None else float(gradient.norm())
+                            for (name,_),gradient in zip(named,gradients)},
+            "note": "Evaluation-mode ReLU activity and full-partition loss gradients, using training-derived class weights. No optimizer step or parameter .grad mutation. Zero activity/gradient is local to the inspected checkpoint and cases."}
 
 
 def spatial_sensitivity(head, encoder, prepared, data, grid=3):
@@ -197,6 +242,7 @@ def main(argv=None):
     parser.add_argument('--output-dir', type=Path, required=True)
     parser.add_argument('--partition', choices=('train','validation'), default='train')
     parser.add_argument('--device', choices=('cpu','cuda'), default='cuda')
+    parser.add_argument('--health-only',action='store_true',help='Classifier ReLU, score spread and gradient checks only; no attention/probe/intervention analysis')
     parser.add_argument('--spatial-case-index', type=int, help='Optional single TRAINING-local case index; fixed 3x3 occlusion per image')
     args = parser.parse_args(argv)
     if not os.environ.get('PSCRATCH') or args.data_dir is None:
@@ -208,12 +254,10 @@ def main(argv=None):
     if args.output_dir.exists() or args.output_dir == args.data_dir or args.data_dir in args.output_dir.parents:
         parser.error('Use a new output directory outside the dataset')
     saved = torch.load(args.checkpoint, map_location='cpu', weights_only=True)
-    if saved['kind'] != 'attention':
-        parser.error('Attention checkpoint required')
     cfg = saved['config']
     if cfg['encoder'] != 'resnet18':
         parser.error('This diagnostic CLI currently supports ResNet checkpoints only')
-    head = FeatureHead('attention',cfg['feature_dim'],cfg['width'],cfg['dropout'],
+    head = FeatureHead(saved['kind'],cfg['feature_dim'],cfg['width'],cfg['dropout'],
                        position_embeddings=cfg.get('position_embeddings',True),
                        classifier_width=cfg.get('classifier_width',cfg['width'])).to(args.device)
     head.load_state_dict(saved['head_state']); head.eval()
@@ -229,7 +273,13 @@ def main(argv=None):
         parser.error('Spatial index must select one training case')
     from cnn_attention_debug import freeze_and_snapshot, verify_frozen
     snapshot = freeze_and_snapshot(encoder.backbone)
-    _, features = collect(datasets['train'],DINOv2Preprocessor(),{'resnet18':encoder})
+    from temporal_evaluation import collect_static_images
+    def extract(dataset):
+        if head.kind in ('latest_goal_mlp','goal_metadata_mlp','latest_mlp'):
+            return collect_static_images(dataset,DINOv2Preprocessor(),encoder,'resnet18',
+                                         head.kind != 'goal_metadata_mlp')
+        return collect(dataset,DINOv2Preprocessor(),{'resnet18':encoder})
+    _, features = extract(datasets['train'])
     training = tensors(features['resnet18'],args.device)
     scale = torch.tensor(cfg['metadata_scale'],device=args.device)
     if not torch.allclose(metadata_scale(training[2]),scale,rtol=1e-5,atol=1e-6):
@@ -237,10 +287,11 @@ def main(argv=None):
     training = (training[0],training[1],training[2]/scale,training[3])
     data = training
     if args.partition == 'validation':
-        _, vf = collect(datasets['validation'],DINOv2Preprocessor(),{'resnet18':encoder})
+        _, vf = extract(datasets['validation'])
         d = tensors(vf['resnet18'],args.device)
         data = (d[0],d[1],d[2]/scale,d[3])
-    report = diagnose(head,data,training,features['resnet18']['episode'])
+    report = ({'classifier_health':classifier_health(head,data,training)} if args.health_only else
+              diagnose(head,data,training,features['resnet18']['episode']))
     if args.spatial_case_index is not None:
         index = args.spatial_case_index
         prepared = DINOv2Preprocessor().prepare_case(datasets['train'][index])
@@ -253,37 +304,49 @@ def main(argv=None):
                   source_sha256={p:hashlib.sha256((Path(__file__).parent/p).read_bytes()).hexdigest()
                                  for p in ('temporal_diagnostics.py','temporal_models.py','temporal_evaluation.py','evaluation.py','cnn.py','preprocessing.py','dataset.py')},
                   torch_version=str(torch.__version__), device=args.device)
+    report['kind'] = saved['kind']
     report['encoder_unchanged'] = True
     args.output_dir.mkdir(parents=True,mode=0o700)
     write_json(args.output_dir/'diagnostics.json',report)
     lines = ['# Temporal diagnostics','', 'Aggregate checkpoint inspection; no semantic localization or final performance claim.', '',
              'Partition: {}. Cases: {}. Checkpoint: {}, epoch {}.'.format(
-                 args.partition,len(data[3]),report['checkpoint_role'],report['checkpoint_epoch']), '',
-             '## Latest-query temporal attention', '', '| Head | f1 | f2 | f3 | f4 | f5 | f6 |',
-             '|---|---:|---:|---:|---:|---:|---:|']
-    for i,row in enumerate(report['routing']['latest_query_mean_per_head']):
-        lines.append('| {} | {} |'.format(i+1,' | '.join('{:.3f}'.format(v) for v in row)))
-    lines += ['', '## Fixed-checkpoint input sensitivity', '', '| Replacement | BA delta | Mean probability change | Prediction flips |',
-              '|---|---:|---:|---:|']
-    for name,r in report['input_sensitivity']['controls'].items():
-        lines.append('| {} | {:.3f} | {:.4f} | {:.3f} |'.format(name,r['balanced_accuracy_delta'],r['mean_absolute_probability_change'],r['prediction_flip_fraction']))
-    lines += ['', '## Representation spread', '',
-              '| Stage | RMS | Between-case std | Effective rank |','|---|---:|---:|---:|']
-    for name,r in report['representations'].items():
-        lines.append('| {} | {:.4f} | {:.4f} | {:.2f} |'.format(name,r['rms'],r['between_case_std_mean'],r['effective_rank']))
-    lines += ['', 'Scale/rank differences alone do not establish semantic loss.', '',
-              '## Metadata linear recoverability', '']
-    recovery = report['metadata_recoverability']
-    if recovery['status'] == 'completed':
-        lines += ['Episode-disjoint holdout inside training only; fixed ridge decoder.', '',
-                  '| Stage | Depth mean R2 | Time mean R2 |','|---|---:|---:|']
-        for name,channels in recovery['results'].items():
-            values=[channels[k]['mean_r2_nonconstant_steps'] for k in ('depth','time')]
-            lines.append('| {} | {} |'.format(name,' | '.join('unavailable' if v is None else '{:.3f}'.format(v) for v in values)))
-    else:
-        lines.append(recovery['reason'])
-    lines += ['', 'Detailed representation spread and training-only metadata recoverability are in diagnostics.json.',
-              'Attention is across frames, not pixels. Replacement results may involve distribution shift; no retraining was performed.']
+                 args.partition,len(data[3]),report['checkpoint_role'],report['checkpoint_epoch'])]
+    health=report['classifier_health']
+    lines += ['', '## Classifier health', '', '| Measurement | Value |','|---|---:|']
+    for key,value in health.items():
+        if isinstance(value,(int,float)):
+            lines.append('| {} | {:.8g} |'.format(key,value))
+    lines += ['', '| Parameter | Weighted-loss gradient L2 |','|---|---:|']
+    for name,value in health['gradient_l2'].items():
+        lines.append('| {} | {} |'.format(name,'unused' if value is None else '{:.8g}'.format(value)))
+    if 'routing' in report:
+        lines += ['', '## Latest-query temporal attention', '', '| Head | f1 | f2 | f3 | f4 | f5 | f6 |',
+                  '|---|---:|---:|---:|---:|---:|---:|']
+        for i,row in enumerate(report['routing']['latest_query_mean_per_head']):
+            lines.append('| {} | {} |'.format(i+1,' | '.join('{:.3f}'.format(v) for v in row)))
+    if 'input_sensitivity' in report:
+        lines += ['', '## Fixed-checkpoint input sensitivity', '', '| Replacement | BA delta | Mean probability change | Prediction flips |',
+                  '|---|---:|---:|---:|']
+        for name,r in report['input_sensitivity']['controls'].items():
+            lines.append('| {} | {:.3f} | {:.4f} | {:.3f} |'.format(name,r['balanced_accuracy_delta'],r['mean_absolute_probability_change'],r['prediction_flip_fraction']))
+    if 'representations' in report:
+        lines += ['', '## Representation spread', '',
+                  '| Stage | RMS | Between-case std | Effective rank |','|---|---:|---:|---:|']
+        for name,r in report.get('representations',{}).items():
+            lines.append('| {} | {:.4f} | {:.4f} | {:.2f} |'.format(name,r['rms'],r['between_case_std_mean'],r['effective_rank']))
+        lines += ['', 'Scale/rank differences alone do not establish semantic loss.', '',
+                  '## Metadata linear recoverability', '']
+        recovery = report.get('metadata_recoverability',{'status':'unavailable','reason':'Not requested for this inspection.'})
+        if recovery['status'] == 'completed':
+            lines += ['Episode-disjoint holdout inside training only; fixed ridge decoder.', '',
+                      '| Stage | Depth mean R2 | Time mean R2 |','|---|---:|---:|']
+            for name,channels in recovery['results'].items():
+                values=[channels[k]['mean_r2_nonconstant_steps'] for k in ('depth','time')]
+                lines.append('| {} | {} |'.format(name,' | '.join('unavailable' if v is None else '{:.3f}'.format(v) for v in values)))
+        else:
+            lines.append(recovery['reason'])
+        lines += ['', 'Detailed representation spread and training-only metadata recoverability are in diagnostics.json.',
+                  'Attention is across frames, not pixels. Replacement results may involve distribution shift; no retraining was performed.']
     if 'spatial_sensitivity' in report:
         private_lines = ['# Private single-training-case sensitivity', '']
         private_lines += ['', '## Training-case spatial perturbations', '',

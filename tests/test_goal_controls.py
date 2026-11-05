@@ -12,6 +12,7 @@ from torch import nn
 
 from temporal_models import FeatureHead, FrozenPolicy
 from temporal_evaluation import main
+from temporal_diagnostics import main as diagnostic_main
 from test_temporal_diagnostics import injected_cnn
 
 
@@ -73,6 +74,8 @@ class GoalControlTests(unittest.TestCase):
             with patch.dict(os.environ,{'PSCRATCH':str(root)}),injected_cnn(Encoder):
                 main(['--data-dir',str(data),'--output-dir',str(root/'run'),'--split-position','0',
                       '--models','latest_goal_mlp','goal_metadata_mlp','--device','cpu','--epochs','2','--benchmark'])
+                diagnostic_main(['--data-dir',str(data),'--checkpoint',str(root/'run'/'latest_goal_mlp-seed0-final.pt'),
+                                 '--output-dir',str(root/'health'),'--device','cpu','--health-only'])
             report=json.loads((root/'run'/'metrics.json').read_text())
             self.assertTrue(report['encoder_unchanged'])
             self.assertEqual(report['config']['extraction_visual_roles'],'goal + latest')
@@ -84,6 +87,11 @@ class GoalControlTests(unittest.TestCase):
                 head.load_state_dict(saved['head_state'])
                 self.assertEqual(r['epochs_run'],2)
                 self.assertTrue((root/'run'/(kind+'-seed0-final.pt')).exists())
+            health=json.loads((root/'health'/'diagnostics.json').read_text())
+            self.assertEqual(health['kind'],'latest_goal_mlp')
+            self.assertEqual(health['classifier_health']['hidden_units'],64)
+            self.assertNotIn('routing',health)
+            self.assertTrue(health['encoder_unchanged'])
 
 
 if __name__=='__main__':

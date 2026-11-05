@@ -1,5 +1,67 @@
 # CNN–attention development experiments
 
+## No-metadata MLP training failure inspection — 2026-11-05
+
+Supplied per-epoch history for latest+goal without metadata shows training BA
+.500 and validation BA .500 at every epoch 1–16. Training predictions are all
+RETRACT for epochs 1–2, then all ADVANCE for epochs 3–16. Mean ADVANCE probability
+moves .4512→.4825→.5036, then remains near .503 through .5039. Unweighted training
+loss falls .7239→.6911. These values are consistent with near-constant predictions;
+the reported mean alone does not establish zero case-level score variation.
+
+Class-balanced training loss has its constant-predictor optimum at probability
+.5. The recorded unweighted loss can slightly undercut log(2) when probability
+is just above .5 because training has more ADVANCE labels. Thus lower loss here
+does not demonstrate case discrimination. Switching class at the fixed threshold
+does not constitute learning both classes. No threshold tuning is proposed.
+
+### Candidate failure and read-only test
+
+A fully inactive hidden ReLU is a plausible failure, not a confirmed diagnosis.
+If all 64 hidden activations are zero across training, the final linear layer
+receives zeros and predictions depend on output biases. Hidden/output-weight
+loss gradients can then vanish while output-bias gradients remain. Other
+optimization or input-conditioning issues can also produce near-constant output.
+
+`temporal_diagnostics.py --health-only` now supports the static controls and
+reports hidden units inactive across all inspected cases, zero-activation
+fraction, preactivation range, probability min/max/std, weighted evaluation loss
+and parameter-gradient L2 norms. ROC AUC distinguishes score ranking from a
+constant thresholded decision; all-one-class predictions need not imply constant
+scores. Class weights come from training only. No
+optimizer step, parameter `.grad` overwrite or activation/threshold change occurs.
+Full-partition gradient cancellation is possible; zero gradient alone does not
+prove dead ReLU. Spatial/temporal/probe analysis is omitted in this mode.
+
+Run from the working Perlmutter GPU allocation after pulling the update:
+
+```sh
+python3 -B temporal_diagnostics.py \
+  --checkpoint "$PSCRATCH/waldo-temporal/input-controls-01/latest_goal_mlp-seed0-final.pt" \
+  --partition train --device cuda --health-only \
+  --output-dir "$PSCRATCH/waldo-temporal/latest-goal-health-01"
+cat "$PSCRATCH/waldo-temporal/latest-goal-health-01/summary.md"
+```
+
+The static path reads only latest/goal images on training; no new training or
+validation search is required. Existing attention checkpoints remain supported;
+normal inspection also includes classifier health. Full config/report stays on
+Perlmutter; aggregate summary can be reviewed for sharing. If final-state health
+supports inactive units, inspect the saved epoch-1 state in a separate directory
+before choosing one bounded remedy. No activation, normalization, learning-rate,
+seed or capacity change is selected yet.
+
+**Interpretation:** no-metadata training failure prevents treating this run as
+proof metadata is necessary, or that the images lack predictive associations.
+Earlier ResNet linear latest+goal results and the working full static reference
+remain relevant context under different head/optimization conditions.
+
+**Verification:** all 60 repository synthetic tests passed. Controls include an
+intentionally inactive ReLU head (zero hidden/weight gradients with nonzero
+output-bias gradient), an active head, unchanged weights/parameter `.grad`, and
+static-checkpoint health CLI/report integration with earlier history files
+absent. Real inactive-unit and gradient measurements remain pending.
+
 ## Static input-role controls — 2026-11-04
 
 **Scope:** compare latest+goal imagery without movement metadata against goal
@@ -65,7 +127,39 @@ python3 -B temporal_evaluation.py --split-position 0 --device cuda \
 Inspect `summary.md`, `learning_summary.md`, aggregate learning curves and scoped
 latency. Private predictions, checkpoints and full configuration remain on
 Perlmutter. Record real results and the next bounded decision here after review.
-**Real execution/results: pending.** No new goal-only result is claimed.
+**Real execution/results:** the seed-0 comparison completed; reported aggregates
+and limitations are recorded below. No new goal-only result is claimed.
+
+### 2026-11-04 — Completed static input-role comparison
+
+Supplied owner-run aggregate results, seed 0, split 0:
+
+| Model | Selected train BA | Selected validation BA | Validation retract / advance recall | Best epoch / epochs run | Final train / validation BA |
+|---|---:|---:|---|---|---|
+| Latest+goal, no metadata | .500 | .500 | 1.000 / .000 | 1 / 16 | .500 / .500 |
+| Goal+metadata, no history imagery | .575 | .561 | .382 / .739 | 4 / 19 | .637 / .490 |
+| Latest+goal+metadata reference | .577 | .597 | .824 / .370 | 2 / 17 | .699 / .478 |
+
+The reference reproduces prior displayed scores. Goal+metadata improves training
+fit later while validation declines. Latest+goal's selected checkpoint predicts
+RETRACT throughout validation; both selected and final training BA remain .500.
+Final prediction counts and intermediate training behavior have not yet been
+reviewed, so all-epoch collapse or unchanged probabilities cannot be assumed.
+
+The largest selected validation BA in this comparison belongs to the reference
+with latest image and metadata. This does not support a claim that historical
+metadata is intrinsically noisy. The no-metadata run's weak training fit limits
+its use as evidence of metadata necessity; optimization, initialization and input
+conditioning remain possible contributors. Input widths change parameter counts
+and initialization despite the same seed. Prior ResNet linear latest+goal BA
+.547 also cautions against claiming image inputs inherently contain no signal.
+
+Goal+metadata versus reference differs by .036 selected BA, but one seed, different
+parameter counts and reused validation selection do not establish superiority.
+No model here processes earlier history images; these results cannot settle
+whether temporal visual history is useful or harmful. No literal goal-only neural
+run occurred. Next inspect latest+goal loss/probability/count histories from the
+existing report before changing capacity or launching another configuration.
 
 **Verification:** all 58 repository synthetic tests passed. New tests verify
 latest+goal has no metadata gradient path, goal+metadata has no history-image
