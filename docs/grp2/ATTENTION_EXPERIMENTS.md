@@ -86,9 +86,17 @@ Comparisons across different normalization/activation settings cannot isolate
 metadata value. Latest+goal versus goal+metadata changes two input sources.
 Parameter counts also differ; no input or encoder superiority is established.
 
-## Important discoveries
+## Experiment record and reasoning
 
-### Learning checks and latency
+### Nov 3 — Integration check and static/mean/attention comparison
+
+**Reason for the experiment:** frozen-feature logistic probes established an
+initial reference, but did not train temporal models. The neural comparison
+retained a final MLP for nonlinear fusion, comparing a latest-image reference,
+unordered mean history and learned temporal attention. The eight-case check
+preceded development evaluation to verify updates and encoder freezing.
+Frozen ResNet limited training cost and capacity, with the tradeoff that visual
+features could not adapt to guidewire decisions.
 
 The real eight-case CNN–attention check completed 300 updates: training loss
 .692842→.000071, accuracy 50%→100%, finite gradients, changed head weights and
@@ -101,7 +109,13 @@ temporal models encoded seven. Preparation/model medians were 27.19/5.89,
 feature reuse and are not workload-wide latency estimates. The temporal cost
 was largely preparation/encoding; isolated attention latency was not measured.
 
-### Attention learns training associations that fail to generalize
+### Nov 4 — Per-epoch learning and checkpoint diagnostics
+
+**Reason for the experiment:** attention selected epoch 1 at chance BA. That
+score alone could not distinguish a training failure from later overfitting.
+Full-partition training metrics and selected/final checkpoint inspection were
+added before increasing attention width. Frame routing, input replacements and
+representation probes examined input dependence and changes through the model.
 
 Per-epoch logging distinguishes selected from final behavior:
 
@@ -125,7 +139,32 @@ metadata poorly; imperfect recovery even from raw inputs containing the targets
 limits interpretation. Oracle/mean controls would be needed for stronger claims.
 Attention averages and perturbation maps are diagnostic, not causal explanations.
 
-### Inactive ReLU explains the no-metadata training failure
+### Nov 4 — Static input-role controls
+
+**Reason for the experiment:** goal-replacement sensitivity and the earlier
+DINOv2 goal-only probe motivated testing simpler input combinations. Fixed-input
+replacement can create unfamiliar examples; separately trained controls test
+whether useful prediction can be learned with fewer input sources.
+
+Latest+goal excluded metadata; goal+metadata excluded history imagery; the full
+latest+goal+metadata MLP remained the reference. Compared against that reference,
+the first control tests adding numerical history and the second tests adding
+the latest image. Neither control uses earlier history images. The neural
+goal-only proposal was replaced by latest+goal before execution.
+
+**Result and next decision:** selected validation BA was .500 for latest+goal,
+.561 for goal+metadata and .597 for the reference. Latest+goal remained at .500
+training BA through all 16 epochs, requiring a training-health inspection before
+attributing its result to missing metadata. Input dimensions and parameter counts
+differ, so these are preliminary controls rather than isolated causal tests.
+
+### Nov 5 — Inactive ReLU inspection and LeakyReLU comparison
+
+**Reason for the experiment:** constant class predictions and falling loss did
+not demonstrate case discrimination. Class-balanced loss permits a constant
+predictor near probability .5. Hidden activations, probability spread, AUC and
+loss gradients were inspected to distinguish threshold behavior from a blocked
+learning path.
 
 The raw latest+goal ReLU model predicts a single class each epoch. Final health
 inspection finds all 64 hidden units zero across 267 training cases, all hidden
@@ -133,13 +172,23 @@ preactivations negative, constant probability .50386977 and AUC .500. Only the
 output-bias loss gradient is nonzero. This invalidates interpreting the run as
 proof that metadata is necessary or image inputs lack information.
 
+**Reason for the change:** confirmed inactive ReLU units motivated LeakyReLU,
+which permits gradients on negative inputs while retaining the classifier
+structure. Initialization changes were deferred to keep the remedy focused.
+
 LeakyReLU restores hidden gradients, but all inspected preactivations remain on
 the negative branch. Final probabilities span .50449–.50841, training AUC .687,
 validation AUC .478 and BA .500 on both partitions. The gate failure is resolved;
 useful validation discrimination is not. Training AUC improves .508→.687 while
 validation AUC declines .641→.478; this is more than threshold misalignment.
 
-### Standardization restores fit but exposes overfitting
+### Nov 5 — Training-only feature standardization
+
+**Reason for the experiment:** LeakyReLU restored gradients, but preactivations
+remained negative and probabilities tightly clustered. Input conditioning was
+a plausible remaining obstacle. Centering/scaling frozen features tested that
+hypothesis without adding layers or width; changing initialization simultaneously
+would have made the result harder to interpret.
 
 For latest+goal, the training feature matrix is 267×1024: 512 latest-image and
 512 goal-image coordinates. Per-column population mean/std are fitted on training
@@ -159,7 +208,21 @@ training fit does not establish transferable wire/target reasoning. Scaling also
 changes effective regularization, so centering/scaling effects are not isolated.
 An initially favorable random-head validation AUC is not a seed-selection strategy.
 
-### Regularization did not clearly improve validation BA
+### Nov 5 — Dropout increase, then AdamW weight decay
+
+**Reason for the experiments:** standardization restored near-perfect training
+fit while validation deteriorated. Overfitting became the immediate concern;
+more capacity was not justified by insufficient training fit.
+
+**Step 1 — Dropout .3:** increase from .1 while retaining decay .001. Randomly
+suppressing more hidden activations tests reduced reliance on individual units
+without adding inference computation. Selected BA .584 versus .588 did not show
+a clear gain, although validation AUC/loss improved modestly.
+
+**Step 2 — Weight decay .01:** restore dropout .1 and increase decay from .001.
+This tests stronger AdamW weight shrinkage independently of the dropout change.
+Selected BA remained .588. The completed sequence did not justify selecting a
+new regularizer or expanding the search on the same validation cases.
 
 | Standardized LeakyReLU setting | Selected train BA | Selected validation BA / AUC / loss | Final validation BA / loss |
 |---|---:|---|---|
