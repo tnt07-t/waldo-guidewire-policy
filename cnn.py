@@ -9,9 +9,11 @@ Implemented:
 - History: (B, T, 3, H, W) -> (B, T, 512), with T=6 for this dataset.
 - Goal: (B, 3, H, W) -> (B, 512), using the same encoder weights.
   The goal is encoded separately, not as another history step.
-- Existing DINOv2Preprocessor supplies RGB conversion, proportional
-  resizing, padding, and ImageNet normalization. Its checkpoint metadata
-  refers to DINOv2 and must not be used to identify this ResNet model.
+- By default the existing DINOv2Preprocessor supplies RGB conversion,
+  proportional resizing, padding, and ImageNet normalization. Its checkpoint
+  metadata refers to DINOv2 and must not be used to identify this ResNet
+  model. ``--preprocessor wire`` uses goal-centered native-resolution crops
+  (WirePreprocessor) instead.
 
 Running this file checks output shapes and finite features for one case.
 It does not train, evaluate predictive accuracy, or save features.
@@ -33,7 +35,7 @@ from torch import nn
 from torchvision.models import ResNet18_Weights, resnet18
 
 from dataset import GuidewireDataset
-from preprocessing import DINOv2Preprocessor
+from preprocessing import add_preprocessor_arguments, build_preprocessor
 
 
 class FrameEncoder(nn.Module):
@@ -117,12 +119,7 @@ def main():
         choices=("train", "validation", "test"),
         default="train",
     )
-    parser.add_argument(
-        "--size",
-        type=int,
-        default=518,
-        help="Input size; shared preprocessor requires a multiple of 14",
-    )
+    add_preprocessor_arguments(parser)
     parser.add_argument(
         "--remove-maxpool",
         action="store_true",
@@ -131,6 +128,10 @@ def main():
 
     if not args.data_dir:
         parser.error("Set DATA_DIR or provide --data-dir")
+    try:
+        prepare = build_preprocessor(args)
+    except ValueError as exc:
+        parser.error(str(exc))
 
     dataset = GuidewireDataset(
         args.data_dir,
@@ -140,9 +141,7 @@ def main():
     if len(dataset) == 0:
         parser.error("Selected partition is empty")
 
-    # Reuse RGB conversion, proportional resizing, padding, and normalization.
-    # Its DINOv2 checkpoint metadata does not describe this ResNet encoder.
-    prepare = DINOv2Preprocessor(size=args.size)
+    # DINOv2 preparation metadata does not describe this ResNet encoder.
     prepared = prepare.prepare_case(dataset[0])
 
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")

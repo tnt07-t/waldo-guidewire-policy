@@ -84,6 +84,27 @@ Reported errors: none. These checks do not decode full images, verify visual con
 
 Proposed preprocessing and loader shapes are recorded in `APPROACHES.md`; they are suggestions, not dataset requirements.
 
+## Visual observations
+
+Owner-reported visual inspection on Perlmutter, 2026-11-03.
+How many cases were inspected was not specified; these are not claims about every case.
+
+- `goal_xy` uses the same pixel coordinates as the history frames; the goal image shows the same view.
+- The guidewire appears dark, about 3-4 px wide and long relative to its width.
+- History frames are black and white (grayscale content).
+- The view does not shift between frames within a case.
+- Typical tip distance from `goal_xy` is not yet known.
+
+Two raw case records from one episode, shared by the owner on 2026-11-03, are consistent with the coordinate fact and add the following.
+They cover two records only and cannot confirm the visual facts above.
+
+- The goal image is a real frame of the same episode: `clean_paths[0]` is an unannotated frame under `frames/<episode>/`, and `source_frames[0]` and `source_times_s[0]` give its frame index and time.
+- Both records share the same goal frame and identical `goal_xy`, so cases within an episode can share one target.
+- The goal frame's time is not tied to the history window: in one record it fell inside the window, in the other about 4 s before its start (about 8 s before now).
+- History spacing was a uniform 0.8 s (48 source frames, so about 60 fps) in both records.
+- `case_id` ends with the source frame index of the now frame.
+- In both records `depth_relative_mm` rose over the window (the wire advanced 13.6 mm and 26.1 mm), yet the label was RETRACT.
+
 ## Verification log
 
 - 2026-10-30 — Dataset validation [completed for stated checks; owner-run on Perlmutter]. Confirmed 416 unique cases, 120 episodes, labels 0:157 and 1:259. All five supplied split objects pass index bounds, exact once-only coverage, and zero shared episodes between partitions under zero-based record indexing. Across 5,543 referenced image paths, metadata-length, zero-ending depth/time, path safety/readability, and PNG header/dimension checks reported no errors; 5,127 paths have multiple hard links. Supplied dataset README reviewed. No data changed. Remaining limits: full decoding, visual/content correctness, semantic metadata alignment, manifest consistency, and cross-fold evaluation protocol are not verified. Subsequent raw-reader tests and one-case decoding/display are recorded in [Group 2 progress](grp2/PROGRESS.md); these do not establish full-dataset decoding or semantic correctness. Do not repeat completed checks without a changed copy, code change, or concrete concern.

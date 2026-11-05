@@ -49,7 +49,30 @@ python3 cnn_diagnostics.py \
   --output-dir "$OUT"
 ```
 
-Optional: `--patch` / `--stride`, `--size`, `--remove-maxpool`.
+Optional: `--patch` / `--stride`, `--remove-maxpool`, and the shared preprocessor flags (`--size`, `--preprocessor`, `--crop-size`, `--channels`, ...) listed in [CNN.md](CNN.md#preprocessor-options).
+
+### Wire preprocessor
+
+With `--preprocessor wire`, two probes adapt to the goal-centered crop:
+
+- **Occlusion:** the 74-pixel patch and stride were sized for 518 inputs.
+  For wire crops they default to crop size / 8 (32 for a 256 crop); the printed `patch/stride` line shows the values used.
+  `argmax_original_xy` maps back through the crop box, so it stays in original-image pixels.
+- **Goal marker:** the probe needs the marker, so it runs on the **marked** goal cropped with the same box, never on the unmarked goal the model sees.
+  The report prints `input: marked goal cropped with the wire box`.
+  Translated controls stay inside that crop.
+
+```sh
+# Run on Perlmutter (GPU session recommended), after the DINOv2 run above.
+python3 cnn_diagnostics.py \
+  --data-dir "$DATA_DIR" \
+  --split-position 0 \
+  --partition train \
+  --case-index 0 \
+  --preprocessor wire \
+  --crop-size 256 \
+  --output-dir "$OUT-wire"
+```
 
 Share only permitted printed aggregates. Keep overlay PNGs on Perlmutter. Do not transfer images, masks, feature vectors, or sensitive errors off the machine.
 

@@ -14,7 +14,7 @@ The approach is open-ended: explore specialized smaller models that exceed the b
 - [Raw case loader](docs/LOADER.md): usage; six synthetic tests, one real-case decode, and goal/history display passed on Perlmutter. Visual/semantic assessment remains open; the raw reader itself applies no preprocessing.
 - [Initial ViT preparation](docs/grp2/VIT_TRIAL.md): full-view DINOv2 tensors, previews, and inference-only encoder; owner-run pretrained CPU checks are recorded in Group 2 progress.
 - [ViT feature diagnostics](docs/grp2/VIT_DIAGNOSTICS.md): bounded inspection of whether extracted ViT features look usable before temporal-model work.
-- [CNN encoder trial](docs/grp1/CNN.md): frozen ResNet-18 frame features in `cnn.py`; owner-run one-case Perlmutter smoke check passed.
+- [CNN encoder trial](docs/grp1/CNN.md): frozen ResNet-18 frame features in `cnn.py`; owner-run one-case Perlmutter smoke check passed. An opt-in goal-centered wire preprocessor was evaluated with a frozen-feature probe and did not beat the full-frame baseline on split 0 (2026-11-03).
 - [CNN 512-d diagnostics](docs/grp1/CNN_DIAGNOSTICS.md): separate occlusion/marker/temporal probes on the vectors a GRU would see; owner-run one-case GPU diagnostics passed, then correctness fixes were applied (Perlmutter re-run pending). `data_inspect.ipynb` includes original-image inspection cells, with no saved outputs.
 - Group progress: [Group 1 — Andrew and Suhani](docs/grp1/PROGRESS.md) and [Group 2 — Tran and Sabrina](docs/grp2/PROGRESS.md). Shared contracts stay in the approach notes; each group records its own plans and outcomes.
 
@@ -91,7 +91,7 @@ conda env update -n final_project_env -f environment.yml --prune
 conda activate final_project_env
 ```
 
-==If you have install a new package, don't simply run conda install. Also run the following command to update the packages.`conda env export --from-history | grep -v '^prefix:' > environment.ym`==
+If you have installed a new package, don't simply run conda install, add it to the pip list for environment.yml.
 
 ## Lightweight collaboration
 

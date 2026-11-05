@@ -25,6 +25,9 @@ Details are in the [Phase 0 log entry](#2026-11-05---h3-phase-0-results-split-0-
 
 **Immediate next steps:** skip the Phase 1 capacity ladder above rung S; prioritize feature changes (512-d bottleneck, spatial pooling, `--remove-maxpool`, 224 input, light layer4 fine-tune) and run Phase 0 on splits 1-2 so comparisons are not single-split. Do not use the test partition. Log any further matched ablations here.
 
+**Wire preprocessing (2026-11-03, merged from `andrew/grp1-preprocessing-tickets`):** the goal-centered wire preprocessor and its frozen-feature probe are built and partly evaluated; neither the 256 nor the 512 crop beat the 0.547 full-frame baseline on split 0 validation.
+See [the 2026-11-03 log entry](#2026-11-03---wire-preserving-preprocessing-and-frozen-feature-probe-owner-run-ladder-stopped-early) for results, limits and what was not run.
+
 ## Progress log
 
 ### 2026-11-05 - H3 Phase 1 capacity ladder implemented (local)
@@ -204,6 +207,72 @@ No staging/commit/push in this note.
 ### 2026-11-03 — ResNet→GRU in `gru.py` (local)
 
 `gru.CNNGRUEncoder` runs the images through the shared `FrameEncoder` (ResNet-18).
+
+### 2026-11-03 - Wire-preserving preprocessing and frozen-feature probe (owner-run, ladder stopped early)
+
+**What was built** (branch `andrew/grp1-preprocessing-tickets`, `d063196` to `804c98f`):
+`WirePreprocessor` in `preprocessing.py` crops a square around `goal_xy` at native resolution from the unmarked goal and the six history frames.
+It supports `raw` channels or `enhanced` channels (raw, black top-hat, frame difference), an optional full-view context, a seeded random-center control and training-only channel standardization.
+`cnn.py`, `cnn_diagnostics.py` and Sabrina's `evaluation.py` (imported unchanged, then extended) share one set of preprocessor flags.
+`evaluation.py` gained opt-in controls, and `select_preprocessing.py` chooses settings with episode-grouped inner CV on the training partition only.
+Design and commands are in [CNN.md](CNN.md#wire-preprocessing) and [EVALUATION.md](../EVALUATION.md#preprocessor-options).
+
+**Unit tests (owner-run):** 46 tests passed at `31cbfa9` (T04-T08).
+The suite including the T09-T16 tests was not reported; the real runs below exercised that code without errors.
+
+**Reader, one real case (owner-run):** the new `goal_raw` decoded at 1065 x 1050 RGB and `goal_xy` had two values.
+The notebook check that `goal_raw` has no marker was not reported.
+
+**Static probe, split 0 validation** (80 cases; owner-run on an A100; probe `resnet18:latest_goal`; frozen ImageNet ResNet-18):
+
+| Input preparation | Validation BA | Train BA |
+| --- | ---: | ---: |
+| DINOv2 full frame, 518 (baseline) | 0.547 | 1.000 |
+| Wire raw crop, 256 | 0.515 | 1.000 |
+| Wire raw crop, 512 (selected below) | 0.506 | 0.923 |
+| Metadata only (no images) | 0.547 | 0.580 |
+| Majority class | 0.500 | 0.500 |
+
+The baseline reproduces Sabrina's 0.547 exactly, so the default path is unchanged after the refactors.
+Every image row of every run (latest, goal only, latest + goal, with metadata, mean history) stayed between 0.45 and 0.57.
+One split's 95% interval is about +/-0.11, so none of these differ from chance or from metadata only.
+
+**Selection inside training** (`select_preprocessing.py`, 5-fold episode-grouped inner CV, `latest_goal`, validation not used):
+
+| Configuration | Inner BA mean | Inner BA std |
+| --- | ---: | ---: |
+| raw, crop 192 | 0.459 | 0.058 |
+| raw, crop 256 | 0.485 | 0.088 |
+| raw, crop 384 | 0.503 | 0.058 |
+| **raw, crop 512 (selected)** | **0.597** | **0.052** |
+| raw, crop 640 | 0.547 | 0.039 |
+| raw, crop 768 | 0.550 | 0.078 |
+| enhanced, crop 512, top-hat 7, median difference, standardized | 0.558 | 0.025 |
+
+Enhanced lost at its one tried setting, so difference mode and top-hat size were never searched.
+The selected 0.597 did not hold on validation (0.506), which fits a winner's-curse effect from choosing the best of seven noisy scores.
+
+**Latency** (wire raw 256, `--benchmark`, A100, goal + newest frame, batch one, repeated in-memory case): preparation 9.9 ms median (10.2 p95), encoding 5.9 ms (6.0), total 15.8 ms (16.1).
+Preparation covers all seven crops, since the wire path prepares the whole case.
+Timing for the 512 crop was not reported.
+
+**Reading:** frozen ImageNet ResNet-18 features with a linear probe show no detectable ADVANCE/RETRACT signal on split 0, whether the input is the downscaled full frame or a native-resolution crop of 256 or 512.
+The wire being too small after downscaling is therefore not the whole explanation.
+All probes overfit (train BA 0.92-1.00).
+This is a development result on one split, not a final or test-set result.
+
+**Not run (stopped by the owner on 2026-11-03):**
+
+- the T13 notebook check (top-hat size and crop candidates were not chosen visually);
+- the T15 controls (shuffled labels, random center, channel ablation) and the five-split runs;
+- the wire-mode diagnostics overlays (`cnn_diagnostics.py` ran for DINOv2; its output was not reported);
+- enhanced channels on validation (by design: they lost the selection).
+
+**Code version:** the branch head pulled on Perlmutter for these runs; the exact commit was not reported (the latest pushed was `804c98f`).
+
+**Proposed next steps (not decided):** the ticket ladder's fallback is to train part of the network (conv1 or layer4) or a small CNN on the crops.
+Both raw RETRACT records shared on 2026-11-03 show the wire advancing before the decision, so a temporal model over all six frames plus depths may matter more than a better single frame.
+The preprocessor stays opt-in; `dinov2` remains the default.
 
 ### 2026-11-02 — Diagnostics correctness fixes (local)
 
