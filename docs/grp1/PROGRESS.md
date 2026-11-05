@@ -20,9 +20,13 @@ Frozen ResNet-18 + GRU + goal MLP policy trains with `train_cnngru.py` (CNN froz
 
 Basic dataset validation has already passed; do not repeat without a concrete reason. Current-input baseline and multi-split reporting remain open.
 
-**Immediate next steps:** treat H2 as negative/null for LR-only gains on this split; prioritize regularization / less overfitting or a current-input baseline before more capacity. Do not use the test partition. Log any further matched ablations here.
+**Immediate next steps:** treat H2 as negative/null for LR-only gains on this split. Next experiment is a **frozen CNN linear probe** (`probe_cnn_features.py` on branch `suhani-experiments`) to check whether 512-d features carry ADVANCE/RETRACT signal without a GRU. Do not use the test partition. Log probe results here once run on Perlmutter.
 
 ## Progress log
+
+### 2026-11-05 — Frozen CNN linear probe script (`suhani-experiments`)
+
+Added `probe_cnn_features.py`: encode train/val once with frozen `FrameEncoder`, train `nn.Linear` on designs `latest_goal` / `mean_goal` / `goal_only`, write under `docs/grp1/results/<run-name>/`. Reuses `extract_features` / metrics from `train_cnngru.py`. Local invented-input unit tests in `tests/test_probe_cnn_features.py`. Real Perlmutter probe run not logged yet. Test partition unused.
 
 ### 2026-11-04 — LayerNorm reference + H2 LR 3e-4 (owner-run Perlmutter)
 

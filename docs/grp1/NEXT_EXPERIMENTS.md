@@ -8,7 +8,7 @@ Context from owner-run split-0 training (see [PROGRESS.md](PROGRESS.md)): with f
 
 ### 1. Confirm the features, not the head
 
-Run a **linear probe on frozen features only** (no GRU) on the same split — e.g. last history + goal, or mean history + goal.
+Run a **linear probe on frozen features only** (no GRU) on the same split — e.g. last history + goal, or mean history + goal. Script: `probe_cnn_features.py` (designs `latest_goal`, `mean_goal`, `goal_only`; same `--run-name` / results layout as `train_cnngru.py`).
 
 | Outcome | Meaning |
 | --- | --- |
@@ -59,8 +59,8 @@ Before another long train: occlusion / overlay checks on a few training cases �
 
 ## Suggested run order
 
-1. Frozen **linear probe** (latest+goal, mean+goal) on split 0.  
-2. Same probe with **`remove_maxpool`** and/or **224 input**.  
+1. Frozen **linear probe** via `probe_cnn_features.py` (latest+goal, mean+goal, goal-only) on split 0 — **in progress on branch `suhani-experiments`**.  
+2. Same probe with **`remove-maxpool`** and/or **224 input**.  
 3. If still flat → **layer4 fine-tune** with tiny LR.  
 4. If probe improves but full GRU policy does not → simplify temporal fusion; if neither improves → revisit spatial features / prep / labels.
 
