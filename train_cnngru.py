@@ -139,7 +139,8 @@ def check_cache_dir(cache_dir):
 
 def save_cached_features(path, features, metadata):
     path.parent.mkdir(parents=True, exist_ok=True)
-    tmp = path.with_suffix(".tmp")
+    # Unique per process, so parallel workers filling one cache never share a file.
+    tmp = path.with_suffix(".{}.tmp".format(os.getpid()))
     torch.save({"metadata": metadata,
                 "features": {key: features[key].cpu() for key in FEATURE_KEYS}}, tmp)
     tmp.replace(path)  # atomic, so a killed run never leaves a partial cache
@@ -349,7 +350,8 @@ def default_run_name(args, timestamp=None):
                      timestamp or time.strftime("%Y%m%d-%H%M%S")])
 
 
-def parse_args():
+def parse_args(argv=None):
+    """Parse and validate options; ``argv`` defaults to sys.argv (sweep_h4.py passes a list)."""
     parser = argparse.ArgumentParser(description=__doc__,
                                      formatter_class=argparse.RawDescriptionHelpFormatter)
     parser.add_argument("--data-dir", default=os.environ.get("DATA_DIR"))
@@ -390,7 +392,7 @@ def parse_args():
     parser.add_argument("--run-name",
                         help="Folder name under docs/grp1/results (default: "
                              "cnngru[-<regularizers>][-null]-split<S>-seed<N>-<timestamp>)")
-    args = parser.parse_args()
+    args = parser.parse_args(argv)
 
     if not args.data_dir:
         parser.error("Set DATA_DIR or provide --data-dir")
@@ -440,18 +442,67 @@ def save_curves(rows, path):
     plt.close(fig)
 
 
-def main():
-    args = parse_args()
+PARTITIONS = ("train", "validation")
+
+
+def load_features(args, cnn, device, log=print):
+    """Frozen-ResNet features per partition as CPU tensors, from the cache if possible.
+
+    ``cnn=None`` means cache only: a missing cache file is an error instead
+    of an extraction (sweep workers rely on a cache filled beforehand).
+    """
+    prepare = DINOv2Preprocessor(size=args.size)
+    features = {}
+    for name in PARTITIONS:
+        start = time.perf_counter()
+        metadata = cache_metadata(args.data_dir, args.split_position, name, args.size)
+        path = cache_path(args.feature_cache, metadata) if args.feature_cache else None
+        part = load_cached_features(path, metadata) if path else None
+        source = "Loaded cached"
+        if part is None and cnn is None:
+            raise ValueError("Feature cache file missing: {}".format(path))
+        if part is None:
+            raw = GuidewireDataset(args.data_dir, split_position=args.split_position,
+                                   partition=name)
+            part = extract_features(cnn, PreparedCases(raw, prepare), device,
+                                    args.feature_batch_size, args.num_workers)
+            source = "Encoded"
+            if path:
+                save_cached_features(path, part, metadata)
+                source = "Encoded and cached"
+        features[name] = part
+        log("{} {} in {:.1f}s".format(source, describe_partition(name, part),
+                                      time.perf_counter() - start))
+    return features
+
+
+def run(args, features=None, echo=True):
+    """Train one configuration and write its run folder; returns summary.json's dict.
+
+    ``features`` (from ``load_features`` for the same split and size) lets a
+    sweep reuse CPU features across runs; it is never modified. With
+    ``echo=False`` lines go to train.log only. The random state is set from
+    ``args.seed`` here, so a run gives the same result standalone or inside a
+    sweep. summary.json is written last and marks a finished run.
+    """
     run_dir = RESULTS_DIR / args.run_name
     run_dir.mkdir(parents=True)
     log_file = (run_dir / "train.log").open("w", encoding="utf-8")
 
     def log(line=""):
-        """Print to the terminal and append to train.log."""
-        print(line, flush=True)
+        """Append to train.log (and print unless echo is off)."""
+        if echo:
+            print(line, flush=True)
         log_file.write(line + "\n")
         log_file.flush()
 
+    try:
+        return _train_and_write(args, features, run_dir, log)
+    finally:
+        log_file.close()
+
+
+def _train_and_write(args, features, run_dir, log):
     random.seed(args.seed)
     torch.manual_seed(args.seed)
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
@@ -460,27 +511,14 @@ def main():
     model = CNNGRUModel(dropout=args.dropout, feature_noise=args.feature_noise,
                         feature_dropout=args.feature_dropout,
                         frame_dropout=args.frame_dropout).to(device)
-    prepare = DINOv2Preprocessor(size=args.size)
-    data = {}
-    for name in ("train", "validation"):
-        start = time.perf_counter()
-        metadata = cache_metadata(args.data_dir, args.split_position, name, args.size)
-        path = cache_path(args.feature_cache, metadata) if args.feature_cache else None
-        features = load_cached_features(path, metadata) if path else None
-        source = "Loaded cached"
-        if features is None:
-            raw = GuidewireDataset(args.data_dir, split_position=args.split_position,
-                                   partition=name)
-            features = extract_features(model.encoder.cnn, PreparedCases(raw, prepare),
-                                        device, args.feature_batch_size, args.num_workers)
-            source = "Encoded"
-            if path:
-                save_cached_features(path, features, metadata)
-                source = "Encoded and cached"
-        data[name] = {key: value.to(device) for key, value in features.items()}
-        log("{} {} in {:.1f}s".format(
-            source, describe_partition(name, data[name]), time.perf_counter() - start))
-
+    if features is None:
+        features = load_features(args, model.encoder.cnn, device, log)
+    else:
+        for name in PARTITIONS:
+            log("Reused in-memory {}".format(describe_partition(name, features[name])))
+    # Fresh device copies: the caller's features stay untouched.
+    data = {name: {key: value.to(device, copy=True) for key, value in features[name].items()}
+            for name in PARTITIONS}
     if args.shuffle_train_labels:
         real = data["train"]["label"]
         data["train"]["label"] = shuffled_labels(real, args.seed)
@@ -548,7 +586,6 @@ def main():
                "meta_std": model.encoder.meta_std.tolist(),
                "epochs_run": len(result["rows"]), "best": best,
                "final_epoch": final, "last_window": window}
-    (run_dir / "summary.json").write_text(json.dumps(summary, indent=2), encoding="utf-8")
     torch.save(result["best_state"], run_dir / "best_model.pt")
     try:
         save_curves(result["rows"], run_dir / "curves.png")
@@ -556,7 +593,13 @@ def main():
         log("matplotlib not installed; skipped curves.png")
     log("Wrote train.log, metrics.csv, summary.json, curves.png, best_model.pt to {}"
         .format(run_dir.relative_to(REPO_ROOT)))
-    log_file.close()
+    # Written last, so its presence marks a complete run folder.
+    (run_dir / "summary.json").write_text(json.dumps(summary, indent=2), encoding="utf-8")
+    return summary
+
+
+def main():
+    run(parse_args())
 
 
 if __name__ == "__main__":

@@ -306,43 +306,21 @@ Work then returns to the feature items at the top of this file (spatial pooling,
 
 ### Commands (Perlmutter)
 
-From the repo root, inside a GPU allocation, with `DATA_DIR` set.
-Tests first:
+`sweep_h4.py` runs the whole R0-R6 sweep (270 runs: 15 settings x splits 0-2 x seeds 0-2 x real/null) inside one short GPU allocation.
+It fills the feature cache once per split, then starts `--workers` processes that share the GPU; each loads the cached features once and trains its share of the runs back to back.
+Every run re-seeds from its own `--seed`, so results match standalone `train_cnngru.py` runs (`tests/test_sweep_h4.py` checks this), and run folders have the same layout.
+It resumes: finished runs (with `summary.json`, written last) are skipped and half-written folders are rerun, so after a time-out rerun the same command.
+At the end it writes `h4-summary.txt` (the `summarize_runs.py` output below) to the repo root; per-worker output is in `h4-sweep-logs/`.
+
+From the repo root, inside a GPU allocation, with `DATA_DIR` and `TORCH_HOME` set:
 
 ```sh
-python -m unittest discover -s tests -p 'test_train_cnngru.py' -v
-python -m unittest discover -s tests -p 'test_summarize_runs.py' -v
+python -m unittest discover -s tests -p 'test_*.py'
+python sweep_h4.py --dry-run | head
+python sweep_h4.py --feature-cache "$PSCRATCH/waldo-feature-cache" --workers 8 2>&1 | tee h4-sweep.log
 ```
 
-R0 and R1-R6 sweeps (270 runs including R0; the first run per split fills the cache):
-
-```sh
-CACHE="$SCRATCH/waldo-feature-cache"
-SETTINGS=(
-  "r0|"
-  "wd0.1|--weight-decay 0.1" "wd0.3|--weight-decay 0.3" "wd1|--weight-decay 1.0"
-  "do0.5|--dropout 0.5" "do0.7|--dropout 0.7"
-  "fn0.25|--feature-noise 0.25" "fn0.5|--feature-noise 0.5" "fn1|--feature-noise 1.0"
-  "fd0.2|--feature-dropout 0.2" "fd0.4|--feature-dropout 0.4"
-  "frd0.17|--frame-dropout 0.17" "frd0.33|--frame-dropout 0.33"
-  "ls0.1|--label-smoothing 0.1" "ls0.2|--label-smoothing 0.2"
-)
-for setting in "${SETTINGS[@]}"; do
-  tag="${setting%%|*}"; flags="${setting#*|}"
-  for split in 0 1 2; do
-    for seed in 0 1 2; do
-      python train_cnngru.py --data-dir "$DATA_DIR" --feature-cache "$CACHE" \
-        --split-position "$split" --seed "$seed" --epochs 200 --patience 0 $flags \
-        --run-name "h4-${tag}-split${split}-seed${seed}"
-      python train_cnngru.py --data-dir "$DATA_DIR" --feature-cache "$CACHE" \
-        --split-position "$split" --seed "$seed" --epochs 200 --patience 0 $flags \
-        --shuffle-train-labels --run-name "h4-${tag}-null-split${split}-seed${seed}"
-    done
-  done
-done 2>&1 | tee h4.log
-```
-
-Summary (R0 first, so every setting is compared with it; each setting also against its own null):
+`python sweep_h4.py --summarize-only` rewrites `h4-summary.txt` from existing folders; it runs:
 
 ```sh
 RUN_GROUPS=()

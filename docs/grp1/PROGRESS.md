@@ -41,6 +41,7 @@ If no family beats its null, H4 is rejected and work returns to feature changes.
 
 Implemented (local, same day): the four regularizer flags, `--feature-cache`, the `summarize_runs.py` slack block, `--min-effect` and `--at-epochs`, with invented-input tests; details and the 270-run Perlmutter sweep are in [NEXT_EXPERIMENTS.md](NEXT_EXPERIMENTS.md#implementation).
 Feature extraction no longer draws global random numbers, so seeded runs no longer reproduce Phase 0/1 bit for bit; R0 is rerun as part of the sweep.
+`sweep_h4.py` runs all 270 runs in one GPU allocation (cache filled once per split, 8 worker processes sharing the GPU, resumable) and writes `h4-summary.txt`; `train_cnngru.py` gained `run(args, features)` so in-process runs match standalone ones.
 
 Not verified: no test has been run (no local execution); no H4 runs exist yet.
 
