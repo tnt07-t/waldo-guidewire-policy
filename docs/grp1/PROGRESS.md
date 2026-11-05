@@ -12,21 +12,41 @@ These are team proposals, not confirmed course requirements. Individual ownershi
 
 ## Current status and next steps
 
-Owner-reported schedule (2026-10-30): Friday — Suhani and Andrew work on CNNs and understanding the data. By Sunday (2026-11-01) — aim to have the CNN work done or finalizing. This was a target, not a completion report for the full CNN–GRU/LSTM policies.
+Frozen ResNet-18 + GRU + goal MLP policy trains with `train_cnngru.py` (CNN frozen; LayerNorm on 512-d features; metadata standardization; class-weighted CE). Runs write under `docs/grp1/results/<run-name>/` via `--run-name` (not `--output-dir`). `--patience 0` disables early stopping. Local synthetic tests passed. Real images/features stay on Perlmutter. Inference and a two-epoch training smoke check passed on Perlmutter. The test partition has not been used.
 
-The frozen ResNet-18 frame encoder in `cnn.py` is implemented locally (commit `023d125`): ImageNet-pretrained backbone, 512-d pooled features, shared weights for separate goal and six-frame history encoding, fully frozen BatchNorm-safe eval behavior, and optional max-pool removal. It reuses `DINOv2Preprocessor` for RGB/full-view resize/pad and ImageNet normalization; that module's DINOv2 checkpoint label does not name this CNN. Backbone choice rationale and Perlmutter test commands are in [cnn.md](cnn.md).
+**Completed owner-run reference (LayerNorm, split 0, seed 0, lr 1e-3):** `docs/grp1/results/layernorm-reference-split0-20261104-231846`. 267 train / 80 val. Stopped epoch 56; best val bal-acc at epoch 26: train bal **0.809**, val bal **0.608**, val acc **0.637**, val AUC **0.499**, val loss **0.9688**. Confusion (rows true, cols pred; RETRACT/ADVANCE): `[[14, 20], [9, 37]]`. Train nearly memorizes later (e.g. ~99% train acc around epoch 53) while validation stays weak and val loss rises — clear overfitting. More capacity / long memorization runs are lower priority. LayerNorm benefit still needs matched comparisons already logged under H0/H1/H1b.
 
-Owner-run Perlmutter one-case encoder verification passed (2026-11-02): the `cnn.py` smoke check completed successfully. Exact printed device, remote HEAD, and optional flags were not supplied; do not repeat the completed default check without a code/data change or concrete concern.
+**Completed H2 learning-rate comparison (owner-run):** same split/seed and settings as the reference except **lr 3e-4**, batch 32, epochs 200, patience 30. Folder `docs/grp1/results/h2-lr3e4-split0-20261104-232604`. Early stop after 30 epochs without bal-acc gain. Best epoch **28**: train bal **0.788**, val bal **0.612**, val acc **0.637**, val AUC **0.541**, val loss **0.8588**. Confusion: RETRACT `[15, 19]`, ADVANCE `[10, 36]`. Versus reference: essentially the same peak val bal-acc (~0.61); slightly better best-epoch AUC/loss; overfitting pattern unchanged.
 
-`mlp_cnn.py` encodes the prepared goal through the shared frozen ResNet (`encode_goal` → `[512]` / `[B, 512]`) for MLP fusion with the GRU `[128]` summary. Prep stays in `DINOv2Preprocessor.prepare_case`; history/GRU stay in `gru.py`. Teammate can add the MLP in `mlp_cnn.py`.
+Basic dataset validation has already passed; do not repeat without a concrete reason. Current-input baseline and multi-split reporting remain open.
 
-`mlp_cnn.GoalClassifier` is the MLP head over `concat(gru_summary [B,128], goal_features [B,512])` (640 -> 128 -> 2 logits, no / yes). `model_cnngru.CNNGRUModel` wires the full path: history through `CNNGRUEncoder`, goal through `encode_goal` with the same shared CNN, then `GoalClassifier`.
-
-`cnn_diagnostics.py` remains available for 512-d probes. The current-input baseline, training loop, and evaluation are not implemented. Basic dataset validation has already passed as recorded in the dataset notes; do not repeat it without a concrete reason.
-
-**Immediate next steps:** write the training and evaluation script around `CNNGRUModel` (cross-entropy on `label`, argmax for prediction), then run a one-case forward/backward check on Perlmutter.
+**Immediate next steps:** treat H2 as negative/null for LR-only gains on this split; prioritize regularization / less overfitting or a current-input baseline before more capacity. Do not use the test partition. Log any further matched ablations here.
 
 ## Progress log
+
+### 2026-11-04 — LayerNorm reference + H2 LR 3e-4 (owner-run Perlmutter)
+
+**Plumbing:** all local synthetic tests passed; Perlmutter inference and two-epoch training smoke passed. Code uses LayerNorm on features; `train_cnngru.py` uses `--run-name` and writes `docs/grp1/results/<run-name>/`; `--patience 0` disables early stopping. Test partition unused.
+
+**Reference** (`layernorm-reference-split0-20261104-231846`): split 0, seed 0, lr `1e-3`. 267 train / 80 val. Stopped epoch 56; best val bal-acc epoch 26 — train bal 0.809, val bal 0.608, val acc 0.637, val AUC 0.499, val loss 0.9688; confusion `[[14, 20], [9, 37]]`. Train can reach ~99% acc while validation stays near chance AUC and val loss rises → overfitting, not underfitting.
+
+**H2** (`h2-lr3e4-split0-20261104-232604`): lr `3e-4` only change vs reference protocol (batch 32, patience 30, 200 epochs max). Command (Perlmutter):
+
+```sh
+python train_cnngru.py \
+  --data-dir "$DATA_DIR" \
+  --split-position 0 \
+  --seed 0 \
+  --epochs 200 \
+  --patience 30 \
+  --batch-size 32 \
+  --lr 0.0003 \
+  --run-name "h2-lr3e4-split0-$(date +%Y%m%d-%H%M%S)"
+```
+
+Early stop at epoch 58. Best epoch 28 — train bal 0.788, val bal 0.612, val acc 0.637, val AUC 0.541, val loss 0.8588; confusion RETRACT `[15, 19]`, ADVANCE `[10, 36]`. Trainable params 330,626; class weights RETRACT/ADVANCE `[1.376, 0.785]`.
+
+**Reading:** lowering LR alone does not fix generalization on split 0 (val bal-acc ~0.61 either way). Prefer next work on overfitting / signal (dropout, weight decay, baseline comparison, other splits) over capacity or another long memorization run. LayerNorm still lacks a new matched ablate in this pair (both runs already use LayerNorm).
 
 ### 2026-11-05 - LayerNorm adopted as the only feature normalization (local)
 

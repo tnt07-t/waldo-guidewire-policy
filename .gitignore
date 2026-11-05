@@ -5,9 +5,12 @@ docs/suhani
 docs/sabrina
 
 # env installments
+.venv/
+venv/
 
 # cache
 __pycache__/
+*.pyc
 
 # training checkpoints (large; keep metrics/logs/curves only)
 docs/grp1/results/**/*.pt
