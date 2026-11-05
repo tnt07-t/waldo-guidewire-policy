@@ -50,6 +50,12 @@ not a new input source.
 
 ## Matched baselines and scope
 
+**Input-role controls (2026-11-04):** `latest_goal_mlp` uses latest+goal images
+without metadata; `goal_metadata_mlp` uses goal+depth/time without history images.
+The existing `latest_mlp` retains latest+goal+metadata. See the
+[control protocol](ATTENTION_EXPERIMENTS.md#static-input-role-controls--2026-11-04)
+for matched budgets, parameter counts and comparison limits.
+
 `temporal_evaluation.py` defaults to `latest_mlp attention` with the SAME encoder,
 partitions, training-only metadata scaling and optimization/selection rules:
 

@@ -27,7 +27,7 @@ class TemporalTests(unittest.TestCase):
 
     def test_all_heads_backward_and_case_independence(self):
         h, g, m, _ = self.data()
-        for kind in ("latest_mlp", "mean_mlp", "attention", "gru", "lstm"):
+        for kind in ("latest_goal_mlp", "goal_metadata_mlp", "latest_mlp", "mean_mlp", "attention", "gru", "lstm"):
             head = FeatureHead(kind, 8, 8, 0).eval()
             out = head(h, g, m)
             self.assertEqual(out.shape, (8, 2))
@@ -184,7 +184,7 @@ class TemporalTests(unittest.TestCase):
                 return {'tensor': torch.ones(3, 8, 8)}
         case = {'goal': Image.new('RGB', (8, 8)), 'history': [Image.new('RGB', (8, 8))] * 6,
                 'depth_relative_mm': [0] * 6, 'history_offsets_s': [-5, -4, -3, -2, -1, 0]}
-        for kind, images in [('latest_mlp', 2), ('attention', 7)]:
+        for kind, images in [('latest_goal_mlp',2),('goal_metadata_mlp',1),('latest_mlp', 2), ('attention', 7)]:
             encoder = Encoder()
             report = benchmark(case, Prepare(), encoder, FeatureHead(kind, 8, 8, 0),
                                torch.ones(2), 'cpu', warmup=1, repeats=2)

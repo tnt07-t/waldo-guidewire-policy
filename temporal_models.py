@@ -10,7 +10,7 @@ class FeatureHead(nn.Module):
     def __init__(self, kind, feature_dim=512, width=64, dropout=0.1,
                  position_embeddings=True, classifier_width=None):
         super().__init__()
-        if kind not in ("latest_mlp", "mean_mlp", "attention", "gru", "lstm"):
+        if kind not in ("latest_goal_mlp", "goal_metadata_mlp", "latest_mlp", "mean_mlp", "attention", "gru", "lstm"):
             raise ValueError("Unknown head: " + kind)
         if width <= 0 or width % 4 or feature_dim <= 0:
             raise ValueError("Positive width divisible by four and feature_dim required")
@@ -18,7 +18,9 @@ class FeatureHead(nn.Module):
         classifier_width = width if classifier_width is None else classifier_width
         if classifier_width <= 0:
             raise ValueError("classifier_width must be positive")
-        if kind == "latest_mlp":
+        if kind in ("latest_goal_mlp", "goal_metadata_mlp"):
+            fused = feature_dim + 12 if kind == "goal_metadata_mlp" else 2 * feature_dim
+        elif kind == "latest_mlp":
             fused = 2 * feature_dim + 12
         elif kind == "mean_mlp":
             fused = 2 * feature_dim + 12
@@ -49,7 +51,11 @@ class FeatureHead(nn.Module):
         if any(x.dtype != torch.float32 or not torch.isfinite(x).all()
                for x in (history, goal, metadata)):
             raise ValueError("Inputs must be finite float32 tensors")
-        if self.kind in ("latest_mlp", "mean_mlp"):
+        if self.kind == "latest_goal_mlp":
+            fused = torch.cat((history[:, -1],goal),-1)
+        elif self.kind == "goal_metadata_mlp":
+            fused = torch.cat((goal, metadata.flatten(1)), -1)
+        elif self.kind in ("latest_mlp", "mean_mlp"):
             image = history[:, -1] if self.kind == "latest_mlp" else history.mean(1)
             fused = torch.cat((image, goal, metadata.flatten(1)), -1)
         else:
@@ -83,5 +89,10 @@ class FrozenPolicy(nn.Module):
     def forward(self, goal, history, metadata):
         with torch.no_grad():
             goal_features = self.encoder(goal)
-            history_features = self.encoder(history)
+            if self.head.kind == 'goal_metadata_mlp':
+                history_features = goal_features.new_zeros(len(goal),6,goal_features.shape[-1])
+            elif self.head.kind in ('latest_goal_mlp','latest_mlp'):
+                history_features = self.encoder(history[:,-1]).unsqueeze(1).expand(-1,6,-1)
+            else:
+                history_features = self.encoder(history)
         return self.head(history_features, goal_features, metadata)

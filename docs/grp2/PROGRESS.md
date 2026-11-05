@@ -11,6 +11,24 @@ These are team proposals, not confirmed course requirements. Friday task ownersh
 
 ## Current status and next steps
 
+**2026-11-04 — Static input-role controls prepared:** added latest+goal without
+metadata and goal+metadata without history imagery, alongside the full static
+reference. Hidden MLP/training/checkpoint rules remain fixed; parameter counts
+and image IO differ explicitly. Gradient tests verify excluded input roles.
+The static extraction path skips earlier images and benchmarks consumed roles
+only. Real training/results remain pending; see the
+[control protocol](ATTENTION_EXPERIMENTS.md#static-input-role-controls--2026-11-04).
+
+**2026-11-04 — Selected/final attention inspection completed:** attention-only
+replay reproduces .500 selected validation BA and .636/.425 final train/validation
+BA. Training-partition routing becomes mildly recency-biased in three heads,
+but history/metadata replacements remain weak. Goal replacement changes mean
+probability .0332, flips .352 of training predictions and reduces BA by .136.
+This establishes input sensitivity, not marker reasoning or leakage. Next
+candidate is a trained goal+metadata control with matched recipe; capacity
+changes remain deferred. Detailed results and limits are in the
+[checkpoint comparison](ATTENTION_EXPERIMENTS.md#selected-versus-final-checkpoint-inspection).
+
 **2026-11-04 — Final class behavior reviewed:** final attention predicts both
 classes, with train recalls .526/.747 versus validation .176/.674 (retract/advance).
 Mean favors ADVANCE more strongly; latest validation counts are nearly balanced

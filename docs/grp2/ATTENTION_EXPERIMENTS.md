@@ -1,5 +1,80 @@
 # CNN–attention development experiments
 
+## Static input-role controls — 2026-11-04
+
+**Scope:** compare latest+goal imagery without movement metadata against goal
+imagery with full movement metadata. Retain the existing latest+goal+metadata
+MLP as the common reference. No new goal-only neural model is included.
+
+| Runner model | Latest image | Marked goal image | Six depths/times | Trainable parameters |
+|---|---|---|---|---:|
+| latest_goal_mlp | Yes | Yes | No | 65,730 |
+| goal_metadata_mlp | No | Yes | Yes | 33,730 |
+| latest_mlp (existing reference) | Yes | Yes | Yes | 66,498 |
+
+All use frozen ResNet-18 features, a 64-unit hidden MLP with ReLU and dropout .1,
+and two action logits. Latest+goal maps 1024→64→2; goal+metadata maps 524→64→2;
+the reference maps 1036→64→2. Metadata is appended as twelve chronological
+depth/time values only in metadata-enabled heads. Excluded inputs have no
+forward/gradient path into the classifier; dummy tensors preserve the shared
+head interface without supplying missing-image information.
+
+### Rationale and comparison limits
+
+- Latest+goal versus the full static reference tests adding numerical history.
+- Goal+metadata versus the full static reference tests adding the latest image.
+- Goal+metadata versus latest+goal changes two input sources; that pair alone
+  cannot isolate a metadata or latest-image contribution.
+- No control here processes earlier history images. Compare with completed
+  mean-history/attention runs cautiously: architecture/capacity and temporal
+  aggregation also differ. Poor performance with history does not establish
+  that useful information is absent or intrinsically noisy.
+- Fixed hidden width preserves the classifier design, but input dimensionality
+  changes parameter count and random initialization. One seed and selected
+  validation peaks are preliminary evidence; no superiority or necessity claim
+  follows from small score differences.
+
+### Fixed development protocol and run
+
+Split 0, 267 training/80 validation cases, seed 0, batch 32, AdamW .001, weight
+decay .001, dropout .1, maximum 100 epochs, patience 15 and earliest strictly
+best validation BA checkpoint. Full train/validation metrics are recorded each
+epoch. Selected/final checkpoints stay separate. Scaling is training-only;
+latest+goal does not consume metadata even though bookkeeping/scaling may read
+the supplied fields. Test data is reserved. No optimizer or width sweep.
+
+When only these controls are requested, extraction reads the goal and latest
+image once per case, skipping the five earlier image files. Goal+metadata alone
+extracts only goals. Mixed temporal comparisons retain the original extraction
+path. Benchmarking processes two images for latest+goal/reference and one for
+goal+metadata, includes preparation/transfer/CNN/head, excludes disk IO and
+assumes no feature reuse.
+
+Run after code synchronization and environment checks, inside an allocated
+GPU compute shell with DATA_DIR and TORCH_HOME configured:
+
+```sh
+python3 -B temporal_evaluation.py --split-position 0 --device cuda \
+  --models latest_goal_mlp goal_metadata_mlp latest_mlp \
+  --width 64 --classifier-width 64 --seeds 0 --batch-size 32 \
+  --epochs 100 --patience 15 --lr 0.001 --weight-decay 0.001 \
+  --dropout 0.1 --benchmark \
+  --output-dir "$PSCRATCH/waldo-temporal/input-controls-01"
+```
+
+Inspect `summary.md`, `learning_summary.md`, aggregate learning curves and scoped
+latency. Private predictions, checkpoints and full configuration remain on
+Perlmutter. Record real results and the next bounded decision here after review.
+**Real execution/results: pending.** No new goal-only result is claimed.
+
+**Verification:** all 58 repository synthetic tests passed. New tests verify
+latest+goal has no metadata gradient path, goal+metadata has no history-image
+gradient path, earlier history frames do not affect either control, and the
+image-to-logit wrapper/benchmark encodes only consumed roles. An end-to-end
+invented-image run succeeds with the five earlier history files absent and
+reloads selected/final checkpoints for both controls. This establishes input
+exclusion and runner behavior, not real-data accuracy.
+
 ## Learning and representation diagnostics — 2026-11-04
 
 **Scope:** investigate the fixed-64 attention run before changing architecture.
@@ -213,6 +288,56 @@ Generalization weakness is shared across heads. No result demonstrates that
 earlier images are intrinsically harmful or that width 128 is the remedy.
 
 ### Selected versus final checkpoint inspection
+
+**Completed comparison — 2026-11-04:** attention-only replay reproduced selected
+epoch 1 BA .500 and final epoch 16 train/validation BA .636/.425 at displayed
+precision. Both checkpoint roles were saved and inspected on 267 training cases.
+No new architecture or held-out performance gain was introduced.
+
+At epoch 16, heads 1–3 assign larger mean latest-query weights to recent frames
+(f6 .217/.191/.209 versus f1 .128/.125/.126). Head 4 favors earlier frames
+(f2 .203 versus f6 .150). These are case averages and do not establish task-
+appropriate temporal processing. Routing changes without comparable action
+sensitivity illustrate why weights alone cannot explain predictions.
+
+| Training intervention | Selected probability change | Final probability change | Final BA delta | Final prediction flips |
+|---|---:|---:|---:|---:|
+| Replace f1–f4 with training means | .0000 | .0000 | .000 | .000 |
+| Replace f5 | .0000 | .0000 | +.005 | .004 |
+| Replace f6 | .0005 | .0007 | -.007 | .026 |
+| Repeat latest visual features | .0001 | .0001 | .000 | .000 |
+| Reverse visual history only | .0004 | .0005 | +.015 | .011 |
+| Replace goal | .0108 | .0332 | -.136 | .352 |
+| Replace all metadata / depth / time | .0000 | .0000 | .000 | .000 |
+
+Probability change is mean absolute ADVANCE-probability change, not accuracy;
+.0000 is rounded. Goal replacement reduces final training BA to approximately
+.500 and flips 35.2% of predictions. A 3.32-percentage-point mean probability
+change with many flips also warrants checking threshold proximity; flips alone
+do not establish a strong margin. The measured goal dependence does not isolate
+the red marker from reference anatomy/wire/context or establish leakage.
+
+Raw representations are unchanged. Projected RMS/std/effective rank change
+1.4730/.1304/25.83 → 2.3168/.1654/15.31; summary changes
+1.0021/.0485/21.81 → .9933/.0268/16.92. Final summaries vary less across cases
+despite training-classification improvement. Learned scale, dimension and layer
+normalization prevent semantic-loss claims. Similar values across frames,
+compression/normalization and the direct goal-classifier path are plausible
+contributors, not established causes.
+
+Final depth/time probe R²: raw .395/.792, projected .624/.455, summary
+-.163/-.068. Poor summary linear recovery persists, subject to the previously
+documented missing oracle/mean controls and fixed-probe limitations.
+
+**Next hypothesis:** test a freshly trained goal+metadata static control under
+the same ResNet/head/training recipe before changing attention capacity. Existing
+latest+goal+metadata results provide context; align inputs, scaling and budgets
+and retain validation-selection caveats. A goal-only-without-metadata experiment
+would answer a different question and must be labeled separately. Fixed-head
+replacement is distribution-shifting sensitivity, not a substitute for trained
+input-role controls. Spatial single-case results remain private and were not
+supplied in this comparison. No width, position or goal-conditioning change is
+selected from the routing tables alone.
 
 The runner now saves `<model>-seed<N>-final.pt` before restoring the selected
 state; the original `<model>-seed<N>.pt` remains the validation-selected model.

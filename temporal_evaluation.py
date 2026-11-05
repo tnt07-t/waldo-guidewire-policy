@@ -41,6 +41,38 @@ def tensors(features, device):
             meta.to(device), torch.tensor(features["y"], dtype=torch.long, device=device))
 
 
+def collect_static_images(dataset, prepare, encoder, name, include_latest):
+    """Decode/encode only goal and optionally latest; skip earlier image IO."""
+    goals, latest = [], []
+    shared = {k: [] for k in ('metadata','y','episode','case_id','row_index')}
+    for row in dataset.indices:
+        record = dataset.records[row]
+        if len(record['paths']) != 7 or len(record['depth_relative_mm']) != 6 or len(record['history_offsets_s']) != 6:
+            raise ValueError('Expected goal plus six history paths and aligned metadata')
+        image = dataset._read_image(record['paths'][0], row)
+        def encode(image):
+            value = prepare.prepare_image(image)['tensor'].unsqueeze(0)
+            with torch.inference_mode():
+                encoded = (encoder._encode_images(value,1)[0] if name=='dinov2' else
+                           encoder(value.to(next(encoder.parameters()).device))[0])
+            if encoded.ndim != 1 or not torch.isfinite(encoded).all():
+                raise ValueError('Expected finite image feature vector')
+            return encoded.cpu().numpy()
+        goals.append(encode(image))
+        if include_latest:
+            latest.append(encode(dataset._read_image(record['paths'][-1],row)))
+        shared['metadata'].append(record['depth_relative_mm'] + record['history_offsets_s'])
+        for key, source in (('y','label'),('episode','episode'),('case_id','case_id')):
+            shared[key].append(record[source])
+        shared['row_index'].append(row)
+    shared = {k: np.asarray(v) for k,v in shared.items()}
+    g = np.asarray(goals)
+    history = np.zeros((len(g),6,g.shape[1]),dtype=g.dtype)
+    if include_latest:
+        history[:,-1] = np.asarray(latest)
+    return shared, {name: dict(shared, goal=g, history=history)}
+
+
 def probabilities(head, data):
     head.eval()
     with torch.no_grad():
@@ -158,9 +190,10 @@ def benchmark(case, prepare, encoder, head, scale, device, *, warmup=5, repeats=
     def once():
         sync()
         start = time.perf_counter()
-        selected = ([case["history"][-1]] if head.kind == "latest_mlp" else case["history"])
+        selected = ([] if head.kind == 'goal_metadata_mlp' else
+                    [case["history"][-1]] if head.kind in ('latest_mlp','latest_goal_mlp') else case["history"])
         goal = prepare.prepare_image(case["goal"])["tensor"]
-        frames = torch.stack([prepare.prepare_image(f)["tensor"] for f in selected])
+        frames = torch.stack([prepare.prepare_image(f)["tensor"] for f in selected]) if selected else None
         meta = torch.tensor(list(zip(case["depth_relative_mm"], case["history_offsets_s"])),
                             dtype=torch.float32, device=device).unsqueeze(0) / scale
         sync()
@@ -168,11 +201,12 @@ def benchmark(case, prepare, encoder, head, scale, device, *, warmup=5, repeats=
         with torch.no_grad():
             if hasattr(encoder, "encode"):
                 g = encoder._encode_images(goal.unsqueeze(0), 1)
-                h = encoder._encode_images(frames, 1).unsqueeze(0)
+                h = encoder._encode_images(frames, 1).unsqueeze(0) if frames is not None else g.new_zeros(1,6,g.shape[-1])
             else:
                 g = encoder(goal.unsqueeze(0).to(device))
-                h = torch.cat([encoder(f.unsqueeze(0).to(device)) for f in frames]).unsqueeze(0)
-            if head.kind == "latest_mlp":
+                h = (torch.cat([encoder(f.unsqueeze(0).to(device)) for f in frames]).unsqueeze(0)
+                     if frames is not None else g.new_zeros(1,6,g.shape[-1]))
+            if head.kind in ("latest_mlp",'latest_goal_mlp'):
                 # Only the final entry is consumed by this head.
                 h = h.expand(-1, 6, -1)
             head(h, g, meta)
@@ -187,7 +221,8 @@ def benchmark(case, prepare, encoder, head, scale, device, *, warmup=5, repeats=
         torch.cuda.reset_peak_memory_stats()
     values = np.asarray([once() for _ in range(repeats)])
     return {"scope": "same in-memory training case; batch one; preparation + transfer + encoder + head; excludes disk IO; no feature reuse",
-            "images": 2 if head.kind == "latest_mlp" else 7, "warmup": warmup, "repeats": repeats,
+            "images": 1 if head.kind == 'goal_metadata_mlp' else 2 if head.kind in ('latest_mlp','latest_goal_mlp') else 7,
+            "warmup": warmup, "repeats": repeats,
             "milliseconds": {k: {"median": float(np.median(values[:, i])),
                                   "p95": float(np.percentile(values[:, i], 95))}
                              for i, k in enumerate(("preprocessing", "model", "total"))},
@@ -216,7 +251,7 @@ def main(argv=None):
     parser.add_argument("--output-dir", type=Path, required=True)
     parser.add_argument("--split-position", type=int, required=True)
     parser.add_argument("--encoder", choices=("resnet18", "dinov2"), default="resnet18")
-    parser.add_argument("--models", nargs="+", choices=("latest_mlp", "mean_mlp", "attention", "gru", "lstm"),
+    parser.add_argument("--models", nargs="+", choices=("latest_goal_mlp", "goal_metadata_mlp", "latest_mlp", "mean_mlp", "attention", "gru", "lstm"),
                         default=["latest_mlp", "attention"])
     parser.add_argument("--seeds", nargs="+", type=int, default=[0])
     parser.add_argument("--device", choices=("cpu", "cuda"), default="cuda")
@@ -269,8 +304,13 @@ def main(argv=None):
     args.output_dir.mkdir(parents=True, mode=0o700)
     write_json(args.output_dir / "status.json", {"status": "extracting"})
     start = time.perf_counter()
-    _, train_features = collect(datasets["train"], DINOv2Preprocessor(), {args.encoder: encoder})
-    _, val_features = collect(datasets["validation"], DINOv2Preprocessor(), {args.encoder: encoder})
+    static_controls = not args.attention_sweep and set(args.models) <= {'latest_goal_mlp','goal_metadata_mlp','latest_mlp'}
+    include_latest = set(args.models) != {'goal_metadata_mlp'}
+    def extract(dataset):
+        return (collect_static_images(dataset,DINOv2Preprocessor(),encoder,args.encoder,include_latest) if static_controls else
+                collect(dataset,DINOv2Preprocessor(),{args.encoder:encoder}))
+    _, train_features = extract(datasets['train'])
+    _, val_features = extract(datasets['validation'])
     extraction_seconds = time.perf_counter() - start
     train = tensors(train_features[args.encoder], args.device)
     validation = tensors(val_features[args.encoder], args.device)
@@ -278,7 +318,9 @@ def main(argv=None):
     train = (train[0], train[1], train[2] / scale, train[3])
     validation = (validation[0], validation[1], validation[2] / scale, validation[3])
     config = {k: str(v) if isinstance(v, Path) else v for k, v in vars(args).items()}
-    config.update(feature_dim=feature_dim, metadata_scaling="train-only population std; no centering",
+    config.update(feature_dim=feature_dim, extraction_visual_roles=(('goal + latest' if include_latest else 'goal only')
+                                                                if static_controls else 'goal + six history images'),
+                  metadata_scaling="train-only population std; no centering",
                   metadata_scale=scale.cpu().tolist(), preparation="RGB full-view 518 bicubic mean padding",
                   encoder_weights="ResNet18_Weights.DEFAULT" if args.encoder == "resnet18" else "vit_small_patch14_dinov2.lvd142m")
     source_dir = Path(__file__).resolve().parent
@@ -336,8 +378,21 @@ def main(argv=None):
                           validation_balanced_accuracy_95pct=episode_interval(
                               validation[3].cpu().numpy(), val_p, val_features[args.encoder]["episode"]),
                           trainable_parameters=sum(p.numel() for p in head.parameters()))
+            result['feature_roles'] = ('latest image + goal; no metadata' if kind == 'latest_goal_mlp' else
+                                       'goal + six chronological depth/time pairs' if kind == 'goal_metadata_mlp' else
+                                       'latest + goal + six depth/time pairs' if kind == 'latest_mlp' else
+                                       'history + goal + six depth/time pairs')
             if args.benchmark:
-                result["latency"] = benchmark(datasets["train"][0], DINOv2Preprocessor(),
+                if kind in ('latest_goal_mlp','goal_metadata_mlp','latest_mlp'):
+                    dataset = datasets['train']
+                    row = dataset.indices[0]
+                    record = dataset.records[row]
+                    case = dict(goal=dataset._read_image(record['paths'][0],row),
+                                history=[] if kind=='goal_metadata_mlp' else [dataset._read_image(record['paths'][-1],row)],
+                                depth_relative_mm=record['depth_relative_mm'],history_offsets_s=record['history_offsets_s'])
+                else:
+                    case = datasets['train'][0]
+                result["latency"] = benchmark(case, DINOv2Preprocessor(),
                                                encoder, head, scale, args.device)
             report["results"][key] = result
             predictions["advance_probabilities"][key] = val_p.tolist()
