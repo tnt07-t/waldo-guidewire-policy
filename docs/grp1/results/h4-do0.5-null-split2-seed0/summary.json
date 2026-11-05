@@ -1,0 +1,116 @@
+{
+  "args": {
+    "split_position": 2,
+    "seed": 0,
+    "size": 518,
+    "epochs": 200,
+    "patience": 0,
+    "batch_size": 16,
+    "lr": 0.001,
+    "weight_decay": 0.01,
+    "dropout": 0.5,
+    "feature_noise": 0.0,
+    "feature_dropout": 0.0,
+    "frame_dropout": 0.0,
+    "label_smoothing": 0.0,
+    "grad_clip": 1.0,
+    "feature_batch_size": 8,
+    "num_workers": 4,
+    "shuffle_train_labels": true,
+    "summary_window": 20,
+    "run_name": "h4-do0.5-null-split2-seed0",
+    "feature_cache_used": true
+  },
+  "device": "cuda",
+  "trainable_parameters": 67586,
+  "class_weights": [
+    1.3366336822509766,
+    0.7988165616989136
+  ],
+  "meta_mean": [
+    -10.759197235107422,
+    -1.9200412034988403
+  ],
+  "meta_std": [
+    10.592507362365723,
+    1.3508611917495728
+  ],
+  "epochs_run": 200,
+  "best": {
+    "epoch": 48,
+    "train": {
+      "loss": 0.487855464220047,
+      "acc": 0.7777777777777778,
+      "bal_acc": 0.78862264752388,
+      "recall_retract": 0.8316831588745117,
+      "recall_advance": 0.7455621361732483,
+      "auc": 0.8508407053723124,
+      "confusion": [
+        [
+          84,
+          17
+        ],
+        [
+          43,
+          126
+        ]
+      ]
+    },
+    "val": {
+      "loss": 0.704131543636322,
+      "acc": 0.6266666666666667,
+      "bal_acc": 0.6255622208118439,
+      "recall_retract": 0.6206896305084229,
+      "recall_advance": 0.6304348111152649,
+      "auc": 0.6101949025487257,
+      "confusion": [
+        [
+          18,
+          11
+        ],
+        [
+          17,
+          29
+        ]
+      ]
+    }
+  },
+  "final_epoch": {
+    "epoch": 200,
+    "seconds": 0.14326798194088042,
+    "best": false,
+    "train_loss": 1.4266442121879663e-05,
+    "train_acc": 1.0,
+    "train_bal_acc": 1.0,
+    "train_recall_retract": 1.0,
+    "train_recall_advance": 1.0,
+    "train_auc": 1.0,
+    "val_loss": 4.9161295890808105,
+    "val_acc": 0.64,
+    "val_bal_acc": 0.5854572653770447,
+    "val_recall_retract": 0.3448275923728943,
+    "val_recall_advance": 0.8260869383811951,
+    "val_auc": 0.6124437781109445
+  },
+  "last_window": {
+    "window": 20,
+    "first_epoch": 181,
+    "last_epoch": 200,
+    "train_bal_acc": {
+      "mean": 0.9998520717024804,
+      "std": 0.0006448044997783203
+    },
+    "val_bal_acc": {
+      "mean": 0.5502998486161232,
+      "std": 0.027924816417547408
+    },
+    "val_auc": {
+      "mean": 0.5616566716641679,
+      "std": 0.03986154401579303
+    },
+    "val_loss": {
+      "mean": 5.5987713098526,
+      "std": 0.7070277908646848
+    }
+  }
+}

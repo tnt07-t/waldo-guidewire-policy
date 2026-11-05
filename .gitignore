@@ -9,8 +9,20 @@ docs/sabrina
 venv/
 
 # cache
+cat >> .gitignore <<'EOF'
 __pycache__/
 *.pyc
+*.pt
+*.pth
+*.npy
+*.npz
+*.log
+data/
+checkpoints/
+.ipynb_checkpoints/
+EOF
 
 # training checkpoints (large; keep metrics/logs/curves only)
 docs/grp1/results/**/*.pt
+
+
