@@ -32,7 +32,27 @@ dropout-.1 run, plus selected/final training curves. A smaller train/validation
 gap caused only by worse training is not evidence of improvement. Single-seed,
 reused-validation results remain exploratory; test is reserved. The existing
 runner already supports this command; no code change is needed.
-**Execution/result: configured, real run pending.**
+**Execution/result:** dropout .3 completed; supplied results and interpretation
+are recorded below.
+
+### 2026-11-05 — Dropout .3 result
+
+Supplied standardized latest+goal LeakyReLU result, seed 0, dropout .3:
+selected epoch 8, 23 epochs completed. Selected training BA/AUC/loss
+.941/.992/.2606; selected validation .584/.597/.7217 with retract/advance recalls
+.559/.609. Final training BA .994, AUC 1.000, loss .0403; final validation BA
+.540, AUC .539, loss 1.088, recalls .559/.522.
+
+Compared with dropout .1, selected validation BA changes .588→.584, AUC
+.580→.597 and loss .7652→.7217. Selected training BA falls .964→.941 and final
+validation loss falls 1.1345→1.088. This is a modest regularization effect and
+mixed metric result, not an unambiguous failure or improvement. Strong fitting
+and weak validation remain; the BA difference is inconclusive on one seed and
+80 related validation cases. Final checkpoints remain diagnostic only.
+
+**Decision:** retain both results; no clear primary-BA improvement justifies
+replacing the baseline. Proceed to the already specified weight-decay comparison
+with dropout restored to .1, avoiding a combined dropout/decay intervention.
 
 ### Conditional AdamW comparison
 
@@ -59,7 +79,43 @@ not success; tiny differences on one reused validation split are inconclusive.
 Do not automatically combine stronger dropout and decay or widen the search.
 The second run is conditional on reviewing the first; no automatic job chain or
 new GPU allocation is initiated. Both configurations use existing CLI options.
-**AdamW comparison execution/result: not run.**
+**AdamW comparison execution/result:** completed owner-run aggregates are recorded
+below.
+
+### 2026-11-05 — Weight decay .01 result and regularization review
+
+Supplied standardized latest+goal LeakyReLU run, dropout .1, weight decay .01:
+selected epoch 8 and 23 completed epochs. Selected train BA/AUC/loss
+.964/.996/.1880, recalls .969/.959; selected validation .588/.579/.7643,
+recalls .588/.587. Final train BA/AUC 1.000/1.000, loss .0134; final validation
+BA .510, AUC .543, loss 1.127, recalls .412/.609.
+
+| Setting | Selected train BA | Selected validation BA | Selected validation AUC | Selected validation loss | Final validation BA / loss |
+|---|---:|---:|---:|---:|---|
+| Dropout .1, decay .001 reference | .964 | .588 | .580 | .7652 | .510 / 1.1345 |
+| Dropout .3, decay .001 | .941 | .584 | .597 | .7217 | .540 / 1.088 |
+| Dropout .1, decay .01 | .964 | .588 | .579 | .7643 | .510 / 1.127 |
+
+The stronger decay setting has negligible observed impact on selection/BA;
+dropout modestly improves some probability metrics without clear BA improvement.
+No setting establishes a reliable superiority claim on one repeatedly used
+80-case validation partition. Memorization/generalization divergence persists.
+
+AdamW's isolated decay factor is (1 - learning_rate × weight_decay) per step.
+At lr .001 and decay .01, 207 updates (23 epochs × nine batches) yield about
+.99793 multiplicative retention absent gradient updates, versus .99979 for
+decay .001. At selected epoch 8 (72 updates), the factors are .99928/.99993.
+Actual optimization also includes gradients and interactions; these figures
+illustrate scale, not measured parameter changes. Tenfold decay need not create
+a strong regularization effect within this budget. The result does not rule out
+other decay values, but no broader search is automatically justified.
+
+**Decision:** close the predeclared regularization sequence without a winning
+new recipe. Retain the original standardized LeakyReLU setup as the reference;
+dropout .3 remains a recorded alternative, not a confirmed best model. Keep
+test reserved. Next diagnose transferable input associations or align input-role
+controls under the same functioning recipe; do not interpret mismatched prior
+controls or keep extending validation-driven parameter searches.
 
 ### What is standardized
 

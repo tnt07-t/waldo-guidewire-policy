@@ -11,6 +11,21 @@ These are team proposals, not confirmed course requirements. Friday task ownersh
 
 ## Current status and next steps
 
+**2026-11-05 — Regularization sequence completed:** decay .01 with dropout .1
+reproduces selected BA .588 at epoch 8; final train/validation BA 1.000/.510.
+Selected validation AUC/loss .579/.7643 versus baseline .580/.7652. Dropout .3
+has modest AUC/loss gains but BA .584. No clear winning regularizer; short-budget
+AdamW shrinkage is small and results do not rule out other strengths. Stop the
+planned sweep and retain the original standardized recipe as reference. Full
+table, decay-scale calculation and follow-up limits are in the experiment log.
+
+**2026-11-05 — Dropout .3 mixed result:** selected epoch 8 validation BA .584
+versus .588 baseline; AUC improves .580→.597 and loss .7652→.7217. Selected
+training BA falls to .941, but final training remains .994 and validation .540.
+This is modest regularization without clear primary-metric improvement.
+Next agreed comparison: AdamW decay .01 with dropout restored to .1. No new
+width or automatic regularization sweep is selected.
+
 **2026-11-05 — Regularization sequence agreed:** first test dropout .3 with
 standardized latest+goal LeakyReLU, decay .001 and learning rate .001. If the
 reviewed result gives no useful validation improvement, next candidate is decay
