@@ -20,13 +20,23 @@ Frozen ResNet-18 + GRU + goal MLP policy trains with `train_cnngru.py` (CNN froz
 
 Basic dataset validation has already passed; do not repeat without a concrete reason. Current-input baseline and multi-split reporting remain open.
 
-**Immediate next steps:** treat H2 as negative/null for LR-only gains on this split. Next experiment is a **frozen CNN linear probe** (`probe_cnn_features.py` on branch `suhani-experiments`) to check whether 512-d features carry ADVANCE/RETRACT signal without a GRU. Do not use the test partition. Log probe results here once run on Perlmutter.
+**Immediate next steps:** linear probes complete on split 0 / seeds 0–1 ([PROBE_LINEAR.md](PROBE_LINEAR.md)). Best **mean** config: `goal_only` + `--remove-maxpool` (val bal ~0.62, AUC ~0.61; high seed variance). Implemented as `GoalOnlyLinearModel` / `probe_cnn_features.py --preset best`. Next: hygiene + seed-2 replicate, then CNN-GRU with `remove_maxpool`, then size 224. Do not use the test partition. See [NEXT_EXPERIMENTS.md](NEXT_EXPERIMENTS.md).
 
 ## Progress log
 
+### 2026-11-05 — Linear probe study complete + goal-only baseline (`suhani-experiments`)
+
+Full tables, confusion matrices, and commands: [PROBE_LINEAR.md](PROBE_LINEAR.md).
+
+**Runs:** maxpool kept vs removed × seeds 0–1 × designs `{latest_goal, mean_goal, goal_only}` on split 0. Folders: `probe-cnn-split0-20261105-125328`, `probe-cnn-seed1-split0-20261105-131811`, `probe-cnn-nomaxpool-split0-20261105-131333`, `probe-cnn-nomaxpool-seed1-split0-20261105-132018`.
+
+**Headline:** best **mean** config is **`goal_only` + remove maxpool** (mean val bal **0.624**, AUC **0.607**). Best single run is the same design, seed 1 (val bal 0.664 / AUC 0.702) — do not cite alone. Maxpool removal did not consistently help `latest_goal`. `mean_goal` was poor / unstable. History concat did not beat goal-only on average without maxpool.
+
+**Code:** `GoalOnlyLinearModel`, `probe_cnn_features.py --preset best` (writes `best_model.pt`), `infer_goal_linear.py`. Test partition unused.
+
 ### 2026-11-05 — Frozen CNN linear probe script (`suhani-experiments`)
 
-Added `probe_cnn_features.py`: encode train/val once with frozen `FrameEncoder`, train `nn.Linear` on designs `latest_goal` / `mean_goal` / `goal_only`, write under `docs/grp1/results/<run-name>/`. Reuses `extract_features` / metrics from `train_cnngru.py`. Local invented-input unit tests in `tests/test_probe_cnn_features.py`. Real Perlmutter probe run not logged yet. Test partition unused.
+Added `probe_cnn_features.py`: encode train/val once with frozen `FrameEncoder`, train `nn.Linear` on designs `latest_goal` / `mean_goal` / `goal_only`, write under `docs/grp1/results/<run-name>/`. Local invented-input unit tests in `tests/test_probe_cnn_features.py`.
 
 ### 2026-11-04 — LayerNorm reference + H2 LR 3e-4 (owner-run Perlmutter)
 

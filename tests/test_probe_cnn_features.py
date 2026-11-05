@@ -3,8 +3,9 @@
 import unittest
 
 import torch
+from torch import nn
 
-from probe_cnn_features import build_features, train_linear_probe
+from probe_cnn_features import BEST_PRESET, build_features, train_linear_probe
 
 
 class BuildFeaturesTests(unittest.TestCase):
@@ -16,6 +17,10 @@ class BuildFeaturesTests(unittest.TestCase):
         self.assertEqual(tuple(build_features("goal_only", history, goal).shape), (5, 512))
         torch.testing.assert_close(build_features("latest_goal", history, goal)[:, :512],
                                    history[:, -1])
+
+    def test_best_preset_is_goal_only_nomaxpool(self):
+        self.assertTrue(BEST_PRESET["remove_maxpool"])
+        self.assertEqual(BEST_PRESET["designs"], ["goal_only"])
 
 
 class ProbeTrainTests(unittest.TestCase):
@@ -30,6 +35,16 @@ class ProbeTrainTests(unittest.TestCase):
             train_x, labels, train_x, labels,
             epochs=40, lr=1e-1, weight_decay=0.0)
         self.assertEqual(result["best"]["val"]["bal_acc"], 1.0)
+
+    def test_linear_state_loads_into_classifier(self):
+        # Avoid importing torchvision: exercise the Linear interface only.
+        head = nn.Linear(512, 2)
+        with torch.no_grad():
+            head.weight.fill_(0.01)
+            head.bias.fill_(0.0)
+        restored = nn.Linear(512, 2)
+        restored.load_state_dict(head.state_dict())
+        torch.testing.assert_close(restored.weight, head.weight)
 
 
 if __name__ == "__main__":

@@ -1,71 +1,88 @@
 # Group 1 — next experiments (CNN / features first)
 
-Context from owner-run split-0 training (see [PROGRESS.md](PROGRESS.md)): with frozen ResNet-18 + LayerNorm + GRU + MLP, the head can nearly memorize training (~99% train acc) while validation stays weak (best val bal-acc ~0.61, val AUC ~0.5, val loss rises). H2 (lr `3e-4` vs `1e-3`) did not fix generalization. More capacity and long memorization runs are lower priority. The test partition must not be used for tuning.
+Context: frozen ResNet-18 + LayerNorm + GRU + MLP overfits train while validation stays weak (~0.61 bal-acc, ~0.5 AUC on split 0). LR-only H2 did not fix it. Linear probes ([PROBE_LINEAR.md](PROBE_LINEAR.md)) show the bottleneck is largely **what the CNN emits**, with a usable but noisy **goal-only + remove-maxpool** linear baseline. The test partition must not be used for tuning.
 
-**Working diagnosis:** the bottleneck is likely **what the frozen pooled CNN emits**, not optimizer LR or a bigger temporal head.
+**Working diagnosis:** weak / poorly pooled visual features + an easy-to-overfit temporal head. Goal features with a larger stem map (`remove_maxpool`) carry more signal than history concatenations in a linear probe; seed variance is high.
 
-## Highest-value next tries (CNN / features)
+---
 
-### 1. Confirm the features, not the head
+## Already tested (do not re-run without a reason)
 
-Run a **linear probe on frozen features only** (no GRU) on the same split — e.g. last history + goal, or mean history + goal. Script: `probe_cnn_features.py` (designs `latest_goal`, `mean_goal`, `goal_only`; same `--run-name` / results layout as `train_cnngru.py`).
+| Experiment | Result (split 0) | Where |
+| --- | --- | --- |
+| CNN-GRU + LayerNorm reference (seed 0, lr 1e-3) | Best val bal ~0.608, AUC ~0.499; train memorizes | [PROGRESS.md](PROGRESS.md) |
+| H2: same with lr 3e-4 | Val bal ~0.612; no clear gain | PROGRESS |
+| H0 / H1 / H1b feature norm (seeds 0–2) | LayerNorm adopted; gain over H0 within noise | PROGRESS |
+| Linear probe, maxpool **kept**, seeds 0–1 | Best mean: `latest_goal` val bal 0.561 / AUC 0.491 | [PROBE_LINEAR.md](PROBE_LINEAR.md) |
+| Linear probe, maxpool **removed**, seeds 0–1 | Best mean: **`goal_only`** val bal **0.624** / AUC **0.607**; `mean_goal` collapsed | PROBE_LINEAR |
+| Always-ADVANCE val baseline | acc 0.575, bal 0.500, AUC 0.500 | PROBE_LINEAR |
 
-| Outcome | Meaning |
-| --- | --- |
-| Probe also ~0.55–0.60 bal-acc / ~0.5 AUC | Representation problem → keep focusing on CNN/features |
-| Probe clearly better than GRU policy | Sequence fusion may be hurting → simplify temporal side later; still improve CNN |
+**Best implemented baseline:** `GoalOnlyLinearModel` / `probe_cnn_features.py --preset best` (goal_only + `remove_maxpool`). See running instructions in PROBE_LINEAR.md.
 
-### 2. Don’t throw away space (main architectural bet)
+---
 
-Global average pooling → one 512-d vector is weak for “where is the wire vs the target.” Try, in order of cost:
+## High-priority experiments to run
 
-1. **`--remove-maxpool`** (already in `FrameEncoder`) and compare with the same linear probe / short train.
-2. **Keep spatial maps** (e.g. layer4 `B×512×H'×W'`) and pool smarter: GeM, attention pool, or a small tip/goal ROI — even a crude center-crop vs full-image ablation.
-3. Longer-term: light **spatial head** (goal–history similarity) instead of only concatenating two global vectors.
+Ordered by expected information gain given the probe findings. One change at a time; match split 0; prefer ≥2 seeds; report mean ± range, not the lucky seed alone.
 
-### 3. Unfreeze a little of the CNN (task adaptation)
+### 1. Confirm the best probe (trust / hygiene)
 
-Still feature-focused, not “bigger GRU”:
+- Replicate `--preset best` on **seed 2** (and optionally another split) before treating mean 0.62 as stable.
+- Work the **implementation checks** in PROBE_LINEAR.md (freeze/eval, determinism, train≪val anomaly on nomaxpool goal_only seed 1, checkpoint selection).
+- **Why first:** seed 1’s 0.70 AUC may be fragile; hygiene bugs would poison every later CNN change.
 
-- Unfreeze **layer4 only** with a small LR (e.g. `1e-5`–`5e-5`); freeze the rest; keep strong weight decay / dropout.
-- Compare to fully frozen on the **same** split and seed.
+### 2. Wire `remove_maxpool` into the CNN-GRU policy (matched)
 
-If validation AUC does not move, prep or label noise may dominate capacity.
+- Train `train_cnngru.py` with the same stem change (`FrameEncoder(remove_maxpool=True)`), split 0, seeds 0–1, vs the existing LayerNorm reference.
+- **Why:** probe gains were concentrated in **goal** features without maxpool; the full policy still uses the default stem. Ask whether GRU+MLP benefits or just overfits harder.
 
-### 4. Prep ablations that change what ResNet sees
+### 3. Goal-only linear vs CNN-GRU (fair baseline)
 
-Matched runs, **one change at a time**:
+- Freeze comparison: `--preset best` mean metrics vs LayerNorm CNN-GRU on the **same** seeds/split (already partly available). Optionally add a short train of `GoalOnlyLinearModel` end-to-end (images → logits) to confirm feature-cache training matches.
+- **Why:** if goal-only linear ≈ GRU policy, temporal fusion is not earning its complexity yet.
 
-- **224 vs 518** input (ResNet-native scale vs current ViT-coupled 518).
-- Optional: mild emphasis on the red goal marker only if diagnostics show it is washed out — do not hack labels.
+### 4. Input size 224 (matched probe, then policy)
 
-### 5. Goal vs history encoding balance
+- `--preset best` and/or full 3-design probe with `--size 224` (still multiple of 14) vs 518.
+- **Why:** ResNet-native scale; current 518 is ViT-coupled. Deferred until after nomaxpool; now the next prep ablation.
 
-Shared backbone is fine; test whether **goal 512-d swamps** the GRU 128-d summary in the MLP:
+### 5. Spatial features beyond global pool
 
-- Project goal **512 → 128** before concat (matched ablation).
-- Or tiny separate **adapters** (Linear) on goal vs history features without unfreezing ResNet.
+- Keep layer4 maps (`B×512×H'×W'`) or smarter pool (GeM / attention / tip–goal ROI); re-probe before a long GRU train.
+- **Why:** `mean_goal` failed and global 512-d remains weak for “where is the wire vs target.” Nomaxpool only delays downsampling; it does not add localization structure.
 
-### 6. Use diagnostics as a gate
+### 6. Light layer4 unfreeze (task adaptation)
 
-Before another long train: occlusion / overlay checks on a few training cases — do max-sensitivity patches sit near wire/target? If not, more epochs will not invent localization. See [CNN_DIAGNOSTICS.md](CNN_DIAGNOSTICS.md).
+- Unfreeze **layer4 only**, small LR (`1e-5`–`5e-5`), rest frozen; start from **remove_maxpool** backbone; compare to frozen goal-only / GRU on the same split/seeds.
+- **Why:** if frozen goal features are the best linear story, modest adaptation may move AUC without full finetune.
 
-## Lower priority (given current results)
+### 7. Diagnostics gate
 
-- Another LR-only sweep  
+- Occlusion / overlay on a few **training** cases with `remove_maxpool` on vs off — do sensitive patches sit near wire/target?
+- **Why:** if sensitivity is nowhere near the wire, more head capacity will not invent localization. [CNN_DIAGNOSTICS.md](CNN_DIAGNOSTICS.md).
+
+---
+
+## Lower priority
+
+- Another LR-only sweep on the old stem  
 - Deeper GRU / wider MLP  
 - Long memorization runs  
 - Touching the test set  
+- Declaring victory from a single seed’s `goal_only` run  
 
-## Suggested run order
+---
 
-1. Frozen **linear probe** via `probe_cnn_features.py` (latest+goal, mean+goal, goal-only) on split 0 — **in progress on branch `suhani-experiments`**.  
-2. Same probe with **`remove-maxpool`** and/or **224 input**.  
-3. If still flat → **layer4 fine-tune** with tiny LR.  
-4. If probe improves but full GRU policy does not → simplify temporal fusion; if neither improves → revisit spatial features / prep / labels.
+## Suggested near-term order
+
+1. Hygiene + seed-2 `--preset best`  
+2. CNN-GRU + `remove_maxpool` matched train  
+3. Size 224 best-probe  
+4. Spatial pool / layer4 maps  
+5. Layer4 fine-tune if still flat  
 
 ## Bottom line
 
-Treat ~0.61 val bal-acc as **weak visual features + an easy-to-overfit head**. Next experiments should change **what the CNN emits** (spatial pooling, resolution, light unfreeze) and judge them with a **simple probe** before another full GRU train.
+Treat ~0.61 CNN-GRU val bal-acc as **weak pooled features + overfit head**. The linear study elevates **goal-only + remove-maxpool** as the current feature baseline (~0.62 mean val bal, high seed variance). Next work should (a) stabilize that finding, (b) port the stem change into the policy, and (c) improve **spatial** representation—not grow the GRU.
 
-Results and protocol details belong in [PROGRESS.md](PROGRESS.md); keep aggregate metrics only in shared docs; real images and features stay on Perlmutter.
+Details and commands: [PROBE_LINEAR.md](PROBE_LINEAR.md). Aggregate metrics only in shared docs; real images/features stay on Perlmutter.

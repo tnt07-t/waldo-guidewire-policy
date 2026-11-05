@@ -8,6 +8,8 @@ Owner-run one-case smoke check on Perlmutter passed (2026-11-02). Exact printed 
 
 To test whether those 512-d vectors change under occlusion / marker-region / temporal probes useful for a later GRU, use the separate [CNN_DIAGNOSTICS.md](CNN_DIAGNOSTICS.md) / `cnn_diagnostics.py` path. Those probes do not claim wire detection or action recognition. Do not fold them into `cnn.py`.
 
+Linear ADVANCE/RETRACT probes on frozen features (including the best **goal-only + remove-maxpool** baseline) are documented in [PROBE_LINEAR.md](PROBE_LINEAR.md).
+
 ## Why ResNet-18 instead of ConvNeXt Tiny or MobileNetV2
 
 Group 1 chose ResNet-18 as the first CNN backbone. ConvNeXt Tiny and MobileNetV2 remain plausible alternatives, but were set aside for this trial because they are too lightweight for the starting capacity we want.

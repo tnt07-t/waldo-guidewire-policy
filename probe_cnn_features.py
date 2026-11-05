@@ -10,6 +10,10 @@ Designs:
   mean_goal    concat(history.mean(1), goal)  -> 1024-d
   goal_only    goal                           -> 512-d
 
+Preset ``best`` (from split-0 / seeds 0–1 study): ``--remove-maxpool`` and
+design ``goal_only`` only. Also writes ``best_model.pt`` loadable by
+``GoalOnlyLinearModel`` / ``infer_goal_linear.py``. See docs/grp1/PROBE_LINEAR.md.
+
 The test partition is never loaded. Real images/features stay on Perlmutter.
 Writes aggregate metrics under docs/grp1/results/<run-name>/.
 """
@@ -35,6 +39,8 @@ CLASS_NAMES = ("RETRACT", "ADVANCE")
 REPO_ROOT = Path(__file__).resolve().parent
 RESULTS_DIR = REPO_ROOT / "docs" / "grp1" / "results"
 DESIGNS = ("latest_goal", "mean_goal", "goal_only")
+# Best mean config across seeds 0–1 on split 0 (docs/grp1/PROBE_LINEAR.md).
+BEST_PRESET = {"remove_maxpool": True, "designs": ["goal_only"]}
 
 
 def class_weights(labels):
@@ -140,7 +146,10 @@ def parse_args():
     parser.add_argument("--split-position", type=int, required=True)
     parser.add_argument("--seed", type=int, default=0)
     parser.add_argument("--size", type=int, default=518)
-    parser.add_argument("--designs", nargs="+", default=list(DESIGNS), choices=DESIGNS)
+    parser.add_argument("--designs", nargs="+", default=None, choices=DESIGNS,
+                        help="Feature designs to probe (default: all three)")
+    parser.add_argument("--preset", choices=("best",),
+                        help="best = remove-maxpool + goal_only (winning probe config)")
     parser.add_argument("--epochs", type=int, default=100)
     parser.add_argument("--lr", type=float, default=1e-2)
     parser.add_argument("--weight-decay", type=float, default=1e-2)
@@ -155,9 +164,26 @@ def parse_args():
         parser.error("Set DATA_DIR or provide --data-dir")
     if args.epochs <= 0 or args.feature_batch_size <= 0:
         parser.error("--epochs and --feature-batch-size must be positive")
+    if args.preset == "best":
+        if args.designs is not None and list(args.designs) != BEST_PRESET["designs"]:
+            parser.error("--preset best fixes designs to goal_only; omit --designs")
+        args.remove_maxpool = True
+        args.designs = list(BEST_PRESET["designs"])
+    elif args.designs is None:
+        args.designs = list(DESIGNS)
     if args.run_name is None:
-        args.run_name = "probe-cnn-split{}-seed{}-{}".format(
-            args.split_position, args.seed, time.strftime("%Y%m%d-%H%M%S"))
+        tags = ["probe-cnn", "split{}".format(args.split_position),
+                "seed{}".format(args.seed)]
+        if args.preset == "best":
+            tags.append("best")
+        if args.remove_maxpool:
+            tags.append("nomaxpool")
+        if args.designs == ["goal_only"]:
+            tags.append("goalonly")
+        if args.size != 518:
+            tags.append("size{}".format(args.size))
+        tags.append(time.strftime("%Y%m%d-%H%M%S"))
+        args.run_name = "-".join(tags)
     if "/" in args.run_name or args.run_name in (".", ".."):
         parser.error("--run-name must be a plain folder name")
     return args
@@ -232,7 +258,22 @@ def main():
             writer = csv.DictWriter(handle, fieldnames=list(result["rows"][0]))
             writer.writeheader()
             writer.writerows(result["rows"])
-        torch.save(result["model"].state_dict(), design_dir / "best_linear.pt")
+        linear_state = result["model"].state_dict()
+        torch.save(linear_state, design_dir / "best_linear.pt")
+        if design == "goal_only":
+            # Full baseline checkpoint for GoalOnlyLinearModel / infer_goal_linear.py.
+            bundle = {
+                "design": "goal_only",
+                "remove_maxpool": args.remove_maxpool,
+                "size": args.size,
+                "split_position": args.split_position,
+                "seed": args.seed,
+                "best_epoch": best["epoch"],
+                "val_metrics": best["val"],
+                "linear": {k: v.cpu() for k, v in linear_state.items()},
+            }
+            torch.save(bundle, out / "best_model.pt")
+            log("Wrote best_model.pt (GoalOnlyLinearModel linear head)")
         summaries.append({
             "design": design,
             "feature_dim": train_x.shape[1],
@@ -245,7 +286,8 @@ def main():
         "designs": summaries,
         "note": (
             "Linear probe on frozen ResNet features; no GRU. "
-            "Compare val bal-acc/AUC to the CNN-GRU policy (~0.61 / ~0.5 on split 0)."
+            "Compare val bal-acc/AUC to the CNN-GRU policy (~0.61 / ~0.5 on split 0). "
+            "Best mean config: goal_only + remove_maxpool (docs/grp1/PROBE_LINEAR.md)."
         ),
     }
     (out / "summary.json").write_text(json.dumps(summary, indent=2), encoding="utf-8")
