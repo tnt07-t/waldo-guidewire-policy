@@ -1,28 +1,29 @@
-"""Train the CNN-GRU head on one split, printing metrics to the terminal.
+"""Train the CNN-GRU head with matched regularization experiments.
 
-The frozen ResNet encodes history and goal images once. The small head
-trains with class-weighted cross-entropy, AdamW (weight decay 1.0 by
-default), fixed MLP dropout 0.3, and optional Gaussian feature noise.
---config moderate, strict or extra-strict selects a 50-epoch budget and
-feature-noise std 1.0, 2.0 or 3.0. All keep weight decay 1.0. The baseline
-default remains 200 epochs with noise off. Explicit flags override presets.
+baseline/light/medium/heavy use AdamW weight decay 0/0.01/0.1/1.0,
+with dropout and feature noise off and 200 epochs each. Legacy presets
+remain available. Explicit flags override single-run preset defaults.
 
-Runs train for the requested epoch count and retain the final weights in
-memory. Metrics are printed each epoch and averaged over the final window.
-No run folders, logs, CSVs, plots, summaries, or checkpoints are saved.
+--metrics-csv saves metrics after each epoch (exclusive creation, no overwrite).
+--sweep --output-dir PATH runs all four presets for each --seeds value,
+saving per-run metrics and a summary with paired baseline differences.
+Without either option, results remain in memory and the terminal only.
 
 --shuffle-train-labels provides a seeded null control; validation stays real.
 --feature-cache optionally reuses frozen features outside the repository.
-This explicit cache is the only disk output and must stay on Perlmutter.
-The test partition is never loaded. Real images and features stay on Perlmutter.
+Run real-data experiments and retain their outputs on Perlmutter.
+The test partition is never loaded; no model checkpoints are saved.
 """
 
 import argparse
+import copy
+import csv
 import math
 import os
 import random
 import time
 from pathlib import Path
+from contextlib import contextmanager
 
 import torch
 from torch.nn import functional as F
@@ -35,11 +36,42 @@ from preprocessing import DINOv2Preprocessor
 CLASS_NAMES = ("RETRACT", "ADVANCE")  # label 0, label 1
 REPO_ROOT = Path(__file__).resolve().parent
 REGULARIZATION_CONFIGS = {
-    "baseline": {"weight_decay": 1.0, "feature_noise": 0.0, "epochs": 200},
-    "moderate": {"weight_decay": 1.0, "feature_noise": 1.0, "epochs": 50},
-    "strict": {"weight_decay": 1.0, "feature_noise": 2.0, "epochs": 50},
-    "extra-strict": {"weight_decay": 1.0, "feature_noise": 3.0, "epochs": 50},
+    "baseline": {"weight_decay": 0.0, "dropout": 0.0, "feature_noise": 0.0, "epochs": 200},
+    "light": {"weight_decay": 0.01, "dropout": 0.0, "feature_noise": 0.0, "epochs": 200},
+    "medium": {"weight_decay": 0.1, "dropout": 0.0, "feature_noise": 0.0, "epochs": 200},
+    "heavy": {"weight_decay": 1.0, "dropout": 0.0, "feature_noise": 0.0, "epochs": 200},
+    "legacy-baseline": {"weight_decay": 1.0, "dropout": 0.3, "feature_noise": 0.0, "epochs": 200},
+    "moderate": {"weight_decay": 1.0, "dropout": 0.3, "feature_noise": 1.0, "epochs": 50},
+    "strict": {"weight_decay": 1.0, "dropout": 0.3, "feature_noise": 2.0, "epochs": 50},
+    "extra-strict": {"weight_decay": 1.0, "dropout": 0.3, "feature_noise": 3.0, "epochs": 50},
 }
+SWEEP_CONFIGS = ("baseline", "light", "medium", "heavy")
+RUN_FIELDS = ("config", "split_position", "seed", "epochs", "batch_size", "lr",
+              "weight_decay", "dropout", "feature_noise", "grad_clip", "size",
+              "summary_window", "shuffle_train_labels")
+
+
+@contextmanager
+def csv_logger(path, metadata=None):
+    """Flush each row immediately; never overwrite an existing experiment."""
+    if path is None:
+        yield lambda row: None
+        return
+    path = Path(path).expanduser()
+    path.parent.mkdir(parents=True, exist_ok=True)
+    with path.open("x", newline="", encoding="utf-8") as handle:
+        writer = None
+
+        def write(row):
+            nonlocal writer
+            record = {**(metadata or {}), **row}
+            if writer is None:
+                writer = csv.DictWriter(handle, fieldnames=list(record))
+                writer.writeheader()
+            writer.writerow(record)
+            handle.flush()
+
+        yield write
 
 
 class PreparedCases(Dataset):
@@ -153,7 +185,7 @@ def shuffled_labels(labels, seed):
 WINDOW_METRICS = ("train_bal_acc", "val_bal_acc", "val_auc", "val_loss")
 
 
-def window_summary(rows, window):
+def window_summary(rows, window, metrics=WINDOW_METRICS):
     """Mean and population std of WINDOW_METRICS over the last ``window`` epochs.
 
     ``rows`` are per-epoch dicts as in metrics.csv (values may be strings).
@@ -165,7 +197,7 @@ def window_summary(rows, window):
     tail = rows[-window:]
     summary = {"window": len(tail), "first_epoch": int(tail[0]["epoch"]),
                "last_epoch": int(tail[-1]["epoch"])}
-    for key in WINDOW_METRICS:
+    for key in metrics:
         values = [float(row[key]) for row in tail if not math.isnan(float(row[key]))]
         if values:
             mean = sum(values) / len(values)
@@ -241,7 +273,7 @@ def format_epoch(epoch, epochs, train, val, lr, seconds):
 
 
 def train_model(model, train, val, *, epochs, batch_size, lr, weight_decay,
-                grad_clip, seed, log=print):
+                grad_clip, seed, log=print, on_epoch=None):
     """Train all epochs; return in-memory rows and leave final weights in model."""
     weight = class_weights(train["label"].cpu()).to(train["label"].device)
     params = [p for p in model.parameters() if p.requires_grad]
@@ -270,6 +302,8 @@ def train_model(model, train, val, *, epochs, batch_size, lr, weight_decay,
         rows.append({"epoch": epoch, "seconds": seconds,
                      **{"train_" + k: v for k, v in train_m.items() if k != "confusion"},
                      **{"val_" + k: v for k, v in val_m.items() if k != "confusion"}})
+        if on_epoch is not None:
+            on_epoch(rows[-1])
         log(format_epoch(epoch, epochs, train_m, val_m,
                          optimizer.param_groups[0]["lr"], seconds))
     return {"rows": rows}
@@ -282,7 +316,7 @@ def describe_partition(name, data):
 
 
 def parse_args(argv=None):
-    """Parse options for one terminal-only training run."""
+    """Parse options for one training run or a matched regularization sweep."""
     parser = argparse.ArgumentParser(description=__doc__,
                                      formatter_class=argparse.RawDescriptionHelpFormatter)
     parser.add_argument("--data-dir", default=os.environ.get("DATA_DIR"))
@@ -294,11 +328,13 @@ def parse_args(argv=None):
     parser.add_argument("--size", type=int, default=518,
                         help="Input size; shared preprocessor requires a multiple of 14")
     parser.add_argument("--epochs", type=int,
-                        help="Epoch budget (baseline 200; regularized presets 50)")
+                        help="Epoch budget (new presets 200; legacy noise presets 50)")
     parser.add_argument("--batch-size", type=int, default=16)
     parser.add_argument("--lr", type=float, default=1e-3)
     parser.add_argument("--weight-decay", type=float,
-                        help="AdamW weight decay (all presets: 1.0)")
+                        help="Override AdamW weight decay for a single run")
+    parser.add_argument("--dropout", type=float,
+                        help="Override MLP dropout probability for a single run")
     parser.add_argument("--feature-noise", type=float,
                         help="Training-only Gaussian std (baseline 0; moderate 1; strict 2; extra-strict 3)")
     parser.add_argument("--grad-clip", type=float, default=1.0)
@@ -314,7 +350,26 @@ def parse_args(argv=None):
                              "(seeded by --seed); validation labels stay real")
     parser.add_argument("--summary-window", type=int, default=20,
                         help="Report mean/std of validation metrics over the last N epochs")
+    parser.add_argument("--metrics-csv", help="Save per-epoch metrics to a new CSV file")
+    parser.add_argument("--sweep", action="store_true",
+                        help="Compare baseline, light, medium and heavy with matched seeds")
+    parser.add_argument("--seeds", type=int, nargs="+",
+                        help="Sweep seeds (default: 0 1 2); single runs use --seed")
+    parser.add_argument("--output-dir", help="New directory for sweep CSVs")
     args = parser.parse_args(argv)
+    if args.sweep:
+        if not args.output_dir:
+            parser.error("--sweep requires --output-dir")
+        if (args.config != "baseline" or args.metrics_csv or args.seed != 0
+                or any(getattr(args, key) is not None
+                       for key in ("weight_decay", "dropout", "feature_noise"))):
+            parser.error("--sweep fixes presets and CSV paths; use --seeds for paired seeds, "
+                         "without --config, --seed or regularization overrides")
+        args.seeds = args.seeds if args.seeds is not None else [0, 1, 2]
+        if len(set(args.seeds)) != len(args.seeds):
+            parser.error("--seeds must be unique")
+    elif args.output_dir or args.seeds is not None:
+        parser.error("--output-dir and --seeds require --sweep")
     for name, value in REGULARIZATION_CONFIGS[args.config].items():
         if getattr(args, name) is None:
             setattr(args, name, value)
@@ -327,6 +382,8 @@ def parse_args(argv=None):
     for name in ("weight_decay", "feature_noise"):
         if not math.isfinite(getattr(args, name)) or getattr(args, name) < 0:
             parser.error("--{} must be finite and non-negative".format(name.replace("_", "-")))
+    if not 0 <= args.dropout < 1:
+        parser.error("--dropout must be finite and in [0, 1)")
     if args.feature_cache:
         try:
             args.feature_cache = str(check_cache_dir(args.feature_cache))
@@ -370,7 +427,7 @@ def load_features(args, cnn, device, log=print):
 
 
 def run(args, features=None, echo=True):
-    """Train one configuration without saving results; return the model and metrics.
+    """Train one configuration, optionally log CSV; return the model and metrics.
 
     Optional CPU features are copied, so repeated experiments do not mutate
     the caller's inputs. Each call re-seeds training. ``echo=False`` is silent.
@@ -383,7 +440,7 @@ def run(args, features=None, echo=True):
     torch.manual_seed(args.seed)
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
-    model = CNNGRUModel(feature_noise=args.feature_noise).to(device)
+    model = CNNGRUModel(dropout=args.dropout, feature_noise=args.feature_noise).to(device)
     if features is None:
         features = load_features(args, model.encoder.cnn, device, log)
     else:
@@ -406,8 +463,8 @@ def run(args, features=None, echo=True):
     log("Trainable parameters: {:,}".format(trainable))
     log("Config: {} | effective epochs {} | lr {:g} | batch size {}".format(
         args.config, args.epochs, args.lr, args.batch_size))
-    log("Regularization: weight decay {:g} | fixed MLP dropout 0.3 | feature noise {:g}"
-        .format(args.weight_decay, args.feature_noise))
+    log("Regularization: weight decay {:g} | MLP dropout {:g} | feature noise {:g}"
+        .format(args.weight_decay, args.dropout, args.feature_noise))
     log("Metadata mean [depth_mm, offset_s]: {} std: {}".format(
         [round(v, 3) for v in model.encoder.meta_mean.tolist()],
         [round(v, 3) for v in model.encoder.meta_std.tolist()]))
@@ -416,11 +473,14 @@ def run(args, features=None, echo=True):
     log("Metrics: loss is class-weighted CE; bal = balanced accuracy; "
         "rec R/A = validation recall for RETRACT/ADVANCE.")
 
-    result = train_model(
-        model, data["train"], data["validation"],
-        epochs=args.epochs, batch_size=args.batch_size, lr=args.lr,
-        weight_decay=args.weight_decay, grad_clip=args.grad_clip,
-        seed=args.seed, log=log)
+    metadata = {key: getattr(args, key) for key in RUN_FIELDS}
+    metadata.update(device=str(device), torch_version=str(torch.__version__))
+    with csv_logger(args.metrics_csv, metadata) as write_epoch:
+        result = train_model(
+            model, data["train"], data["validation"],
+            epochs=args.epochs, batch_size=args.batch_size, lr=args.lr,
+            weight_decay=args.weight_decay, grad_clip=args.grad_clip,
+            seed=args.seed, log=log, on_epoch=write_epoch)
 
     final = result["rows"][-1]
     log("Final epoch {}: train bal {:.3f} | val bal {:.3f} auc {:.3f} loss {:.4f}".format(
@@ -443,8 +503,55 @@ def run(args, features=None, echo=True):
             "final_epoch": final, "last_window": window, "generalization_gap": gap}
 
 
+def run_sweep(args, features=None, echo=True):
+    """Save matched runs and descriptive paired effects; never load test data."""
+    root = Path(args.output_dir).expanduser()
+    root.mkdir(parents=True, exist_ok=False)
+    if features is None:
+        device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+        encoder = CNNGRUModel().encoder.cnn.to(device)
+        features = load_features(args, encoder, device, print if echo else lambda line: None)
+        del encoder
+    metrics = ("train_acc", "val_acc", "train_loss", "val_loss",
+               "train_bal_acc", "val_bal_acc", "val_auc")
+    summaries = []
+    with csv_logger(root / "summary.csv") as write_summary:
+        for seed in args.seeds:
+            baseline = None
+            for config in SWEEP_CONFIGS:
+                current = copy.copy(args)
+                current.config, current.seed = config, seed
+                for key, value in REGULARIZATION_CONFIGS[config].items():
+                    if key != "epochs":  # One shared budget, including explicit overrides.
+                        setattr(current, key, value)
+                current.metrics_csv = str(root / "{}-seed{}.csv".format(config, seed))
+                result = run(current, features, echo=echo)
+                window = window_summary(result["rows"], args.summary_window, metrics)
+                summary = {key: getattr(current, key) for key in RUN_FIELDS}
+                summary.update(first_epoch=window["first_epoch"],
+                               last_epoch=window["last_epoch"], window=window["window"])
+                for metric in metrics:
+                    for stat in ("mean", "std"):
+                        summary[metric + "_" + stat] = window[metric][stat]
+                summary["accuracy_gap"] = summary["train_acc_mean"] - summary["val_acc_mean"]
+                summary["balanced_accuracy_gap"] = result["generalization_gap"]
+                if baseline is None:
+                    baseline = summary.copy()
+                for metric in ("val_acc_mean", "val_loss_mean", "val_bal_acc_mean",
+                               "val_auc_mean", "accuracy_gap", "balanced_accuracy_gap"):
+                    summary[metric + "_delta_vs_baseline"] = summary[metric] - baseline[metric]
+                write_summary(summary)
+                summaries.append(summary)
+                del result  # Do not retain all trained models on the device.
+    return summaries
+
+
 def main():
-    run(parse_args())
+    args = parse_args()
+    if args.sweep:
+        run_sweep(args)
+    else:
+        run(args)
 
 
 if __name__ == "__main__":

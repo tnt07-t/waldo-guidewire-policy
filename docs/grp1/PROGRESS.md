@@ -1,43 +1,61 @@
 # Group 1 — current training setup
 
-The working configuration is frozen ResNet-18, shared LayerNorm and 512-to-64 projection, a one-layer GRU with hidden size 64, and a 128-to-64-to-2 MLP. The head has 67,586 trainable parameters. Depth/time normalization uses training statistics. The goal is a separate reference, not a history step.
+The working architecture is frozen ResNet-18, shared LayerNorm and 512-to-64
+projection, a one-layer GRU with hidden size 64, and a 128-to-64-to-2 MLP. The
+head has 67,586 trainable parameters. Depth/time normalization uses training
+statistics. The goal is a separate reference, not a history step.
 
-The classifier ends with Softmax, returning probabilities in class order `[RETRACT, ADVANCE]`. Argmax selects 0 or 1. Both `forward` and `forward_features` accept `return_logits=True`; the training loop and loss evaluation use that option so class-weighted cross-entropy receives raw logits. Softmax adds no parameters and preserves class decisions for the same logits; it is not an overfitting remedy.
+The classifier returns probabilities in class order `[RETRACT, ADVANCE]`.
+Training and evaluation pass `return_logits=True` for class-weighted
+cross-entropy. Softmax is not an overfitting remedy.
 
-Weight decay **1.0** is the chosen starting point. Gaussian feature noise remains available and defaults to **0.0**. MLP dropout is fixed at **0.3** in the training entry point, matching the chosen configuration. Feature dropout, frame dropout, label smoothing, and dropout sweeps have been removed.
+## Regularization comparison and CSV recording
 
-This is a working baseline, not a claim of validated generalization. Change one factor at a time and compare the same split and seed. See [next experiments](NEXT_EXPERIMENTS.md).
+The trainer now provides a true unregularized `baseline` (weight decay, dropout
+and feature noise all zero), plus `light`, `medium` and `heavy` weight-decay
+presets of 0.01, 0.1 and 1.0. All four use 200 epochs by default, dropout/noise
+off, and identical architecture and training controls. These strengths are
+candidates, not validated improvements. See [the hypotheses, settings and
+run commands](NEXT_EXPERIMENTS.md).
 
-## Run on Perlmutter
+The old baseline remains available as `legacy-baseline` (weight decay 1.0,
+dropout 0.3, noise 0, 200 epochs). `moderate`, `strict` and `extra-strict` preserve
+their previous 50-epoch, noise-1/2/3 configurations. Historical results from
+these settings do not describe the new unregularized control.
 
-From the repository root in an allocated compute environment with the project dependencies and `DATA_DIR` configured:
+Run on Perlmutter inside an allocation with `DATA_DIR` configured:
 
 ```sh
-python train_cnngru.py --data-dir "$DATA_DIR" --split-position 0 --seed 0 --epochs 200
+python train_cnngru.py --data-dir "$DATA_DIR" --split-position 0 \
+  --sweep --seeds 0 1 2 \
+  --output-dir "${PSCRATCH:?PSCRATCH must be set}/waldo-regularization/split0-trial1"
 ```
 
-Three stronger presets are available: `--config moderate` uses feature-noise std 1.0, `--config strict` uses 2.0, and `--config extra-strict` uses 3.0. All keep weight decay 1.0 and use 50 epochs; all other training defaults match. The default `--config baseline` retains 200 epochs and noise off. Explicit `--epochs`, `--weight-decay`, and `--feature-noise` override preset values. Compare with `--config baseline --epochs 50` to hold training duration fixed. See [the comparison protocol](NEXT_EXPERIMENTS.md).
+The sweep saves per-epoch CSVs for all four presets and all three seeds, plus
+`summary.csv` with final-window metrics and paired baseline differences. A single
+run can save with `--config light --metrics-csv PATH`. CSVs record training and
+validation accuracy/loss, additional classification metrics, and effective run
+settings. Completed rows are flushed immediately and existing outputs cannot be
+overwritten. Without a CSV option, single runs remain terminal/in-memory only.
 
-Learning rate defaults to 0.001 and batch size to 16. These presets are candidates for reducing overfitting; real-data effectiveness has not been established.
+Learning rate defaults to 0.001, batch size to 16, and summary window to 20.
+Training completes the requested epoch count; there is no best-epoch selection,
+early stopping or checkpoint saving. `run(args, features=...)` still returns the
+final model and metrics; `echo=False` suppresses terminal output.
 
-Training prints loss, accuracy, balanced accuracy, AUC and class recalls each epoch, then final and last-20 metrics plus the train/validation balanced-accuracy gap. It runs the requested epoch count and retains final weights in memory. It creates no run directory, log, CSV, JSON summary, plot, or checkpoint. Best-epoch selection and early stopping are removed. `--run-name`, `--patience`, `--dropout`, `--feature-dropout`, `--frame-dropout`, and `--label-smoothing` are no longer accepted.
-
-Optional controls:
-
-- `--shuffle-train-labels`: seeded training-label null control; validation labels stay real.
-- `--summary-window N`: change the terminal summary window.
-- `--feature-cache "$PSCRATCH/waldo-feature-cache"`: explicitly cache frozen features outside the repository. This is the only training disk output and must stay on Perlmutter.
-
-In Python, `run(args, features=...)` returns the final model, epoch rows, final metrics, window metrics, and the generalization gap in memory. `echo=False` suppresses terminal output. The CLI does not persist trained weights for later inference.
-
-Old Group 1 run artifacts, aggregate exports, sweep/summary tools, and detailed run-history notes have been removed from the working tree at the owner's request. Tracked historical versions remain in Git history. Other groups' experiments and shared dataset/evaluation documentation are separate.
+Optional controls include `--shuffle-train-labels` for a seeded training-label
+null control, `--summary-window N`, and `--feature-cache` for frozen features in
+an external Perlmutter directory. The trainer loads only training and validation
+partitions. Real data, derived features and experiment outputs stay on Perlmutter.
 
 ## Local verification
 
-Use synthetic inputs without accessing the private dataset or downloading model weights:
+Use synthetic inputs without accessing the private dataset or downloading weights:
 
 ```sh
 python -m unittest discover -s tests -p 'test_train_cnngru.py' -v
 ```
 
-Real data, derived features, and dataset-dependent verification stay on Perlmutter. The trainer loads only training and validation partitions.
+All 35 synthetic training tests passed locally. Tests cover effective presets, CSV accuracy and interruption handling, matched
+sweeps and baseline differences, preservation of inputs, and existing model and
+training behavior. Real-data regularization outcomes remain unmeasured.

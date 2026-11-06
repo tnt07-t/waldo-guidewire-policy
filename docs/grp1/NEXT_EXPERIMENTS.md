@@ -1,72 +1,115 @@
-# Group 1 — stronger regularization configurations
+# Group 1 — regularization hypothesis experiment
 
-The earlier train/validation gap, near-perfect fitting of shuffled training labels, and rising validation loss support an overfitting diagnosis. They do not establish that regularization alone can recover useful signal. These are candidate configurations to test, not validated fixes.
+The experiment compares three separately trained CNN–GRU models with light,
+medium and heavy regularization against an unregularized control. These are
+four instances of the same architecture, not different architectures. Strengths
+are experimental settings; their effectiveness has not been established.
 
-## Presets
+## Matched run configurations
 
-All configurations use the same frozen ResNet, shared normalization/projection, 64-unit GRU and MLP. They have identical parameter counts and evaluation behavior for identical weights. Only the training noise differs between the presets.
+| CLI preset | AdamW weight decay | MLP dropout | Feature noise | Epochs |
+| --- | ---: | ---: | ---: | ---: |
+| `baseline` | 0 | 0 | 0 | 200 |
+| `light` | 0.01 | 0 | 0 | 200 |
+| `medium` | 0.1 | 0 | 0 | 200 |
+| `heavy` | 1.0 | 0 | 0 | 200 |
 
-| Setting | Moderate | Strict | Extra strict |
-| --- | ---: | ---: | ---: |
-| CLI preset | `--config moderate` | `--config strict` | `--config extra-strict` |
-| AdamW weight decay | 1.0 | 1.0 | 1.0 |
-| Gaussian feature-noise std | 1.0 | 2.0 | 3.0 |
-| MLP dropout | 0.3 | 0.3 | 0.3 |
-| Epoch budget | 50 | 50 | 50 |
-| Learning rate | 0.001 | 0.001 | 0.001 |
-| Batch size | 16 | 16 | 16 |
-| Gradient clipping | 1.0 | 1.0 | 1.0 |
-| Terminal summary window | Last 20 epochs | Last 20 epochs | Last 20 epochs |
+Only weight decay changes. All use the frozen ResNet-18, shared LayerNorm and
+512-to-64 projection, 64-unit GRU, and 128-to-64-to-2 classifier (67,586 trainable
+parameters). Learning rate is 0.001, batch size 16 and gradient clipping 1.0.
+Class weights and metadata normalization come from training only. The architecture,
+frozen encoder and optimization controls remain common to all four runs;
+“unregularized” means zero explicit weight decay, dropout and feature noise.
 
-Noise is added independently to normalized history and goal features before the shared projection, during training only. A standard deviation of 1.0 is approximately the scale of a LayerNorm-normalized feature vector; 2.0 and 3.0 are deliberately aggressive and may erase useful information. It does not perturb depth/time metadata.
+The previous default was already regularized (weight decay 1.0, dropout 0.3).
+It is now named `legacy-baseline`. The existing `moderate`, `strict` and
+`extra-strict` noise presets keep their previous settings and 50-epoch budgets.
+They are excluded from this experiment. Historical baseline results must not be
+relabeled as the new unregularized control.
 
-Moderate uses the previously tested noise strength that reduced null fitting most. Strict tests whether stronger noise meaningfully limits memorization further. All use a predeclared 50-epoch budget to limit optimization time. Fifty epochs is a hypothesis, not a demonstrated optimum, and does not guarantee an absence of memorization.
+## Hypotheses and comparison rules
 
-Default `--config baseline` preserves noise 0 and 200 epochs. Explicit `--epochs`, `--weight-decay`, and `--feature-noise` override the selected preset, including explicit zero values. The terminal prints the effective settings. Keep the preset defaults for the first comparison.
+For each severity, the null hypothesis is that regularization does not improve
+validation balanced accuracy relative to the matched baseline. The alternative
+is a positive improvement. The working prediction is that light or medium decay
+reduces overfitting, while heavy decay may underfit. This prediction is untested.
 
-## Stronger than strict
+Predeclare the same split, seeds, epoch budget and final averaging window for all
+four configurations. The default comparison uses split 0, seeds 0/1/2, 200 epochs
+and the final 20 epochs. Each run starts from fresh, seeded weights; the same seed
+pairs initialization, batch order and (if enabled) shuffled training labels.
+Frozen features are extracted once and reused across the sweep.
 
-Extra strict increases noise standard deviation from 2.0 to 3.0, leaving all other settings fixed. This is 50% more noise amplitude and 2.25 times the noise variance. It is a bounded follow-up, not a demonstrated improvement. Limited training fit with strict means additional noise could cause underfitting; lower training accuracy or a smaller gap alone does not count as success.
+- Primary outcome: last-window validation balanced accuracy, candidate minus
+  baseline for the same seed. Positive differences favor the candidate.
+- Supporting outcomes: validation accuracy and AUC (higher is better), and
+  validation cross-entropy loss (lower is better). Both class recalls are logged.
+- Overfitting diagnostic: training minus validation accuracy and balanced accuracy.
+  A smaller gap alone is insufficient: both scores can deteriorate together.
+- Inspect all seed pairs and report their spread, including negative results.
+  Compare the fixed final window rather than choosing each model's peak epoch.
 
-Once the updated code is on Perlmutter:
+The summary supplies descriptive paired effects for hypothesis evaluation, not
+p-values or a statistical-significance verdict. Epochs are correlated, repeated
+seeds reuse the same validation examples, and supplied splits may overlap. The
+per-window standard deviation describes epoch variation, not a confidence interval.
+Do not treat epoch rows or split/seed combinations as independent dataset samples.
+A population-level significance test needs a separately agreed episode-aware
+protocol; aggregate epoch CSVs do not establish it. Keep test data reserved until
+model choices are fixed.
+
+## Run and save results on Perlmutter
+
+From the repository root inside an allocation, with `DATA_DIR` set:
 
 ```sh
-python train_cnngru.py --data-dir "$DATA_DIR" --split-position 0 --seed 0 --config extra-strict
+python train_cnngru.py --data-dir "$DATA_DIR" --split-position 0 \
+  --sweep --seeds 0 1 2 --epochs 200 --summary-window 20 \
+  --feature-cache "${PSCRATCH:?PSCRATCH must be set}/waldo-feature-cache" \
+  --output-dir "${PSCRATCH:?PSCRATCH must be set}/waldo-regularization/split0-trial1"
 ```
 
-The same configuration works immediately with the previous version using an explicit override:
+This runs 12 models: baseline plus three severities, each with three seeds. The
+output directory must be new; choose a new trial name for a repeat. It contains:
+
+- `baseline-seed0.csv`, `light-seed0.csv`, `medium-seed0.csv`, `heavy-seed0.csv`,
+  and corresponding files for the other seeds: one row per completed epoch.
+- `summary.csv`: one row per completed run with final-window means/stds, accuracy
+  gaps, and `*_delta_vs_baseline` columns matched within the seed. Baseline deltas
+  are zero. Loss and gap deltas favor a reduction when negative.
+
+Each epoch CSV includes `epoch`, `seconds`, `train_acc`, `val_acc`, `train_loss`,
+`val_loss`, balanced accuracies, AUCs and class recalls. Effective configuration,
+seed, split, epoch budget, learning rate, batch size, weight decay, dropout,
+feature noise, gradient clipping, image size, summary window and null-label flag
+are repeated on every row; device and PyTorch version are also recorded. Record
+the tested Git revision alongside your experiment notes.
+
+Accuracy is a fraction in [0, 1]. Training and validation metrics are evaluated
+at the end of each epoch in evaluation mode, with dropout/noise disabled. Both
+losses are class-weighted cross-entropy using training-derived class weights;
+weight-decay penalties are not added to the logged loss. Training loss is the
+post-epoch full-training-set loss, not the mean of noisy minibatch update losses.
+
+Files are flushed after every epoch/run so completed observations survive a later
+training exception. Existing CSVs and sweep directories are never overwritten.
+Partial runs remain partial; there is no automatic resume or checkpoint saving.
+Keep all real-data experiment outputs and caches on Perlmutter.
+
+For an individual run:
 
 ```sh
-python train_cnngru.py --data-dir "$DATA_DIR" --split-position 0 --seed 0 --config strict --feature-noise 3.0
+python train_cnngru.py --data-dir "$DATA_DIR" --split-position 0 --seed 0 \
+  --config light --metrics-csv "${PSCRATCH:?PSCRATCH must be set}/waldo-regularization/light-trial2.csv"
 ```
 
-Compare with strict on the same split, seed and epochs, then repeat with `--shuffle-train-labels`. Evaluate validation AUC and both class recalls alongside null fitting. If stronger noise reduces training fit without improving validation, stop increasing noise and investigate the representation or labels.
+Substitute `medium`, `heavy` or `baseline` as needed. Single runs allow explicit
+`--weight-decay`, `--dropout`, `--feature-noise` and `--epochs` overrides; the CSV
+records their actual values. Sweep mode fixes regularization presets and accepts
+shared training controls such as `--epochs`, `--lr`, and `--batch-size`. It rejects
+regularization overrides so the intended comparison cannot silently change.
 
-## First matched comparison
-
-Run on Perlmutter from the repository root, inside an allocation with `DATA_DIR` set:
-
-```sh
-python train_cnngru.py --data-dir "$DATA_DIR" --split-position 0 --seed 0 --config baseline --epochs 50
-python train_cnngru.py --data-dir "$DATA_DIR" --split-position 0 --seed 0 --config moderate
-python train_cnngru.py --data-dir "$DATA_DIR" --split-position 0 --seed 0 --config strict
-```
-
-The baseline must also use 50 epochs so that it isolates the noise effect. Compare the same epochs 31–50 for all three, rather than comparing these scores directly with the former 181–200 window. The moderate-versus-strict comparison changes only feature-noise strength. To isolate epoch budget separately, hold noise fixed and compare 50 versus 200 epochs in a later bounded experiment.
-
-Repeat each command with `--shuffle-train-labels` for its matched null control. If the first comparison is promising, repeat the same three configurations and controls on splits 0–2 and seeds 0–2. This is a fixed comparison, not a new search over strengths. An optional `--feature-cache "$PSCRATCH/waldo-feature-cache"` reuses frozen features; it must stay outside the repository on Perlmutter.
-
-Training prints metrics only. No result folders, CSVs, plots, logs, JSON summaries or model checkpoints are created. No test partition is loaded.
-
-## What would count as progress?
-
-Read the final-window validation AUC, balanced accuracy, both class recalls, train/validation balanced-accuracy gap and null training balanced accuracy. The gap is printed explicitly. Null runs also label their training fit explicitly.
-
-- Lower null training balanced accuracy demonstrates reduced fitting of arbitrary labels. A training-side screening target is null BA around 0.55–0.70 while real training BA remains around 0.65–0.90. These are exploratory targets, not universal thresholds or proof of success.
-- A smaller train/validation gap is useful only if validation performance holds or improves. Both scores collapsing to 0.5 is underfitting, not a successful solution.
-- A candidate should improve validation AUC versus both its matching real-label baseline and its own null on most split/seed pairs. Check both class recalls so an ADVANCE-heavy predictor does not look successful through raw accuracy alone.
-- If null fitting remains high under the tested presets, they have not sufficiently limited memorization. If null fit falls but real validation remains near chance, more regularization alone has not recovered a usable signal. If strict damages both training fit and validation, prefer moderate or return to baseline.
-
-Seed repeats share validation examples, and supplied splits can overlap. They are not independent datasets. Do not select an isolated peak epoch or treat a small gain on one split as confirmation. Keep the test partition reserved until choices are fixed.
-
-If none of the configurations improves transfer, prioritize spatial feature retention, goal/current-frame relationships and private review of labels/alignment before increasing model capacity or launching a wider regularization search.
+For the existing memorization diagnostic, repeat the sweep with
+`--shuffle-train-labels` and a different output directory. Validation labels stay
+real. No command loads the test partition. Without `--metrics-csv` or `--sweep`,
+a single run retains the terminal/in-memory behavior.

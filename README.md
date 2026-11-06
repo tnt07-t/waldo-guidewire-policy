@@ -15,6 +15,7 @@ The approach is open-ended: explore specialized smaller models that exceed the b
 - [Initial ViT preparation](docs/grp2/VIT_TRIAL.md): full-view DINOv2 tensors, previews, and inference-only encoder; owner-run pretrained CPU checks are recorded in Group 2 progress.
 - [ViT feature diagnostics](docs/grp2/VIT_DIAGNOSTICS.md): bounded inspection of whether extracted ViT features look usable before temporal-model work.
 - [CNN encoder trial](docs/grp1/CNN.md): frozen ResNet-18 frame features in `cnn.py`; owner-run one-case Perlmutter smoke check passed. An opt-in goal-centered wire preprocessor was evaluated with a frozen-feature probe and did not beat the full-frame baseline on split 0 (2026-11-03).
+- [CNN–GRU regularization experiments](docs/grp1/NEXT_EXPERIMENTS.md): unregularized baseline plus light, medium and heavy weight decay, matched seed sweeps, and CSV logging of training/validation accuracy and loss.
 - [CNN 512-d diagnostics](docs/grp1/CNN_DIAGNOSTICS.md): separate occlusion/marker/temporal probes on the vectors a GRU would see; owner-run one-case GPU diagnostics passed, then correctness fixes were applied (Perlmutter re-run pending). `data_inspect.ipynb` includes original-image inspection cells, with no saved outputs.
 - Group progress: [Group 1 — Andrew and Suhani](docs/grp1/PROGRESS.md) and [Group 2 — Tran and Sabrina](docs/grp2/PROGRESS.md). Shared contracts stay in the approach notes; each group records its own plans and outcomes.
 

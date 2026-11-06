@@ -1,9 +1,14 @@
 """Invented-input checks for the CNN-GRU training pieces (no dataset needed)."""
 
+import csv
+import functools
+import io
 import math
 import tempfile
 import unittest
 from pathlib import Path
+from contextlib import redirect_stderr
+from unittest import mock
 
 import torch
 
@@ -11,7 +16,8 @@ from model_cnngru import CNNGRUModel
 from train_cnngru import (REPO_ROOT, binary_metrics, cache_metadata, cache_path,
                           check_cache_dir, class_weights, evaluate, parse_args, run,
                           load_cached_features, roc_auc, save_cached_features,
-                          shuffled_labels, train_model, window_summary)
+                          shuffled_labels, train_model, window_summary, csv_logger,
+                          run_sweep, SWEEP_CONFIGS)
 
 
 def tiny_model(dropout=0.3, **regularizers):
@@ -134,17 +140,103 @@ class FeatureCacheTests(unittest.TestCase):
 
 class RunTests(unittest.TestCase):
     def test_presets_and_explicit_zero_overrides(self):
-        for config, noise, epochs in (("baseline", 0.0, 200), ("moderate", 1.0, 50),
-                                      ("strict", 2.0, 50), ("extra-strict", 3.0, 50)):
+        for config, decay, dropout, noise, epochs in (
+                ("baseline", 0.0, 0.0, 0.0, 200), ("light", 0.01, 0.0, 0.0, 200),
+                ("medium", 0.1, 0.0, 0.0, 200), ("heavy", 1.0, 0.0, 0.0, 200),
+                ("legacy-baseline", 1.0, 0.3, 0.0, 200), ("moderate", 1.0, 0.3, 1.0, 50),
+                ("strict", 1.0, 0.3, 2.0, 50), ("extra-strict", 1.0, 0.3, 3.0, 50)):
             with self.subTest(config=config):
                 argv = ["--data-dir", "/invented", "--split-position", "0", "--config", config]
                 args = parse_args(argv)
-                self.assertEqual((args.weight_decay, args.feature_noise, args.epochs),
-                                 (1.0, noise, epochs))
+                self.assertEqual((args.weight_decay, args.dropout, args.feature_noise, args.epochs),
+                                 (decay, dropout, noise, epochs))
                 custom = parse_args(argv + ["--weight-decay", "0", "--feature-noise", "0",
-                                            "--epochs", "3"])
-                self.assertEqual((custom.weight_decay, custom.feature_noise, custom.epochs),
-                                 (0.0, 0.0, 3))
+                                            "--dropout", "0", "--epochs", "3"])
+                self.assertEqual((custom.weight_decay, custom.dropout,
+                                  custom.feature_noise, custom.epochs), (0.0, 0.0, 0.0, 3))
+
+    def test_csv_matches_epoch_metrics_and_records_effective_overrides(self):
+        features = {"train": invented_features(), "validation": invented_features(seed=1)}
+        with tempfile.TemporaryDirectory() as root:
+            path = Path(root) / "medium.csv"
+            args = parse_args(["--data-dir", "/invented", "--split-position", "0",
+                               "--config", "medium", "--epochs", "2", "--weight-decay", "0.2",
+                               "--dropout", "0.15", "--metrics-csv", str(path)])
+            with mock.patch("train_cnngru.CNNGRUModel",
+                            functools.partial(CNNGRUModel, pretrained=False)):
+                result = run(args, features, echo=False)
+                saved = path.read_text()
+                with self.assertRaises(FileExistsError):
+                    run(args, features, echo=False)
+                self.assertEqual(path.read_text(), saved)
+            with path.open() as handle:
+                rows = list(csv.DictReader(handle))
+            self.assertEqual(len(rows), 2)
+            for row, expected in zip(rows, result["rows"]):
+                self.assertEqual(row["config"], "medium")
+                self.assertEqual(float(row["weight_decay"]), 0.2)
+                self.assertEqual(float(row["dropout"]), 0.15)
+                for key in ("epoch", "train_loss", "train_acc", "val_loss", "val_acc"):
+                    self.assertEqual(float(row[key]), expected[key])
+            self.assertEqual(result["model"].classifier.mlp[0].p, 0.15)
+
+    def test_csv_is_flushed_and_preserved_on_interruption(self):
+        with tempfile.TemporaryDirectory() as root:
+            path = Path(root) / "metrics.csv"
+            with self.assertRaises(RuntimeError):
+                with csv_logger(path, {"seed": 7}) as write:
+                    write({"epoch": 1, "val_acc": 0.75})
+                    with path.open() as handle:
+                        rows = list(csv.DictReader(handle))
+                    self.assertEqual(rows, [{"seed": "7", "epoch": "1", "val_acc": "0.75"}])
+                    raise RuntimeError("Interrupted run")
+            self.assertIn("0.75", path.read_text())
+
+    def test_sweep_saves_matched_runs_and_correct_paired_summary(self):
+        features = {"train": invented_features(), "validation": invented_features(seed=1)}
+        snapshot = {p: {k: v.clone() for k, v in data.items()} for p, data in features.items()}
+        with tempfile.TemporaryDirectory() as root:
+            output = Path(root) / "sweep"
+            args = parse_args(["--data-dir", "/invented", "--split-position", "0", "--sweep",
+                               "--output-dir", str(output), "--seeds", "2", "3", "--epochs", "2"])
+            with mock.patch("train_cnngru.CNNGRUModel",
+                            functools.partial(CNNGRUModel, pretrained=False)), \
+                    mock.patch("train_cnngru.load_features", side_effect=AssertionError("No data reads")):
+                summaries = run_sweep(args, features, echo=False)
+                with self.assertRaises(FileExistsError):
+                    run_sweep(args, features, echo=False)
+            self.assertEqual(len(summaries), 8)
+            self.assertEqual(len(list(output.glob("*.csv"))), 9)
+            with (output / "summary.csv").open() as handle:
+                self.assertEqual(len(list(csv.DictReader(handle))), 8)
+            for seed in (2, 3):
+                paired = [row for row in summaries if row["seed"] == seed]
+                self.assertEqual([row["config"] for row in paired], list(SWEEP_CONFIGS))
+                for row in paired:
+                    with (output / "{}-seed{}.csv".format(row["config"], seed)).open() as handle:
+                        epochs = list(csv.DictReader(handle))
+                    self.assertEqual(len(epochs), 2)
+                    for key in ("dropout", "feature_noise"):
+                        self.assertEqual(row[key], 0)
+                    for metric in ("train_loss", "train_acc", "val_loss", "val_acc"):
+                        mean = sum(float(epoch[metric]) for epoch in epochs) / len(epochs)
+                        self.assertAlmostEqual(row[metric + "_mean"], mean)
+                    self.assertAlmostEqual(row["val_acc_mean_delta_vs_baseline"],
+                                           row["val_acc_mean"] - paired[0]["val_acc_mean"])
+                    self.assertAlmostEqual(row["val_loss_mean_delta_vs_baseline"],
+                                           row["val_loss_mean"] - paired[0]["val_loss_mean"])
+            for part, data in features.items():
+                for key, value in data.items():
+                    self.assertTrue(torch.equal(value, snapshot[part][key]))
+
+    def test_invalid_sweep_and_dropout_options_are_rejected(self):
+        base = ["--data-dir", "/invented", "--split-position", "0"]
+        for flags in (["--sweep"], ["--seeds", "1"], ["--output-dir", "/tmp/out"],
+                      ["--sweep", "--output-dir", "/tmp/out", "--dropout", "0.1"],
+                      ["--sweep", "--output-dir", "/tmp/out", "--seeds", "1", "1"],
+                      ["--dropout", "nan"], ["--dropout", "1"], ["--dropout", "-0.1"]):
+            with self.subTest(flags=flags), redirect_stderr(io.StringIO()), self.assertRaises(SystemExit):
+                parse_args(base + flags)
 
     def test_configs_keep_identical_model_and_increase_training_noise_only(self):
         models = []

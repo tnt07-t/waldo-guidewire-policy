@@ -44,8 +44,9 @@ class CNNGRUModel(nn.Module):
     """CNN-GRU policy with optional training-only Gaussian feature noise.
 
     Noise is added after LayerNorm and before the shared projection. Zero
-    noise leaves the features and random state unchanged. MLP dropout stays
-    at 0.3 by default, matching the chosen weight-decay configuration.
+    noise leaves the features and random state unchanged. The constructor
+    retains legacy dropout 0.3; the trainer passes its selected preset's
+    dropout explicitly (0 for baseline/light/medium/heavy).
     """
 
     def __init__(self, pretrained=True, dropout=0.3, feature_noise=0.0):
