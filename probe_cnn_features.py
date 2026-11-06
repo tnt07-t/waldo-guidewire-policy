@@ -128,8 +128,10 @@ def train_linear_probe(train_x, train_y, val_x, val_y, *, epochs, lr, weight_dec
         rows.append({
             "epoch": epoch,
             "train_loss": train_m["loss"],
+            "train_acc": train_m["acc"],
             "train_bal_acc": train_m["bal_acc"],
             "val_loss": val_m["loss"],
+            "val_acc": val_m["acc"],
             "val_bal_acc": val_m["bal_acc"],
             "val_auc": val_m["auc"],
             "best": improved,
