@@ -1,0 +1,10 @@
+run,partition,selected_epoch,true_retract_pred_retract,true_retract_pred_advance,true_advance_pred_retract,true_advance_pred_advance
+gru-adam,train,53,95,2,40,130
+gru-adam,validation,53,24,10,24,22
+gru-adamw,validation,32,11,23,8,38
+gru-early-goal,validation,52,17,17,13,33
+static-latest,validation,42,12,22,6,40
+static-grid,train,18,22,75,11,159
+static-grid,validation,18,11,23,6,40
+lastblock-static,train,3,11,86,8,162
+lastblock-static,validation,3,7,27,3,43

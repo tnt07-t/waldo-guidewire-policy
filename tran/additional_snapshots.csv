@@ -1,0 +1,11 @@
+run,partition,checkpoint,epoch,n,loss,accuracy,balanced_accuracy,retract_recall,advance_recall,evidence,source
+gru-adam,train,initial_completed_epoch,1,267,0.651,,,,,reported rounded snapshot; not continuous history,docs/grp2/PROGRESS.md
+gru-adam,validation,initial_completed_epoch,1,80,0.702,,,,,reported rounded snapshot; not continuous history,docs/grp2/PROGRESS.md
+gru-adam,train,final,73,267,0.104,,0.988,,,reported rounded snapshot; not continuous history,docs/grp2/PROGRESS.md
+gru-adam,validation,final,73,80,1.229,,0.522,,,reported rounded snapshot; not continuous history,docs/grp2/PROGRESS.md
+gru-adamw,train,final,52,267,0.367658,,0.859521,0.948454,0.770588,reported rounded snapshot; not continuous history,docs/grp2/PROGRESS.md
+gru-adamw,validation,final,52,80,0.861152,,0.56202,0.558824,0.565217,reported rounded snapshot; not continuous history,docs/grp2/PROGRESS.md
+static-grid,train,final,38,267,0.4804865122,0.760299623,0.6966646452,0.4639175258,0.9294117647,reported rounded snapshot; not continuous history,docs/grp2/PROGRESS.md
+static-grid,validation,final,38,80,0.7822965384,0.6125000119,0.5748081841,0.3235294118,0.8260869565,reported rounded snapshot; not continuous history,docs/grp2/PROGRESS.md
+lastblock-static,train,last_saved_budget_limited,8,267,0.6093232035636902,0.6591760516166687,0.5375682231655549,0.09278350515463918,0.9823529411764705,Tran-supplied exact saved-history aggregate; overall timeout; reload/frozen checks not saved,conversation: confirmed lastblock-summary-adam-split0-seed0-02; docs/grp2/PROGRESS.md
+lastblock-static,validation,last_saved_budget_limited,8,80,0.6808560490608215,0.5874999761581421,0.5223785166240409,0.08823529411764706,0.9565217391304348,Tran-supplied exact saved-history aggregate; overall timeout; reload/frozen checks not saved,conversation: confirmed lastblock-summary-adam-split0-seed0-02; docs/grp2/PROGRESS.md
