@@ -3,8 +3,8 @@
 The frozen ResNet encodes history and goal images once. The small head
 trains with class-weighted cross-entropy, AdamW (weight decay 1.0 by
 default), fixed MLP dropout 0.3, and optional Gaussian feature noise.
---config moderate or strict selects a 50-epoch budget and feature-noise
-std 1.0 or 2.0 respectively. Both keep weight decay 1.0. The baseline
+--config moderate, strict or extra-strict selects a 50-epoch budget and
+feature-noise std 1.0, 2.0 or 3.0. All keep weight decay 1.0. The baseline
 default remains 200 epochs with noise off. Explicit flags override presets.
 
 Runs train for the requested epoch count and retain the final weights in
@@ -38,6 +38,7 @@ REGULARIZATION_CONFIGS = {
     "baseline": {"weight_decay": 1.0, "feature_noise": 0.0, "epochs": 200},
     "moderate": {"weight_decay": 1.0, "feature_noise": 1.0, "epochs": 50},
     "strict": {"weight_decay": 1.0, "feature_noise": 2.0, "epochs": 50},
+    "extra-strict": {"weight_decay": 1.0, "feature_noise": 3.0, "epochs": 50},
 }
 
 
@@ -292,13 +293,13 @@ def parse_args(argv=None):
     parser.add_argument("--size", type=int, default=518,
                         help="Input size; shared preprocessor requires a multiple of 14")
     parser.add_argument("--epochs", type=int,
-                        help="Epoch budget (baseline 200; moderate/strict 50)")
+                        help="Epoch budget (baseline 200; regularized presets 50)")
     parser.add_argument("--batch-size", type=int, default=16)
     parser.add_argument("--lr", type=float, default=1e-3)
     parser.add_argument("--weight-decay", type=float,
                         help="AdamW weight decay (all presets: 1.0)")
     parser.add_argument("--feature-noise", type=float,
-                        help="Training-only Gaussian std (baseline 0; moderate 1; strict 2)")
+                        help="Training-only Gaussian std (baseline 0; moderate 1; strict 2; extra-strict 3)")
     parser.add_argument("--grad-clip", type=float, default=1.0)
     parser.add_argument("--feature-batch-size", type=int, default=8,
                         help="Cases per frozen-ResNet forward during feature extraction")

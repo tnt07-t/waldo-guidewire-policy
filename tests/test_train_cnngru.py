@@ -135,7 +135,7 @@ class FeatureCacheTests(unittest.TestCase):
 class RunTests(unittest.TestCase):
     def test_presets_and_explicit_zero_overrides(self):
         for config, noise, epochs in (("baseline", 0.0, 200), ("moderate", 1.0, 50),
-                                      ("strict", 2.0, 50)):
+                                      ("strict", 2.0, 50), ("extra-strict", 3.0, 50)):
             with self.subTest(config=config):
                 argv = ["--data-dir", "/invented", "--split-position", "0", "--config", config]
                 args = parse_args(argv)
@@ -148,27 +148,31 @@ class RunTests(unittest.TestCase):
 
     def test_configs_keep_identical_model_and_increase_training_noise_only(self):
         models = []
-        for config in ("moderate", "strict"):
+        for config in ("moderate", "strict", "extra-strict"):
             args = parse_args(["--data-dir", "/invented", "--split-position", "0",
                                "--config", config])
             models.append(tiny_model(feature_noise=args.feature_noise))
-        moderate, strict = models
-        self.assertEqual(trainable_count(moderate), trainable_count(strict))
-        for key, value in moderate.state_dict().items():
-            self.assertTrue(torch.equal(value, strict.state_dict()[key]))
+        moderate = models[0]
+        for model in models[1:]:
+            self.assertEqual(trainable_count(moderate), trainable_count(model))
+            for key, value in moderate.state_dict().items():
+                self.assertTrue(torch.equal(value, model.state_dict()[key]))
         data = invented_features()
         def forward(model):
             return model.forward_features(data["history"], data["depth"], data["offsets"], data["goal"])
         with torch.no_grad():
-            self.assertTrue(torch.equal(forward(moderate), forward(strict)))
+            for model in models[1:]:
+                self.assertTrue(torch.equal(forward(moderate), forward(model)))
         perturbed = []
         for model in models:
             model.train()
             torch.manual_seed(7)
             perturbed.append(model.regularize(data["history"], data["goal"]))
-        for i, original in enumerate((data["history"], data["goal"])):
-            self.assertTrue(torch.allclose(perturbed[1][i] - original,
-                                           2 * (perturbed[0][i] - original), atol=1e-6))
+        for model, outputs in zip(models[1:], perturbed[1:]):
+            for i, original in enumerate((data["history"], data["goal"])):
+                self.assertTrue(torch.allclose(outputs[i] - original,
+                                               model.feature_noise * (perturbed[0][i] - original),
+                                               atol=1e-6))
 
     def test_terminal_run_is_reproducible_without_writing_artifacts(self):
         from unittest import mock

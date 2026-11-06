@@ -14,7 +14,7 @@ From the repository root in an allocated compute environment with the project de
 python train_cnngru.py --data-dir "$DATA_DIR" --split-position 0 --seed 0 --epochs 200
 ```
 
-Two stronger presets are available: `--config moderate` uses feature-noise std 1.0 and `--config strict` uses 2.0. Both keep weight decay 1.0 and use 50 epochs; all other training defaults match. The default `--config baseline` retains 200 epochs and noise off. Explicit `--epochs`, `--weight-decay`, and `--feature-noise` override preset values. Compare with `--config baseline --epochs 50` to hold training duration fixed. See [the comparison protocol](NEXT_EXPERIMENTS.md).
+Three stronger presets are available: `--config moderate` uses feature-noise std 1.0, `--config strict` uses 2.0, and `--config extra-strict` uses 3.0. All keep weight decay 1.0 and use 50 epochs; all other training defaults match. The default `--config baseline` retains 200 epochs and noise off. Explicit `--epochs`, `--weight-decay`, and `--feature-noise` override preset values. Compare with `--config baseline --epochs 50` to hold training duration fixed. See [the comparison protocol](NEXT_EXPERIMENTS.md).
 
 Learning rate defaults to 0.001 and batch size to 16. These presets are candidates for reducing overfitting; real-data effectiveness has not been established.
 
