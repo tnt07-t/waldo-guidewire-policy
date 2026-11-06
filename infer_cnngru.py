@@ -1,7 +1,7 @@
 """Run CNNGRUModel inference on one batch of cases.
 
 Loads ``--batch-size`` cases (each one goal + six history images),
-prepares them with the shared preprocessor, and prints logits shape,
+prepares them with the shared preprocessor, and prints probability shape,
 predictions and batch accuracy. Without ``--checkpoint`` the GRU and
 classifier are untrained, so accuracy only confirms data flows through.
 
@@ -68,14 +68,14 @@ def main():
     model.eval()
 
     with torch.no_grad():
-        logits = model(batch["history"], batch["depth"], batch["offsets"], batch["goal"])
-    preds = logits.argmax(dim=-1)  # 0 = no, 1 = yes
+        probabilities = model(batch["history"], batch["depth"], batch["offsets"], batch["goal"])
+    preds = probabilities.argmax(dim=-1)  # 0 = RETRACT, 1 = ADVANCE
 
-    assert logits.shape == (args.batch_size, 2)
-    assert torch.isfinite(logits).all()
+    assert probabilities.shape == (args.batch_size, 2)
+    assert torch.isfinite(probabilities).all()
 
     print("Device:", device)
-    print("Logits shape:", tuple(logits.shape))
+    print("Probability shape:", tuple(probabilities.shape))
     print("Predictions:", preds.tolist())
     print("Batch accuracy{}: {:.3f}".format(
         "" if args.checkpoint else " (untrained)",

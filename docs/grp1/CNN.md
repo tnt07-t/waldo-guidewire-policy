@@ -4,7 +4,7 @@
 
 Owner-run one-case smoke check on Perlmutter passed (2026-11-02). Exact printed device, shapes, optional flags, and remote HEAD were not supplied; do not repeat the completed default check without a relevant change. Real images, tensors, and feature values must stay on Perlmutter. Passing this check does not measure action accuracy.
 
-`mlp_cnn.py` runs the prepared goal through the same frozen ResNet as history (`encode_goal` → `[512]`), then a teammate concatenates with the GRU `[128]` summary for the MLP. Prep is `prepare_case` / `prepared["goal"]`; do not treat the goal as a seventh history step.
+`mlp_cnn.py` runs the prepared goal through the same frozen ResNet as history (`encode_goal` → `[512]`), then `model_cnngru.py` projects history and goal features to 64-d and the MLP fuses the GRU `[64]` summary with the projected goal `[64]`. Prep is `prepare_case` / `prepared["goal"]`; do not treat the goal as a seventh history step.
 
 To test whether those 512-d vectors change under occlusion / marker-region / temporal probes useful for a later GRU, use the separate [CNN_DIAGNOSTICS.md](CNN_DIAGNOSTICS.md) / `cnn_diagnostics.py` path. Those probes do not claim wire detection or action recognition. Do not fold them into `cnn.py`.
 
@@ -76,6 +76,53 @@ python3 cnn.py --split-position 0 --partition train --remove-maxpool
 python3 cnn.py --split-position 0 --partition train --size 224
 ```
 
+### Preprocessor options
+
+`cnn.py`, `cnn_diagnostics.py` and `evaluation.py` share one set of input flags (`add_preprocessor_arguments` and `build_preprocessor` in `preprocessing.py`).
+Without them the default `dinov2` full-view preparation runs exactly as before.
+
+| Flag | Applies to | Default |
+| --- | --- | --- |
+| `--preprocessor {dinov2,wire}` | both | `dinov2` |
+| `--size` | `dinov2` only | 518 |
+| `--crop-size` | `wire` only | 256 |
+| `--channels {raw,enhanced}` | `wire` only | `raw` |
+| `--tophat-size` | `wire --channels enhanced` | 11 |
+| `--difference {median,previous}` | `wire --channels enhanced` | `median` |
+| `--context-size` | `wire` only | off |
+
+A flag given for the other preprocessor is rejected with an error, not ignored; for example `--size` with `wire`.
+`wire` crops a square around `goal_xy` at native resolution from the unmarked goal and the six history frames.
+
+```sh
+# Run on Perlmutter, in a GPU allocation: compare old and new paths on one case.
+export TORCH_HOME="${PSCRATCH:?}/model-cache/torch"
+python3 cnn.py --split-position 0 --partition train
+python3 cnn.py --split-position 0 --partition train --preprocessor wire --crop-size 256
+python3 cnn.py --split-position 0 --partition train --preprocessor wire --crop-size 256 --channels enhanced
+```
+
+Each run prints the device, `(1, 6, 512)`, `(1, 512)` and `Frozen encoder check passed.`
+
+## Wire preprocessing
+
+**Why:** `DINOv2Preprocessor` shrinks the whole 1065 x 1050 frame to 518, so the dark 3-4 px guidewire becomes about 1.5-2 px before the ResNet stem and is averaged away by global pooling.
+
+**Design** (`WirePreprocessor` in `preprocessing.py`):
+
+- one square box around `goal_xy` (rounded half up) is cropped at native resolution from the unmarked goal (`goal_raw`) and all six history frames, since the view is fixed within a case;
+- outside the image the box repeats edge pixels; the crop size must be a multiple of 32;
+- `raw` repeats the gray crop to three channels with ImageNet normalization, as the frozen ResNet expects;
+- `enhanced` uses raw, a black top-hat (thin dark structures) and a frame difference (median or previous frame); the goal's difference channel is zero, and `--standardize-channels` fits the extra channels' scale on training cases;
+- optional `context_size` adds a downscaled full view; `random_center_seed` and `zero_channels` exist for controls.
+
+**Chosen parameters:** none are adopted yet; `dinov2` stays the default.
+Training-only selection preferred a raw 512 crop (inner BA 0.597), but it scored 0.506 on split 0 validation against 0.547 for the full-frame baseline.
+The visual check of top-hat size and crop size (T13 notebook cells) was not run.
+Results, latency and limits are recorded once in [the 2026-11-03 progress entry](PROGRESS.md#2026-11-03---wire-preserving-preprocessing-and-frozen-feature-probe-owner-run-ladder-stopped-early).
+
+**Commands:** the flags are in [Preprocessor options](#preprocessor-options); the probe, controls and selection commands are in [EVALUATION.md](../EVALUATION.md#preprocessor-options).
+
 Weights download or cache access must work on Perlmutter. Keeping Torch Hub caches under scratch is recommended before constructing the encoder if home-quota limits appear:
 
 ```sh
@@ -93,7 +140,7 @@ from mlp_cnn import encode_goal
 
 # prepared["goal"] already went through DINOv2Preprocessor (same as history).
 goal_features = encode_goal(model.cnn, prepared["goal"])   # ResNet -> [512]
-# teammate: concat(gru_summary [128], goal_features [512]) -> MLP
+# model_cnngru.py: concat(gru_summary [64], projected goal [64]) -> MLP 128 -> 64 -> 2
 ```
 
-Next Group 1 steps: MLP over `concat(gru_128, goal_512)` in `mlp_cnn.py`. See [progress](PROGRESS.md).
+The full CNN-GRU head is in `model_cnngru.py`. See [progress](PROGRESS.md).

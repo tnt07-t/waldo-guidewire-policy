@@ -11,19 +11,24 @@ from PIL import Image
 from cnn_diagnostics import (
     content_bounds,
     cosine_distance,
+    default_occlusion_size,
     goal_marker_sensitivity,
     goal_vs_history_separation,
     grid_occlusion_deltas,
     l2_distance,
+    marker_probe_inputs,
     occlusion_sensitivity_history,
     pearson_corr,
+    prepared_to_original_xy,
     red_marker_mask_from_rgb,
     replace_masked_rgb,
+    run_case_diagnostics,
     safe_ratio,
     summarize_occlusion_grid,
     temporal_feature_diagnostics,
     translated_control_masks,
 )
+from preprocessing import DINOv2Preprocessor, WirePreprocessor
 
 
 class BrightnessEncoder(nn.Module):
@@ -245,6 +250,60 @@ class DiagnosticsTests(unittest.TestCase):
         self.assertEqual(cosine_distance(feature, feature), 0.0)
         sep = goal_vs_history_separation(feature, torch.stack([feature] * 6))
         self.assertEqual(len(sep["goal_history_l2"]), 6)
+
+
+class WireDiagnosticsTests(unittest.TestCase):
+    def setUp(self):
+        # 96 px frames, goal at the center: a 64 crop covers x and y 16..79.
+        frame = Image.new("RGB", (96, 96), (90, 90, 90))
+        marked = frame.copy()
+        for x in range(46, 51):
+            for y in range(46, 51):
+                marked.putpixel((x, y), (220, 30, 30))
+        self.case = {
+            "goal": marked,
+            "goal_raw": frame,
+            "goal_xy": [48, 48],
+            "history": [frame.copy() for _ in range(6)],
+            "depth_relative_mm": [-5.0, -4.0, -3.0, -2.0, -1.0, 0.0],
+            "history_offsets_s": [-4.0, -3.2, -2.4, -1.6, -0.8, 0.0],
+        }
+
+    def test_crop_coordinates_map_back_by_box_offset(self):
+        geometry = {"original_size_wh": (96, 96), "crop_box_ltrb": (-10, 16, 54, 80),
+                    "resized_size_wh": (54, 64), "padding_ltrb": (10, 0, 0, 0)}
+        self.assertEqual(prepared_to_original_xy(32, 5, geometry), (22, 21))
+        self.assertEqual(content_bounds(geometry), (0, 10, 64, 64))
+
+    def test_marker_probe_uses_marked_goal_crop(self):
+        prep = WirePreprocessor(crop_size=64)
+        goal, marker_prep = marker_probe_inputs(prep, self.case)
+        self.assertEqual((goal.size, goal.mode), ((64, 64), "RGB"))
+        # The marker sits at the crop center: 46..50 minus the 16 px box offset.
+        self.assertEqual(int(red_marker_mask_from_rgb(goal).sum()), 25)
+        self.assertTrue(bool(red_marker_mask_from_rgb(goal)[32, 32]))
+        prepared = marker_prep.prepare_image(goal)
+        self.assertEqual(prepared["geometry"]["crop_box_ltrb"], (0, 0, 64, 64))
+        self.assertEqual(prepared["geometry"]["padding_ltrb"], (0, 0, 0, 0))
+        dinov2 = DINOv2Preprocessor(14)
+        self.assertEqual(marker_probe_inputs(dinov2, self.case), (self.case["goal"], dinov2))
+
+    def test_run_case_diagnostics_with_wire_preprocessor(self):
+        prep = WirePreprocessor(crop_size=64)
+        patch = default_occlusion_size(prep)
+        self.assertEqual(patch, 8)
+        self.assertEqual(default_occlusion_size(DINOv2Preprocessor()), 74)
+        report = run_case_diagnostics(BrightnessEncoder().eval(), prep, self.case,
+                                      patch=patch, stride=patch)
+        goal = report["goal_marker_sensitivity"]
+        self.assertEqual(goal["status"], "ok")
+        self.assertEqual(goal["input"], "marked goal cropped with the wire box")
+        self.assertGreater(goal["marker_l2"], 0.0)
+        frames = report["occlusion_sensitivity"]["frames"]
+        self.assertEqual(frames[0]["n_patches"], 64)
+        cx, cy = frames[0]["argmax_center_original_xy"]
+        self.assertTrue(16 <= cx <= 80 and 16 <= cy <= 80)
+        self.assertEqual(report["history_features_shape"], (6, 512))
 
 
 if __name__ == "__main__":

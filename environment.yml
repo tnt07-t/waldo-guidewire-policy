@@ -11,3 +11,4 @@ dependencies:
       - Pillow
       - matplotlib
       - ipython
+      - scikit-learn

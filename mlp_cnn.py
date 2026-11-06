@@ -3,18 +3,18 @@
 Goal path (this file):
   prepared goal [B, 3, H, W]  --FrameEncoder (ResNet-18)-->  goal_features [B, 512]
 
-History path (elsewhere):
-  history + depth/time  --CNNGRUEncoder-->  gru_summary [B, 128]
+History path (gru.py):
+  history + depth/time  --CNNGRUEncoder-->  gru_summary [B, 64]
 
-Teammate: concat([gru_summary, goal_features], dim=-1) -> [B, 640] -> MLP -> action.
+model_cnngru.py projects history and goal features to 64-d, then
+GoalClassifier maps concat([gru_summary, goal_projection]) [B, 128] -> class probabilities.
 """
 
 import torch
 from torch import nn
 
-# Matches FrameEncoder.feature_dim / CNNGRUEncoder hidden size.
+# Matches FrameEncoder.feature_dim.
 GOAL_FEATURE_DIM = 512
-GRU_SUMMARY_DIM = 128
 
 def encode_goal(encoder, goal):
     """Run the prepared goal through the shared frozen ResNet (FrameEncoder).
@@ -26,7 +26,7 @@ def encode_goal(encoder, goal):
     Expect a tensor already prepared like history (e.g. ``prepared["goal"]``
     from DINOv2Preprocessor); this function does not resize/normalize.
 
-    Goal is not a GRU time step — only a 512-d vector for MLP fusion.
+    Goal is not a GRU time step - only a 512-d vector for MLP fusion.
     """
     single = goal.ndim == 3
     if single:
@@ -48,23 +48,24 @@ def encode_goal(encoder, goal):
 class GoalClassifier(nn.Module):
     """MLP classifier (yes / no) over the GRU summary and goal features.
 
-    gru_summary [B, 128] + goal_features [B, 512] -> logits [B, 2] (no, yes).
-    Train with CrossEntropyLoss, predict with argmax.
+    gru_summary [B, summary_dim] + goal_features [B, goal_dim] -> probabilities [B, 2]
+    (RETRACT, ADVANCE): Dropout -> Linear -> ReLU -> Dropout -> Linear -> Softmax.
+    Use return_logits=True with CrossEntropyLoss; predict with argmax.
 
-    Dropout is applied to the fused 640-d input and to the hidden layer;
-    with ~270 training cases this is the main regularizer of the head.
-    It is inactive in eval mode.
+    Dropout on the fused input and the hidden layer is the main regularizer
+    of the head with ~270 training cases. It is inactive in eval mode.
     """
-
-    def __init__(self, dropout=0.3):
+    def __init__(self, summary_dim, goal_dim, hidden_dim, dropout=0.3):
         super().__init__()
         self.mlp = nn.Sequential(
             nn.Dropout(dropout),
-            nn.Linear(GRU_SUMMARY_DIM + GOAL_FEATURE_DIM, 128),
+            nn.Linear(summary_dim + goal_dim, hidden_dim),
             nn.ReLU(),
             nn.Dropout(dropout),
-            nn.Linear(128, 2),
+            nn.Linear(hidden_dim, 2),
         )
+        self.output_activation = nn.Softmax(dim=-1)
 
-    def forward(self, gru_summary, goal_features):
-        return self.mlp(torch.cat([gru_summary, goal_features], dim=-1))
+    def forward(self, gru_summary, goal_features, *, return_logits=False):
+        logits = self.mlp(torch.cat([gru_summary, goal_features], dim=-1))
+        return logits if return_logits else self.output_activation(logits)

@@ -23,10 +23,18 @@ class DatasetTests(unittest.TestCase):
                 path = "row{}-image{}.png".format(row, frame)
                 Image.new("L", (13, 11), row * 10 + frame).save(self.root / path)
                 paths.append(path)
+            # Clean images are brighter than marked ones so the two cannot be confused.
+            clean_paths = []
+            for frame in range(7):
+                path = "row{}-clean{}.png".format(row, frame)
+                Image.new("L", (13, 11), 100 + row * 10 + frame).save(self.root / path)
+                clean_paths.append(path)
             records.append({
                 "case_id": "invented-case-{}".format(row),
                 "episode": "invented-episode-{}".format(row),
                 "paths": paths,
+                "clean_paths": clean_paths,
+                "goal_xy": [6.25 + row, 4.75],
                 "depth_relative_mm": [row, -4, -3, -2, -1, 0],
                 "history_offsets_s": [-9, -7, -4, -2, -1, 0],
                 "label": row % 2,
@@ -90,6 +98,35 @@ class DatasetTests(unittest.TestCase):
             dataset.records[2]["paths"][0] = path
             with self.assertRaises(ValueError):
                 dataset[0]
+
+    def test_unmarked_goal_and_goal_xy(self):
+        dataset = self.dataset()
+        case = dataset[0]
+        self.assertEqual(case["goal_raw"].getpixel((0, 0)), 120)
+        self.assertEqual(case["goal_raw"].size, (13, 11))
+        self.assertEqual(case["goal_raw"].mode, "L")
+        self.assertEqual(case["goal"].getpixel((0, 0)), 20)
+        self.assertEqual(case["goal_xy"], [8.25, 4.75])
+        # The returned list is a copy, so edits do not reach the loaded record.
+        case["goal_xy"][0] = 999
+        self.assertEqual(dataset.records[2]["goal_xy"], [8.25, 4.75])
+
+    def test_unsafe_unmarked_goal_path_is_rejected(self):
+        dataset = self.dataset()
+        for path in ("../outside.png", "/outside.png"):
+            dataset.records[2]["clean_paths"][0] = path
+            with self.assertRaises(ValueError):
+                dataset[0]
+
+    def test_wrong_clean_paths_or_goal_xy_length_fails(self):
+        dataset = self.dataset()
+        dataset.records[2]["clean_paths"].pop()
+        with self.assertRaisesRegex(ValueError, "clean paths"):
+            dataset[0]
+        dataset = self.dataset()
+        dataset.records[2]["goal_xy"].append(1.0)
+        with self.assertRaisesRegex(ValueError, "goal_xy"):
+            dataset[0]
 
     def test_invalid_selection_fails(self):
         for position in (-1, 2, True):

@@ -1,71 +1,72 @@
-# Group 1 — next experiments (CNN / features first)
+# Group 1 — stronger regularization configurations
 
-Context from owner-run split-0 training (see [PROGRESS.md](PROGRESS.md)): with frozen ResNet-18 + LayerNorm + GRU + MLP, the head can nearly memorize training (~99% train acc) while validation stays weak (best val bal-acc ~0.61, val AUC ~0.5, val loss rises). H2 (lr `3e-4` vs `1e-3`) did not fix generalization. More capacity and long memorization runs are lower priority. The test partition must not be used for tuning.
+The earlier train/validation gap, near-perfect fitting of shuffled training labels, and rising validation loss support an overfitting diagnosis. They do not establish that regularization alone can recover useful signal. These are candidate configurations to test, not validated fixes.
 
-**Working diagnosis:** the bottleneck is likely **what the frozen pooled CNN emits**, not optimizer LR or a bigger temporal head.
+## Presets
 
-## Highest-value next tries (CNN / features)
+All configurations use the same frozen ResNet, shared normalization/projection, 64-unit GRU and MLP. They have identical parameter counts and evaluation behavior for identical weights. Only the training noise differs between the presets.
 
-### 1. Confirm the features, not the head
+| Setting | Moderate | Strict | Extra strict |
+| --- | ---: | ---: | ---: |
+| CLI preset | `--config moderate` | `--config strict` | `--config extra-strict` |
+| AdamW weight decay | 1.0 | 1.0 | 1.0 |
+| Gaussian feature-noise std | 1.0 | 2.0 | 3.0 |
+| MLP dropout | 0.3 | 0.3 | 0.3 |
+| Epoch budget | 50 | 50 | 50 |
+| Learning rate | 0.001 | 0.001 | 0.001 |
+| Batch size | 16 | 16 | 16 |
+| Gradient clipping | 1.0 | 1.0 | 1.0 |
+| Terminal summary window | Last 20 epochs | Last 20 epochs | Last 20 epochs |
 
-Run a **linear probe on frozen features only** (no GRU) on the same split — e.g. last history + goal, or mean history + goal.
+Noise is added independently to normalized history and goal features before the shared projection, during training only. A standard deviation of 1.0 is approximately the scale of a LayerNorm-normalized feature vector; 2.0 and 3.0 are deliberately aggressive and may erase useful information. It does not perturb depth/time metadata.
 
-| Outcome | Meaning |
-| --- | --- |
-| Probe also ~0.55–0.60 bal-acc / ~0.5 AUC | Representation problem → keep focusing on CNN/features |
-| Probe clearly better than GRU policy | Sequence fusion may be hurting → simplify temporal side later; still improve CNN |
+Moderate uses the previously tested noise strength that reduced null fitting most. Strict tests whether stronger noise meaningfully limits memorization further. All use a predeclared 50-epoch budget to limit optimization time. Fifty epochs is a hypothesis, not a demonstrated optimum, and does not guarantee an absence of memorization.
 
-### 2. Don’t throw away space (main architectural bet)
+Default `--config baseline` preserves noise 0 and 200 epochs. Explicit `--epochs`, `--weight-decay`, and `--feature-noise` override the selected preset, including explicit zero values. The terminal prints the effective settings. Keep the preset defaults for the first comparison.
 
-Global average pooling → one 512-d vector is weak for “where is the wire vs the target.” Try, in order of cost:
+## Stronger than strict
 
-1. **`--remove-maxpool`** (already in `FrameEncoder`) and compare with the same linear probe / short train.
-2. **Keep spatial maps** (e.g. layer4 `B×512×H'×W'`) and pool smarter: GeM, attention pool, or a small tip/goal ROI — even a crude center-crop vs full-image ablation.
-3. Longer-term: light **spatial head** (goal–history similarity) instead of only concatenating two global vectors.
+Extra strict increases noise standard deviation from 2.0 to 3.0, leaving all other settings fixed. This is 50% more noise amplitude and 2.25 times the noise variance. It is a bounded follow-up, not a demonstrated improvement. Limited training fit with strict means additional noise could cause underfitting; lower training accuracy or a smaller gap alone does not count as success.
 
-### 3. Unfreeze a little of the CNN (task adaptation)
+Once the updated code is on Perlmutter:
 
-Still feature-focused, not “bigger GRU”:
+```sh
+python train_cnngru.py --data-dir "$DATA_DIR" --split-position 0 --seed 0 --config extra-strict
+```
 
-- Unfreeze **layer4 only** with a small LR (e.g. `1e-5`–`5e-5`); freeze the rest; keep strong weight decay / dropout.
-- Compare to fully frozen on the **same** split and seed.
+The same configuration works immediately with the previous version using an explicit override:
 
-If validation AUC does not move, prep or label noise may dominate capacity.
+```sh
+python train_cnngru.py --data-dir "$DATA_DIR" --split-position 0 --seed 0 --config strict --feature-noise 3.0
+```
 
-### 4. Prep ablations that change what ResNet sees
+Compare with strict on the same split, seed and epochs, then repeat with `--shuffle-train-labels`. Evaluate validation AUC and both class recalls alongside null fitting. If stronger noise reduces training fit without improving validation, stop increasing noise and investigate the representation or labels.
 
-Matched runs, **one change at a time**:
+## First matched comparison
 
-- **224 vs 518** input (ResNet-native scale vs current ViT-coupled 518).
-- Optional: mild emphasis on the red goal marker only if diagnostics show it is washed out — do not hack labels.
+Run on Perlmutter from the repository root, inside an allocation with `DATA_DIR` set:
 
-### 5. Goal vs history encoding balance
+```sh
+python train_cnngru.py --data-dir "$DATA_DIR" --split-position 0 --seed 0 --config baseline --epochs 50
+python train_cnngru.py --data-dir "$DATA_DIR" --split-position 0 --seed 0 --config moderate
+python train_cnngru.py --data-dir "$DATA_DIR" --split-position 0 --seed 0 --config strict
+```
 
-Shared backbone is fine; test whether **goal 512-d swamps** the GRU 128-d summary in the MLP:
+The baseline must also use 50 epochs so that it isolates the noise effect. Compare the same epochs 31–50 for all three, rather than comparing these scores directly with the former 181–200 window. The moderate-versus-strict comparison changes only feature-noise strength. To isolate epoch budget separately, hold noise fixed and compare 50 versus 200 epochs in a later bounded experiment.
 
-- Project goal **512 → 128** before concat (matched ablation).
-- Or tiny separate **adapters** (Linear) on goal vs history features without unfreezing ResNet.
+Repeat each command with `--shuffle-train-labels` for its matched null control. If the first comparison is promising, repeat the same three configurations and controls on splits 0–2 and seeds 0–2. This is a fixed comparison, not a new search over strengths. An optional `--feature-cache "$PSCRATCH/waldo-feature-cache"` reuses frozen features; it must stay outside the repository on Perlmutter.
 
-### 6. Use diagnostics as a gate
+Training prints metrics only. No result folders, CSVs, plots, logs, JSON summaries or model checkpoints are created. No test partition is loaded.
 
-Before another long train: occlusion / overlay checks on a few training cases — do max-sensitivity patches sit near wire/target? If not, more epochs will not invent localization. See [CNN_DIAGNOSTICS.md](CNN_DIAGNOSTICS.md).
+## What would count as progress?
 
-## Lower priority (given current results)
+Read the final-window validation AUC, balanced accuracy, both class recalls, train/validation balanced-accuracy gap and null training balanced accuracy. The gap is printed explicitly. Null runs also label their training fit explicitly.
 
-- Another LR-only sweep  
-- Deeper GRU / wider MLP  
-- Long memorization runs  
-- Touching the test set  
+- Lower null training balanced accuracy demonstrates reduced fitting of arbitrary labels. A training-side screening target is null BA around 0.55–0.70 while real training BA remains around 0.65–0.90. These are exploratory targets, not universal thresholds or proof of success.
+- A smaller train/validation gap is useful only if validation performance holds or improves. Both scores collapsing to 0.5 is underfitting, not a successful solution.
+- A candidate should improve validation AUC versus both its matching real-label baseline and its own null on most split/seed pairs. Check both class recalls so an ADVANCE-heavy predictor does not look successful through raw accuracy alone.
+- If null fitting remains high under the tested presets, they have not sufficiently limited memorization. If null fit falls but real validation remains near chance, more regularization alone has not recovered a usable signal. If strict damages both training fit and validation, prefer moderate or return to baseline.
 
-## Suggested run order
+Seed repeats share validation examples, and supplied splits can overlap. They are not independent datasets. Do not select an isolated peak epoch or treat a small gain on one split as confirmation. Keep the test partition reserved until choices are fixed.
 
-1. Frozen **linear probe** (latest+goal, mean+goal) on split 0.  
-2. Same probe with **`remove_maxpool`** and/or **224 input**.  
-3. If still flat → **layer4 fine-tune** with tiny LR.  
-4. If probe improves but full GRU policy does not → simplify temporal fusion; if neither improves → revisit spatial features / prep / labels.
-
-## Bottom line
-
-Treat ~0.61 val bal-acc as **weak visual features + an easy-to-overfit head**. Next experiments should change **what the CNN emits** (spatial pooling, resolution, light unfreeze) and judge them with a **simple probe** before another full GRU train.
-
-Results and protocol details belong in [PROGRESS.md](PROGRESS.md); keep aggregate metrics only in shared docs; real images and features stay on Perlmutter.
+If none of the configurations improves transfer, prioritize spatial feature retention, goal/current-frame relationships and private review of labels/alignment before increasing model capacity or launching a wider regularization search.
