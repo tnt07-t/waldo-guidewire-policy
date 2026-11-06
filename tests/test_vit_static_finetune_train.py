@@ -118,7 +118,8 @@ class TrainerTests(unittest.TestCase):
 
     def test_timeout_and_update_cap(self):
         with tempfile.TemporaryDirectory() as directory:
-            clock = iter([0., 121., 122.])
+            limit = self.context['config']['training_seconds']
+            clock = iter([0., limit + 1., limit + 2.])
             result = runner.train(self.model, self.data, self.data, self.prepare, directory, self.context,
                                   clock=lambda: next(clock), factory=self.factory)
             self.assertEqual(result['status'], 'budget_limited')
@@ -141,7 +142,7 @@ class TrainerTests(unittest.TestCase):
             result = runner.train(self.model, self.data, self.data, self.prepare, directory, context, factory=self.factory)
             self.assertEqual(result['stop_reason'], 'early_stopping')
             self.assertEqual(result['completed_epochs'], 2)
-        for overrides in (dict(training_seconds=121), dict(overall_seconds=601), dict(microbatch_size=33),
+        for overrides in (dict(training_seconds=1201), dict(overall_seconds=1201), dict(microbatch_size=33),
                           dict(block_lr=.001), dict(seed=-1), dict(max_updates=901), dict(training_seconds=float('nan'))):
             with self.subTest(overrides=overrides), self.assertRaises(ValueError):
                 runner.resolve_config(**overrides)

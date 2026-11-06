@@ -23,7 +23,7 @@ from vit_gru_train import check_partitions, metrics, save_bytes, save_json, vali
 
 CONFIG = dict(seed=0, batch_size=32, microbatch_size=1, block_lr=1e-5,
               head_lr=1e-3, optimizer='Adam', weight_decay=0., max_epochs=100,
-              max_updates=900, patience=20, training_seconds=120., overall_seconds=600.)
+              max_updates=900, patience=20, training_seconds=1200., overall_seconds=1200.)
 
 
 def resolve_config(**overrides):
