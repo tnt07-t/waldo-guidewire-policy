@@ -263,9 +263,14 @@ class ForwardPathTests(unittest.TestCase):
             direct = model(history, depth, offsets, goal)
             cached = model.forward_features(model.encoder.cnn(history), depth, offsets,
                                             model.encoder.cnn(goal))
+            logits = model(history, depth, offsets, goal, return_logits=True)
         self.assertEqual(tuple(direct.shape), (2, 2))
         self.assertTrue(torch.isfinite(direct).all())
         self.assertTrue(torch.allclose(direct, cached, atol=1e-5))
+        self.assertTrue(torch.allclose(direct, logits.softmax(dim=-1), atol=1e-5))
+        self.assertTrue(torch.all((direct >= 0) & (direct <= 1)))
+        self.assertTrue(torch.allclose(direct.sum(dim=-1), torch.ones(2)))
+        self.assertTrue(torch.equal(direct.argmax(dim=-1), logits.argmax(dim=-1)))
 
     def test_backbone_stays_frozen(self):
         model = tiny_model()
@@ -340,6 +345,18 @@ class NullAndWindowTests(unittest.TestCase):
 
 
 class TrainLoopTests(unittest.TestCase):
+    def test_cross_entropy_training_and_evaluation_bypass_output_activation(self):
+        from unittest import mock
+        model = tiny_model(dropout=0.0)
+        data = invented_features()
+        before = model.classifier.mlp[-1].weight.detach().clone()
+        with mock.patch.object(model.classifier.output_activation, "forward",
+                               side_effect=AssertionError("Cross-entropy needs raw logits")):
+            result = train_model(model, data, data, epochs=2, batch_size=4, lr=.001,
+                                 weight_decay=1.0, grad_clip=1.0, seed=0, log=lambda line: None)
+        self.assertTrue(math.isfinite(result["rows"][-1]["train_loss"]))
+        self.assertFalse(torch.equal(before, model.classifier.mlp[-1].weight))
+
     def test_learns_separable_invented_features(self):
         generator = torch.Generator().manual_seed(1)
         n = 40

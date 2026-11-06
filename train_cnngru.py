@@ -221,7 +221,7 @@ def evaluate(model, data, weight, batch_size=256):
         model.forward_features(data["history"][i:i + batch_size],
                                data["depth"][i:i + batch_size],
                                data["offsets"][i:i + batch_size],
-                               data["goal"][i:i + batch_size])
+                               data["goal"][i:i + batch_size], return_logits=True)
         for i in range(0, len(data["label"]), batch_size)
     ])
     return binary_metrics(logits, data["label"], weight)
@@ -256,7 +256,8 @@ def train_model(model, train, val, *, epochs, batch_size, lr, weight_decay,
         for i in range(0, n, batch_size):
             idx = order[i:i + batch_size]
             logits = model.forward_features(train["history"][idx], train["depth"][idx],
-                                            train["offsets"][idx], train["goal"][idx])
+                                            train["offsets"][idx], train["goal"][idx],
+                                            return_logits=True)
             loss = F.cross_entropy(logits, train["label"][idx], weight=weight)
             optimizer.zero_grad(set_to_none=True)
             loss.backward()

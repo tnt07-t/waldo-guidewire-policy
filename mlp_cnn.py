@@ -7,7 +7,7 @@ History path (gru.py):
   history + depth/time  --CNNGRUEncoder-->  gru_summary [B, 64]
 
 model_cnngru.py projects history and goal features to 64-d, then
-GoalClassifier maps concat([gru_summary, goal_projection]) [B, 128] -> logits.
+GoalClassifier maps concat([gru_summary, goal_projection]) [B, 128] -> class probabilities.
 """
 
 import torch
@@ -48,13 +48,13 @@ def encode_goal(encoder, goal):
 class GoalClassifier(nn.Module):
     """MLP classifier (yes / no) over the GRU summary and goal features.
 
-    gru_summary [B, summary_dim] + goal_features [B, goal_dim] -> logits [B, 2]
-    (no, yes): Dropout -> Linear -> ReLU -> Dropout -> Linear.
-    Train with CrossEntropyLoss, predict with argmax.
+    gru_summary [B, summary_dim] + goal_features [B, goal_dim] -> probabilities [B, 2]
+    (RETRACT, ADVANCE): Dropout -> Linear -> ReLU -> Dropout -> Linear -> Softmax.
+    Use return_logits=True with CrossEntropyLoss; predict with argmax.
 
     Dropout on the fused input and the hidden layer is the main regularizer
     of the head with ~270 training cases. It is inactive in eval mode.
-    """ 
+    """
     def __init__(self, summary_dim, goal_dim, hidden_dim, dropout=0.3):
         super().__init__()
         self.mlp = nn.Sequential(
@@ -64,6 +64,8 @@ class GoalClassifier(nn.Module):
             nn.Dropout(dropout),
             nn.Linear(hidden_dim, 2),
         )
+        self.output_activation = nn.Softmax(dim=-1)
 
-    def forward(self, gru_summary, goal_features):
-        return self.mlp(torch.cat([gru_summary, goal_features], dim=-1))
+    def forward(self, gru_summary, goal_features, *, return_logits=False):
+        logits = self.mlp(torch.cat([gru_summary, goal_features], dim=-1))
+        return logits if return_logits else self.output_activation(logits)

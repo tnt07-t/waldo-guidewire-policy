@@ -1,4 +1,4 @@
-"""Full CNN-GRU model: history + goal in, yes / no logits out.
+"""Full CNN-GRU model: history + goal in, RETRACT / ADVANCE probabilities out.
 
 Data (one batch of B, after prepare_case + collate):
   history            [B, T, 3, H, W]
@@ -21,10 +21,11 @@ The small head uses a shared Linear(512 -> 64) projection, a one-layer
 GRU (hidden 64), and an MLP mapping 128 -> 64 -> 2: 67,586 trainable parameters.
 
 The ResNet is frozen, so training (train_cnngru.py) encodes every image
-once and then calls ``forward_features`` on the cached 512-d vectors.
+once and then calls ``forward_features(return_logits=True)`` on cached vectors
+for cross-entropy training. Default outputs apply Softmax over the two classes.
 ``forward`` gives identical outputs from raw prepared images.
 
-Prediction: logits.argmax(dim=-1)  # 0 = no, 1 = yes
+Prediction: probabilities.argmax(dim=-1)  # 0 = RETRACT, 1 = ADVANCE
 """
 
 import torch
@@ -61,10 +62,11 @@ class CNNGRUModel(nn.Module):
         self.classifier = GoalClassifier(summary_dim=GRU_HIDDEN, goal_dim=PROJECTION_DIM,
                                          hidden_dim=MLP_HIDDEN, dropout=dropout)
 
-    def forward(self, history, depth, offsets, goal):
+    def forward(self, history, depth, offsets, goal, *, return_logits=False):
         history_features = self.encoder.cnn(history)           # [B, T, 512]
         goal_features = encode_goal(self.encoder.cnn, goal)    # [B, 512] same CNN
-        return self.forward_features(history_features, depth, offsets, goal_features)
+        return self.forward_features(history_features, depth, offsets, goal_features,
+                                     return_logits=return_logits)
 
     def regularize(self, history_features, goal_features):
         """Training-only noise on normalized [B, T, 512] / [B, 512] features."""
@@ -76,11 +78,11 @@ class CNNGRUModel(nn.Module):
             goal_features = goal_features + self.feature_noise * torch.randn_like(goal_features)
         return history_features, goal_features
 
-    def forward_features(self, history_features, depth, offsets, goal_features):
-        """Head only: frozen-CNN features in, [B, 2] logits out."""
+    def forward_features(self, history_features, depth, offsets, goal_features, *, return_logits=False):
+        """Return [B, 2] probabilities, or raw logits for cross-entropy."""
         history_features, goal_features = self.regularize(
             self.feature_norm(history_features), self.feature_norm(goal_features))
         history_features = self.projection(history_features)  # [B, T, 64]
         goal_features = self.projection(goal_features)        # [B, 64]
         gru_summary = self.encoder.summarize(history_features, depth, offsets)  # [B, 64]
-        return self.classifier(gru_summary, goal_features)
+        return self.classifier(gru_summary, goal_features, return_logits=return_logits)

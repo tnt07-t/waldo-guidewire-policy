@@ -2,6 +2,8 @@
 
 The working configuration is frozen ResNet-18, shared LayerNorm and 512-to-64 projection, a one-layer GRU with hidden size 64, and a 128-to-64-to-2 MLP. The head has 67,586 trainable parameters. Depth/time normalization uses training statistics. The goal is a separate reference, not a history step.
 
+The classifier ends with Softmax, returning probabilities in class order `[RETRACT, ADVANCE]`. Argmax selects 0 or 1. Both `forward` and `forward_features` accept `return_logits=True`; the training loop and loss evaluation use that option so class-weighted cross-entropy receives raw logits. Softmax adds no parameters and preserves class decisions for the same logits; it is not an overfitting remedy.
+
 Weight decay **1.0** is the chosen starting point. Gaussian feature noise remains available and defaults to **0.0**. MLP dropout is fixed at **0.3** in the training entry point, matching the chosen configuration. Feature dropout, frame dropout, label smoothing, and dropout sweeps have been removed.
 
 This is a working baseline, not a claim of validated generalization. Change one factor at a time and compare the same split and seed. See [next experiments](NEXT_EXPERIMENTS.md).
