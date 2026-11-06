@@ -1,1 +1,0 @@
-No run folders with summary.json match 'docs/grp1/results/h4-ls0.2-split*'

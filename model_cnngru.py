@@ -13,16 +13,12 @@ buffers saved in the state_dict, so inference reuses them automatically.
 
 The 512-d frozen-ResNet features are post-ReLU (non-negative, uncentered),
 so one shared ``nn.LayerNorm(512)`` normalizes every history frame and the
-goal before the GRU and the MLP. Without it the head underfits (split-0
-train loss stays near 0.65, see docs/grp1/PROGRESS.md). Depth/offset
+goal before the GRU and the MLP. Depth/offset
 metadata is concatenated after this normalization, since it is already
 standardized.
 
-The head is size S from the Phase 1 capacity ladder (docs/grp1/PROGRESS.md):
-one shared Linear(512 -> 64) projects every normalized history frame and
-the goal into one 64-d space, a one-layer GRU (hidden 64) summarizes the
-history, and the MLP maps 128 -> 64 -> 2. 67,586 trainable parameters.
-XS, M and L performed no better on validation, so S is the only option.
+The small head uses a shared Linear(512 -> 64) projection, a one-layer
+GRU (hidden 64), and an MLP mapping 128 -> 64 -> 2: 67,586 trainable parameters.
 
 The ResNet is frozen, so training (train_cnngru.py) encodes every image
 once and then calls ``forward_features`` on the cached 512-d vectors.
@@ -33,7 +29,6 @@ Prediction: logits.argmax(dim=-1)  # 0 = no, 1 = yes
 
 import torch
 from torch import nn
-from torch.nn import functional as F
 
 from cnn import FrameEncoder
 from gru import CNNGRUEncoder
@@ -45,34 +40,19 @@ MLP_HIDDEN = 64
 
 
 class CNNGRUModel(nn.Module):
-    """CNN-GRU policy with optional H4 feature-space regularizers.
+    """CNN-GRU policy with optional training-only Gaussian feature noise.
 
-    The regularizers (docs/grp1/NEXT_EXPERIMENTS.md, H4) act on the
-    LayerNormed 512-d features in training mode only and add no parameters:
-
-    - ``frame_dropout``: each history step of each case is replaced by zeros
-      (the LayerNorm mean) with this probability; depth/offset stay.
-    - ``feature_dropout``: element-wise dropout on history and goal features.
-    - ``feature_noise``: std of Gaussian noise added to history and goal
-      features, in LayerNorm units.
-
-    At 0 (the default) a regularizer is skipped entirely and draws no random
-    numbers, so default training is unchanged.
+    Noise is added after LayerNorm and before the shared projection. Zero
+    noise leaves the features and random state unchanged. MLP dropout stays
+    at 0.3 by default, matching the chosen weight-decay configuration.
     """
 
-    def __init__(self, pretrained=True, dropout=0.3, feature_noise=0.0,
-                 feature_dropout=0.0, frame_dropout=0.0):
+    def __init__(self, pretrained=True, dropout=0.3, feature_noise=0.0):
         super().__init__()
-        if feature_noise < 0:
-            raise ValueError("feature_noise must be non-negative")
-        for name, p in (("feature_dropout", feature_dropout), ("frame_dropout", frame_dropout)):
-            if not 0 <= p < 1:
-                raise ValueError("{} must be in [0, 1)".format(name))
+        if not 0 <= feature_noise < float("inf"):
+            raise ValueError("feature_noise must be finite and non-negative")
         self.feature_noise = feature_noise
-        self.feature_dropout = feature_dropout
-        self.frame_dropout = frame_dropout
-        # Construction order fixes the seeded initialization; keep it so runs
-        # reproduce the Phase 1 rung-S results and checkpoints keep their keys.
+        # Keep construction order stable for seeded initialization.
         self.encoder = CNNGRUEncoder(input_dim=PROJECTION_DIM, hidden_dim=GRU_HIDDEN,
                                      pretrained=pretrained)  # history path
         # Shared by history frames and goal so both stay in one feature space.
@@ -87,16 +67,9 @@ class CNNGRUModel(nn.Module):
         return self.forward_features(history_features, depth, offsets, goal_features)
 
     def regularize(self, history_features, goal_features):
-        """Training-only H4 regularizers on normalized [B, T, 512] / [B, 512]."""
+        """Training-only noise on normalized [B, T, 512] / [B, 512] features."""
         if not self.training:
             return history_features, goal_features
-        if self.frame_dropout:
-            keep = torch.rand(history_features.shape[:2], device=history_features.device)
-            keep = (keep >= self.frame_dropout).to(history_features.dtype)
-            history_features = history_features * keep[..., None]
-        if self.feature_dropout:
-            history_features = F.dropout(history_features, self.feature_dropout)
-            goal_features = F.dropout(goal_features, self.feature_dropout)
         if self.feature_noise:
             history_features = history_features + self.feature_noise * torch.randn_like(
                 history_features)

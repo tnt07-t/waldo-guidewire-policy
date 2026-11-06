@@ -1,6 +1,5 @@
 """Invented-input checks for the CNN-GRU training pieces (no dataset needed)."""
 
-import argparse
 import math
 import tempfile
 import unittest
@@ -10,7 +9,7 @@ import torch
 
 from model_cnngru import CNNGRUModel
 from train_cnngru import (REPO_ROOT, binary_metrics, cache_metadata, cache_path,
-                          check_cache_dir, class_weights, default_run_name,
+                          check_cache_dir, class_weights, evaluate, parse_args, run,
                           load_cached_features, roc_auc, save_cached_features,
                           shuffled_labels, train_model, window_summary)
 
@@ -39,8 +38,8 @@ class HeadTests(unittest.TestCase):
         # LayerNorm 1,024 + projection 32,832 + GRU 25,344 + MLP 8,386.
         self.assertEqual(trainable_count(tiny_model()), 67_586)
 
-    def test_state_dict_keys_match_phase1_rung_s(self):
-        # Same keys as the phase1-s-* checkpoints, so they still load.
+    def test_state_dict_layout(self):
+        # Retain the small head's existing parameter layout.
         keys = {k for k in tiny_model().state_dict() if not k.startswith("encoder.cnn.")}
         self.assertEqual(keys, {
             "encoder.meta_mean", "encoder.meta_std",
@@ -61,15 +60,14 @@ class HeadTests(unittest.TestCase):
 
 
 class RegularizerTests(unittest.TestCase):
-    ALL_ON = {"feature_noise": 0.5, "feature_dropout": 0.3, "frame_dropout": 0.3}
+    ALL_ON = {"feature_noise": 0.5}
 
     def forward(self, model, data):
         return model.forward_features(data["history"], data["depth"], data["offsets"],
                                       data["goal"])
 
     def test_defaults_draw_no_random_numbers(self):
-        # Default settings must train exactly as before H4: in training mode
-        # the regularizers return their inputs and leave the global RNG alone.
+        # Disabled feature noise returns its inputs without drawing randomness.
         model = tiny_model().train()
         history, goal = torch.randn(4, 6, 512), torch.randn(4, 512)
         torch.manual_seed(5)
@@ -94,55 +92,14 @@ class RegularizerTests(unittest.TestCase):
             first, second = self.forward(model, data), self.forward(model, data)
         self.assertFalse(torch.equal(first, second))
 
-    def test_each_regularizer_alone_changes_training_forward(self):
-        data = invented_features()
-        for name, value in self.ALL_ON.items():
-            with self.subTest(regularizer=name), torch.no_grad():
-                model = tiny_model(dropout=0.0, **{name: value}).train()
-                self.assertFalse(torch.equal(self.forward(model, data),
-                                             self.forward(model, data)))
-
-    def test_frame_dropout_zeroes_whole_history_steps_only(self):
-        model = tiny_model(frame_dropout=0.5).train()
-        history, goal = torch.randn(64, 6, 512) + 3, torch.randn(64, 512)
-        torch.manual_seed(1)
-        out_history, out_goal = model.regularize(history, goal)
-        dropped = (out_history == 0).all(dim=-1)
-        kept = torch.isclose(out_history, history).all(dim=-1)
-        self.assertTrue((dropped | kept).all())
-        self.assertTrue(0.3 < dropped.float().mean().item() < 0.7)
-        self.assertTrue(torch.equal(out_goal, goal))
-
     def test_no_new_parameters_or_state(self):
         self.assertEqual(set(tiny_model().state_dict()),
                          set(tiny_model(**self.ALL_ON).state_dict()))
 
     def test_invalid_settings_rejected(self):
-        for kwargs in ({"feature_noise": -0.1}, {"feature_dropout": 1.0},
-                       {"frame_dropout": -0.1}):
-            with self.subTest(**kwargs), self.assertRaises(ValueError):
-                CNNGRUModel(pretrained=False, **kwargs)
-
-    def test_label_smoothing_changes_training_only(self):
-        data = invented_features(n=16)
-        results = []
-        for smoothing in (0.0, 0.2):
-            model = tiny_model(dropout=0.0)
-            model.encoder.set_metadata_stats(data["depth"], data["offsets"])
-            results.append(train_model(model, data, data, epochs=3, batch_size=4, lr=1e-2,
-                                       weight_decay=0.0, grad_clip=1.0, patience=0, seed=0,
-                                       label_smoothing=smoothing, log=lambda line: None))
-        plain, smoothed = (r["rows"][-1]["train_loss"] for r in results)
-        self.assertNotEqual(plain, smoothed)
-        # Logged losses are plain cross-entropy: with lr 0 the weights never
-        # change, so the logged loss must not depend on smoothing.
-        model = tiny_model(dropout=0.0)
-        model.encoder.set_metadata_stats(data["depth"], data["offsets"])
-        zero_lr = [train_model(model, data, data, epochs=1, batch_size=4, lr=0.0,
-                               weight_decay=0.0, grad_clip=1.0, patience=0, seed=0,
-                               label_smoothing=s, log=lambda line: None)["rows"][0]["train_loss"]
-                   for s in (0.0, 0.2)]
-        self.assertEqual(zero_lr[0], zero_lr[1])
+        for value in (-0.1, float("nan"), float("inf")):
+            with self.subTest(value=value), self.assertRaises(ValueError):
+                CNNGRUModel(pretrained=False, feature_noise=value)
 
 
 class FeatureCacheTests(unittest.TestCase):
@@ -175,21 +132,33 @@ class FeatureCacheTests(unittest.TestCase):
             self.assertEqual(check_cache_dir(root), Path(root).resolve())
 
 
-class RunNameTests(unittest.TestCase):
-    def args(self, **overrides):
-        values = {"weight_decay": 1e-2, "dropout": 0.3, "feature_noise": 0.0,
-                  "feature_dropout": 0.0, "frame_dropout": 0.0, "label_smoothing": 0.0,
-                  "shuffle_train_labels": False, "split_position": 1, "seed": 2}
-        values.update(overrides)
-        return argparse.Namespace(**values)
-
-    def test_defaults_keep_old_name(self):
-        self.assertEqual(default_run_name(self.args(), "T"), "cnngru-split1-seed2-T")
-
-    def test_non_default_regularizers_tagged(self):
-        name = default_run_name(self.args(weight_decay=0.1, feature_noise=0.5,
-                                          label_smoothing=0.1, shuffle_train_labels=True), "T")
-        self.assertEqual(name, "cnngru-wd0.1-fn0.5-ls0.1-null-split1-seed2-T")
+class RunTests(unittest.TestCase):
+    def test_terminal_run_is_reproducible_without_writing_artifacts(self):
+        from unittest import mock
+        import functools
+        args = parse_args(["--data-dir", "/invented", "--split-position", "0",
+                           "--epochs", "3", "--feature-noise", "0.5"])
+        self.assertEqual(args.weight_decay, 1.0)
+        features = {"train": invented_features(16), "validation": invented_features(8, seed=1)}
+        snapshot = {p: {k: v.clone() for k, v in data.items()} for p, data in features.items()}
+        with mock.patch("train_cnngru.CNNGRUModel", functools.partial(CNNGRUModel, pretrained=False)), \
+                mock.patch("torch.save") as save, \
+                mock.patch.object(Path, "mkdir") as mkdir, \
+                mock.patch("builtins.open", side_effect=AssertionError("Unexpected disk access")):
+            first = run(args, features, echo=False)
+            args.shuffle_train_labels = True
+            run(args, features, echo=False)
+            args.shuffle_train_labels = False
+            second = run(args, features, echo=False)
+        save.assert_not_called()
+        mkdir.assert_not_called()
+        clean = lambda result: [{k: v for k, v in row.items() if k != "seconds"}
+                                for row in result["rows"]]
+        self.assertEqual(clean(first), clean(second))
+        for part, data in features.items():
+            for key, value in data.items():
+                self.assertTrue(torch.equal(value, snapshot[part][key]))
+        self.assertEqual(first["final_epoch"]["epoch"], 3)
 
 
 class FeatureNormTests(unittest.TestCase):
@@ -343,29 +312,13 @@ class TrainLoopTests(unittest.TestCase):
         model.encoder.set_metadata_stats(data["depth"], data["offsets"])
         lines = []
         result = train_model(model, data, data, epochs=60, batch_size=8, lr=1e-2,
-                             weight_decay=1e-2, grad_clip=1.0, patience=0, seed=0,
+                             weight_decay=1e-2, grad_clip=1.0, seed=0,
                              log=lines.append)
-        self.assertEqual(result["best"]["val"]["bal_acc"], 1.0)
+        self.assertEqual(result["rows"][-1]["val_bal_acc"], 1.0)
         self.assertEqual(len(lines), len(result["rows"]))
         self.assertIn("val loss", lines[0])
 
-    def test_early_stopping_restores_best(self):
-        model = tiny_model()
-        n = 8
-        data = {"history": torch.zeros(n, 6, 512), "goal": torch.zeros(n, 512),
-                "depth": torch.zeros(n, 6), "offsets": torch.zeros(n, 6),
-                "label": torch.arange(n) % 2}
-        lines = []
-        # lr=0 keeps weights fixed, so validation never improves after epoch 1.
-        result = train_model(model, data, data, epochs=50, batch_size=4, lr=0.0,
-                             weight_decay=0.0, grad_clip=1.0, patience=3, seed=0,
-                             log=lines.append)
-        self.assertLess(len(result["rows"]), 50)
-        self.assertTrue(lines[-1].startswith("Early stop"))
-        for key, value in result["best_state"].items():
-            self.assertTrue(torch.equal(model.state_dict()[key], value))
-
-    def test_patience_zero_runs_all_epochs(self):
+    def test_runs_all_epochs_and_retains_final_weights(self):
         model = tiny_model()
         n = 8
         data = {"history": torch.zeros(n, 6, 512), "goal": torch.zeros(n, 512),
@@ -374,11 +327,13 @@ class TrainLoopTests(unittest.TestCase):
         lines = []
         # Validation never improves after epoch 1, yet no early stop happens.
         result = train_model(model, data, data, epochs=12, batch_size=4, lr=0.0,
-                             weight_decay=0.0, grad_clip=1.0, patience=0, seed=0,
+                             weight_decay=0.0, grad_clip=1.0, seed=0,
                              log=lines.append)
         self.assertEqual(len(result["rows"]), 12)
         self.assertFalse(any(line.startswith("Early stop") for line in lines))
-        self.assertEqual(result["best"]["epoch"], 1)
+        final = evaluate(model, data, class_weights(data["label"]))
+        self.assertEqual(final["loss"], result["rows"][-1]["val_loss"])
+        self.assertNotIn("best_state", result)
 
 
 if __name__ == "__main__":

@@ -1,354 +1,39 @@
-# Group 1 — Andrew and Suhani
+# Group 1 — current training setup
 
-Read the [shared approach notes](../APPROACHES.md), [dataset notes](../DATASET.md), and [project README](../../README.md) before continuing. This file holds Group 1 plans, progress, and permitted aggregate results. Shared environment, preprocessing, interfaces, and evaluation decisions belong in the approach notes. Encoder design notes are in [cnn.md](cnn.md); 512-d GRU-readiness probes are in [CNN_DIAGNOSTICS.md](CNN_DIAGNOSTICS.md).
+The working configuration is frozen ResNet-18, shared LayerNorm and 512-to-64 projection, a one-layer GRU with hidden size 64, and a 128-to-64-to-2 MLP. The head has 67,586 trainable parameters. Depth/time normalization uses training statistics. The goal is a separate reference, not a history step.
 
-## Proposed scope — supplied by project owner
+Weight decay **1.0** is the chosen starting point. Gaussian feature noise remains available and defaults to **0.0**. MLP dropout is fixed at **0.3** in the training entry point, matching the chosen configuration. Feature dropout, frame dropout, label smoothing, and dropout sweeps have been removed.
 
-- CNN–GRU: a shared CNN encodes frame-map pairs, combines features with depth, and feeds a GRU action predictor.
-- CNN–LSTM: replace GRU with LSTM while keeping visual inputs and depth encoding consistent.
-- Current-input baseline: test whether history helps; exact inputs and implementation remain to be agreed.
+This is a working baseline, not a claim of validated generalization. Change one factor at a time and compare the same split and seed. See [next experiments](NEXT_EXPERIMENTS.md).
 
-These are team proposals, not confirmed course requirements. Individual ownership is open. The shared optional JEPA extension remains in the approach notes.
+## Run on Perlmutter
 
-## Current status and next steps
-
-Frozen ResNet-18 + GRU + goal MLP policy trains with `train_cnngru.py` (CNN frozen; LayerNorm on 512-d features; metadata standardization; class-weighted CE). Runs write under `docs/grp1/results/<run-name>/` via `--run-name` (not `--output-dir`). `--patience 0` disables early stopping. Local synthetic tests passed. Real images/features stay on Perlmutter. Inference and a two-epoch training smoke check passed on Perlmutter. The test partition has not been used.
-
-**Completed owner-run reference (LayerNorm, split 0, seed 0, lr 1e-3):** `docs/grp1/results/layernorm-reference-split0-20261104-231846`. 267 train / 80 val. Stopped epoch 56; best val bal-acc at epoch 26: train bal **0.809**, val bal **0.608**, val acc **0.637**, val AUC **0.499**, val loss **0.9688**. Confusion (rows true, cols pred; RETRACT/ADVANCE): `[[14, 20], [9, 37]]`. Train nearly memorizes later (e.g. ~99% train acc around epoch 53) while validation stays weak and val loss rises — clear overfitting. More capacity / long memorization runs are lower priority. LayerNorm benefit still needs matched comparisons already logged under H0/H1/H1b.
-
-**Completed H2 learning-rate comparison (owner-run):** same split/seed and settings as the reference except **lr 3e-4**, batch 32, epochs 200, patience 30. Folder `docs/grp1/results/h2-lr3e4-split0-20261104-232604`. Early stop after 30 epochs without bal-acc gain. Best epoch **28**: train bal **0.788**, val bal **0.612**, val acc **0.637**, val AUC **0.541**, val loss **0.8588**. Confusion: RETRACT `[15, 19]`, ADVANCE `[10, 36]`. Versus reference: essentially the same peak val bal-acc (~0.61); slightly better best-epoch AUC/loss; overfitting pattern unchanged.
-
-Basic dataset validation has already passed; do not repeat without a concrete reason. Current-input baseline and multi-split reporting remain open.
-
-**Completed H3 Phase 0, split 0 only (owner-run):** the real-label model does not beat the shuffled-label null (last-20 validation AUC 0.451 real vs 0.545 null, mean over seeds 0-2), so the earlier ~0.61 best-epoch scores are selection noise and the frozen pooled features show no detectable signal on this split.
-Details are in the [Phase 0 log entry](#2026-11-05---h3-phase-0-results-split-0-only-owner-run-perlmutter).
-
-**Completed H3 Phase 1, partial grid (owner-run):** no head size (XS / S / M / L) beats the shuffled-label null or another size; S (67,586 parameters) is now the only head in the code.
-Details are in the [Phase 1 log entry](#2026-11-05---h3-phase-1-results-s-adopted-as-the-only-head).
-
-**Immediate next steps:** prioritize feature changes (512-d bottleneck, spatial pooling, `--remove-maxpool`, 224 input, light layer4 fine-tune) and run Phase 0 on splits 1-2 so comparisons are not single-split. Do not use the test partition. Log any further matched ablations here.
-
-**Wire preprocessing (2026-11-03, merged from `andrew/grp1-preprocessing-tickets`):** the goal-centered wire preprocessor and its frozen-feature probe are built and partly evaluated; neither the 256 nor the 512 crop beat the 0.547 full-frame baseline on split 0 validation.
-See [the 2026-11-03 log entry](#2026-11-03---wire-preserving-preprocessing-and-frozen-feature-probe-owner-run-ladder-stopped-early) for results, limits and what was not run.
-
-## Progress log
-
-### 2026-11-05 - H4 regularization plan (design only)
-
-Planned H4 in [NEXT_EXPERIMENTS.md](NEXT_EXPERIMENTS.md#h4---regularization-and-how-much-slack-to-allow): seven regularizer families (weight decay, dropout, feature noise, feature dropout, frame dropout, label smoothing, fixed epoch budget), each swept with real and shuffled labels on splits 0-2 x seeds 0-2.
-"Slack" is measured by the shuffled-label null's train bal-acc at each setting, with a pre-registered target region (null 0.55-0.70, real 0.65-0.90); a regularizer passes only if it beats its own null and the R0 baseline on paired last-20 validation AUC, then holds on splits 3-4.
-If no family beats its null, H4 is rejected and work returns to feature changes.
-
-Implemented (local, same day): the four regularizer flags, `--feature-cache`, the `summarize_runs.py` slack block, `--min-effect` and `--at-epochs`, with invented-input tests; details and the 270-run Perlmutter sweep are in [NEXT_EXPERIMENTS.md](NEXT_EXPERIMENTS.md#implementation).
-Feature extraction no longer draws global random numbers, so seeded runs no longer reproduce Phase 0/1 bit for bit; R0 is rerun as part of the sweep.
-`sweep_h4.py` runs all 270 runs in one GPU allocation (cache filled once per split, 8 worker processes sharing the GPU, resumable) and writes `h4-summary.txt`; `train_cnngru.py` gained `run(args, features)` so in-process runs match standalone ones.
-
-Not verified: no test has been run (no local execution); no H4 runs exist yet.
-
-### 2026-11-05 - H3 Phase 1 results; S adopted as the only head
-
-Owner-run on Perlmutter (200 epochs, `--patience 0`, LayerNorm, all other settings default); folders `docs/grp1/results/phase1-{xs,s,m,l}-split*-seed*`, console output in `phase1.log` at the repo root.
-The grid stopped early: split 0 seeds 0-2 and split 1 seed 0 exist for every rung, XS also has split 1 seed 1, the `phase1-s-split1-seed1` run has only a header line, and split 2 was not run.
-One shuffled-label null exists on split 1 (`phase0-null-split1-seed0`).
-Means below are over the four (split, seed) pairs every rung completed, computed from `summary.json`; `summarize_runs.py` was not run.
-
-| Rung | Params | Best-epoch val bal-acc | Best-epoch val AUC | Last-20 val bal-acc | Last-20 val AUC |
-| --- | ---: | ---: | ---: | ---: | ---: |
-| XS | 26,114 | 0.572 | 0.468 | 0.485 | 0.466 |
-| S | 67,586 | 0.599 | 0.544 | 0.487 | 0.462 |
-| M | 330,626 | 0.571 | 0.474 | 0.466 | 0.438 |
-| L | 875,074 | 0.574 | 0.458 | 0.449 | 0.463 |
-
-Reading:
-- Last-20 validation AUC is below 0.5 for every rung; the split-1 null reached 0.499, above every rung on that split, so no rung shows signal.
-- Every rung reaches about 1.000 last-20 train bal-acc, so all of them memorize.
-- M and L have the lowest last-20 bal-acc, consistent with the overfitting diagnosis; L does not support H3.
-- S leads on best-epoch scores mainly through split 0 seed 2 (0.665 bal-acc, 0.646 AUC), and best-epoch values are selection noise (Phase 0); on last-20 metrics XS and S tie.
-- `phase1-m-split0-*` reproduces `phase0-real-split0-*` on the best-epoch values, as expected.
-
-Decision (owner): adopt S, following the plan's rule to prefer a smaller rung that matches M; S leaves more room than XS for the planned feature changes.
-`CAPACITY_RUNGS`, `HeadConfig`, `describe_capacity` and `--capacity` were removed from `model_cnngru.py`, `train_cnngru.py` and `infer_cnngru.py`.
-`CNNGRUModel` now always builds the S head (shared `Linear(512 -> 64)` projection, one-layer GRU 64, MLP 128 -> 64 -> 2) in the same construction order and with the same state_dict keys as rung S, so `phase1-s-*` checkpoints still load and seeded runs should reproduce them.
-`CNNGRUEncoder` lost its multi-layer GRU options and `GoalClassifier` its multi-hidden-layer and LayerNorm options.
-Checkpoints from earlier M-sized runs (Phase 0, H0-H2) no longer load.
-`CapacityTests` became `HeadTests` (parameter count, state_dict keys, projection layout); the separable-features training test now puts the label in 16 goal dimensions so it survives the projection.
-Default run names are `cnngru[-null]-split<S>-seed<N>-<timestamp>`.
-
-Not verified: no test has been run (no local execution); no run with the simplified code exists yet.
-No push in this note.
-
-### 2026-11-05 - H3 Phase 1 capacity ladder implemented (local)
-
-`model_cnngru.py` gains `CAPACITY_RUNGS` (XS / S / M / L) and `CNNGRUModel(capacity=...)`; `train_cnngru.py` and `infer_cnngru.py` gain `--capacity` (default `M`).
-Rungs with a projection apply one shared `Linear(512 -> p)` after the LayerNorm to every history frame and the goal.
-Trainable parameters: XS 26,114, S 67,586, M 330,626 (unchanged), L 875,074.
-`CNNGRUEncoder` now takes the GRU input width, hidden size, layer count and inter-layer dropout; `GoalClassifier` takes the summary and goal widths, hidden widths and an optional LayerNorm after the first hidden layer.
-Rung M keeps the original modules, state_dict keys and seeded initialization, so existing checkpoints still load and `phase1-m-split0-*` should reproduce `phase0-real-split0-*` exactly.
-Seven new invented-input tests in `tests/test_train_cnngru.py` (`CapacityTests`) cover exact parameter counts, M key compatibility, cached-feature vs image path for every rung, projection sharing, the L layout, and XS learning separable invented features.
-Perlmutter commands for the 42-run grid (4 rungs x splits 0-2 x seeds 0-2, plus the null on splits 1-2) are in [NEXT_EXPERIMENTS.md](NEXT_EXPERIMENTS.md#phase-1---capacity-ladder-tests-the-h3-claim-directly).
-
-Not verified: no test has been run (no local execution); no Phase 1 runs exist yet.
-No staging/commit/push in this note.
-
-### 2026-11-05 - H3 Phase 0 results, split 0 only (owner-run Perlmutter)
-
-Six runs on split 0 (seeds 0-2, real and shuffled-label null), LayerNorm, 200 epochs, `--patience 0`, all other settings at their defaults.
-Folders: `docs/grp1/results/phase0-{real,null}-split0-seed{0,1,2}`; full console output in `phase0-split0.log` at the repo root.
-Splits 1-2 of the planned 18-run grid have not been run.
-Null runs kept 149 / 143 / 153 of 267 training labels unchanged by chance (seeds 0 / 1 / 2).
-
-| Metric | Real (seeds 0/1/2) | Real mean | Null (seeds 0/1/2) | Null mean |
-| --- | --- | --- | --- | --- |
-| Best-epoch val bal-acc | 0.608 / 0.579 / 0.571 | 0.586 | 0.568 / 0.659 / 0.598 | 0.608 |
-| Best-epoch val AUC | 0.499 / 0.492 / 0.460 | 0.484 | 0.472 / 0.634 / 0.556 | 0.554 |
-| Last-20 val bal-acc | 0.488 / 0.449 / 0.493 | 0.477 | 0.527 / 0.549 / 0.513 | 0.530 |
-| Last-20 val AUC | 0.467 / 0.436 / 0.449 | 0.451 | 0.502 / 0.592 / 0.540 | 0.545 |
-| Last-20 val loss | 5.28 / 5.44 / 6.38 | 5.70 | 6.06 / 5.32 / 4.35 | 5.24 |
-| Last-20 train bal-acc | 0.999 / 1.000 / 1.000 | 1.000 | 1.000 / 1.000 / 1.000 | 1.000 |
-
-Means were computed by hand from `summary.json`; `summarize_runs.py` has not been run on these folders.
-The best-epoch values of the real runs exactly match the earlier H1 `cnngru-layer-split0-seed*` runs, so training is deterministic per (split, seed).
-
-Reading:
-- Real does not beat null on any metric; the paired real - null difference in last-20 validation AUC is negative (about -0.09), so the decision rule answers `no`.
-- The ~0.58-0.61 best-epoch validation bal-acc reported for H1 / H1b / H2 is reached by shuffled labels too, so it is selection noise from taking the max over many epochs on 80 validation cases.
-- The head memorizes shuffled labels as fast as real ones (train loss down to about 1e-7), so training accuracy carries no information about signal.
-- Validation loss is above training loss from epoch 1 and rises steadily; there is no early phase where validation improves.
-- Last-20 validation AUC of the real runs sits below 0.5 on all three seeds; seeds share one split, so this is weak evidence and may be chance, but it is consistent with an episode-level shortcut that does not transfer.
-- Next work follows the `no` branch: change what the CNN emits (dimensionality bottleneck, spatial pooling, `--remove-maxpool`, 224 input, light layer4 fine-tune) rather than adding capacity, and run splits 1-2 before trusting any gain.
-
-Not verified: unit-test output for `tests/test_train_cnngru.py` and `tests/test_summarize_runs.py` was not reported; the `layernorm-reference-*` and `h2-lr3e4-*` folders cited above are not committed under `docs/grp1/results/`.
-No staging/commit/push in this note.
-
-### 2026-11-05 - H3 Phase 0 tooling: shuffled-label null and last-N metrics (local)
-
-`train_cnngru.py` gains `--shuffle-train-labels` (seeded permutation of training labels only; class weights unchanged) and `--summary-window` (default 20).
-Every run now also logs and saves `final_epoch` and `last_window` (mean/std of train bal-acc and validation bal-acc, AUC and loss over the last N epochs) in `summary.json`; the default run name gets a `-null` tag for null runs.
-New `summarize_runs.py` aggregates run folders per group and reports paired (split, seed) differences against the first group with the mean > 2 x std decision rule.
-New invented-input tests: four in `tests/test_train_cnngru.py`, five in `tests/test_summarize_runs.py`.
-Perlmutter commands for the 18-run Phase 0 grid (splits 0-2 x seeds 0-2, real and null) are in [NEXT_EXPERIMENTS.md](NEXT_EXPERIMENTS.md#phase-0---make-the-measurement-trustworthy-run-first).
-
-Not verified: no test has been run (no local execution); no Phase 0 runs exist yet.
-No staging/commit/push in this note.
-
-### 2026-11-05 - H3 capacity plan reframed (design only)
-
-The proposed H3 (512 -> 128 projection, GRU hidden 256 x 2 layers, wider MLP, lower dropout) would raise the head from 330,626 to about 970k parameters on 267 training cases while the current head already memorizes training data.
-It is reframed as a capacity ladder (XS / S / M / L) preceded by a shuffled-label null, scored by paired validation AUC over splits 0-2 x seeds 0-2, followed by one-factor ablations of the H3 components and an activation (ReLU / LeakyReLU / GELU) and loss (label smoothing 0.1) check.
-Full plan, predictions and decision rule: [NEXT_EXPERIMENTS.md](NEXT_EXPERIMENTS.md#h3---capacity-reframed-as-a-capacity-ladder).
-
-Not implemented: no code for the projection, ladder rungs, label smoothing, activation option or shuffled-label null exists yet; no runs.
-No staging/commit/push in this note.
-
-### 2026-11-04 — LayerNorm reference + H2 LR 3e-4 (owner-run Perlmutter)
-
-**Plumbing:** all local synthetic tests passed; Perlmutter inference and two-epoch training smoke passed. Code uses LayerNorm on features; `train_cnngru.py` uses `--run-name` and writes `docs/grp1/results/<run-name>/`; `--patience 0` disables early stopping. Test partition unused.
-
-**Reference** (`layernorm-reference-split0-20261104-231846`): split 0, seed 0, lr `1e-3`. 267 train / 80 val. Stopped epoch 56; best val bal-acc epoch 26 — train bal 0.809, val bal 0.608, val acc 0.637, val AUC 0.499, val loss 0.9688; confusion `[[14, 20], [9, 37]]`. Train can reach ~99% acc while validation stays near chance AUC and val loss rises → overfitting, not underfitting.
-
-**H2** (`h2-lr3e4-split0-20261104-232604`): lr `3e-4` only change vs reference protocol (batch 32, patience 30, 200 epochs max). Command (Perlmutter):
+From the repository root in an allocated compute environment with the project dependencies and `DATA_DIR` configured:
 
 ```sh
-python train_cnngru.py \
-  --data-dir "$DATA_DIR" \
-  --split-position 0 \
-  --seed 0 \
-  --epochs 200 \
-  --patience 30 \
-  --batch-size 32 \
-  --lr 0.0003 \
-  --run-name "h2-lr3e4-split0-$(date +%Y%m%d-%H%M%S)"
+python train_cnngru.py --data-dir "$DATA_DIR" --split-position 0 --seed 0 --epochs 200
 ```
 
-Early stop at epoch 58. Best epoch 28 — train bal 0.788, val bal 0.612, val acc 0.637, val AUC 0.541, val loss 0.8588; confusion RETRACT `[15, 19]`, ADVANCE `[10, 36]`. Trainable params 330,626; class weights RETRACT/ADVANCE `[1.376, 0.785]`.
+To try feature noise, add `--feature-noise 0.25`. Keep `--weight-decay 1.0` (the default) while changing noise. Learning rate defaults to 0.001 and batch size to 16.
 
-**Reading:** lowering LR alone does not fix generalization on split 0 (val bal-acc ~0.61 either way). Prefer next work on overfitting / signal (dropout, weight decay, baseline comparison, other splits) over capacity or another long memorization run. LayerNorm still lacks a new matched ablate in this pair (both runs already use LayerNorm).
+Training prints loss, accuracy, balanced accuracy, AUC and class recalls each epoch, then final and last-20 metrics. It runs the requested epoch count and retains final weights in memory. It creates no run directory, log, CSV, JSON summary, plot, or checkpoint. Best-epoch selection and early stopping are removed. `--run-name`, `--patience`, `--dropout`, `--feature-dropout`, `--frame-dropout`, and `--label-smoothing` are no longer accepted.
 
-### 2026-11-05 - LayerNorm adopted as the only feature normalization (local)
+Optional controls:
 
-Following the split-0 results below, `CNNGRUModel` now always applies one shared `nn.LayerNorm(512)` to every history frame and the goal in `forward_features`, before the GRU and the MLP.
-The `feature_norm` option, the `none` and `zscore` paths (`FeatureStandardizer`, `set_feature_stats`, `feature_norm_from_state_dict`), `--feature-norm`, and the raw-feature-scale log were removed.
-Default run names are back to `cnngru-split<S>-seed<N>-<timestamp>`.
-Checkpoints from the earlier `layer` runs keep the same `feature_norm.weight` / `feature_norm.bias` keys and still load; `none` and `zscore` checkpoints no longer do.
-Reason: LayerNorm fixes the H0 underfitting and was the more stable of the two normalizations; its validation gain over H0 (0.586 vs 0.548 mean) is still within noise, so further work should target overfitting.
+- `--shuffle-train-labels`: seeded training-label null control; validation labels stay real.
+- `--summary-window N`: change the terminal summary window.
+- `--feature-cache "$PSCRATCH/waldo-feature-cache"`: explicitly cache frozen features outside the repository. This is the only training disk output and must stay on Perlmutter.
 
-Not verified: the simplified `tests/test_train_cnngru.py` has not been run; no training run with this code exists yet.
-No staging/commit/push in this note.
+In Python, `run(args, features=...)` returns the final model, epoch rows, final metrics, and window metrics in memory. `echo=False` suppresses terminal output. The CLI does not persist trained weights for later inference.
 
-### 2026-11-05 - H1 / H1b feature normalization option and results
+Old Group 1 run artifacts, aggregate exports, sweep/summary tools, and detailed run-history notes have been removed from the working tree at the owner's request. Tracked historical versions remain in Git history. Other groups' experiments and shared dataset/evaluation documentation are separate.
 
-Hypothesis H1: the raw 512-d frozen-ResNet features are post-ReLU (non-negative, uncentered, uneven per-dimension scale), which saturates the GRU gates and lets the 512 goal values dominate the 128 GRU values in the MLP input.
-Normalizing them should drop train loss clearly below 0.6 and make validation balanced accuracy less jumpy.
+## Local verification
 
-`CNNGRUModel(feature_norm=...)` adds one normalization module, shared by every history frame and the goal, applied in `forward_features` before the GRU and the MLP:
-- `none` (H0): identity; state_dict and initialization are unchanged, so earlier checkpoints still load.
-- `layer` (H1): `nn.LayerNorm(512)` per sample across the 512 dimensions (1,024 extra trainable parameters).
-- `zscore` (H1b): per-dimension training-set mean/std pooled over history frames and goals, fitted with `set_feature_stats` and stored as buffers, like the metadata statistics.
+Use synthetic inputs without accessing the private dataset or downloading model weights:
 
-Depth/offset metadata is not part of it; it is already standardized and is concatenated after the 512 features are normalized.
-`train_cnngru.py --feature-norm {none,layer,zscore}` (default `none`); the default run name is now `cnngru-<norm>-split<S>-seed<N>-<timestamp>`.
-Every run also logs the raw training-feature scale (mean, mean L2, zero fraction, per-dimension std min/median/max and their ratio) and stores it as `raw_feature_scale` in `summary.json`.
-`infer_cnngru.py` detects the normalization from the checkpoint keys.
-Optimizer, lr, weight decay and dropout are unchanged so only the normalization varies between H0, H1 and H1b.
+```sh
+python -m unittest discover -s tests -p 'test_train_cnngru.py' -v
+```
 
-Comparison protocol: same split, seeds 0-2 for each of H0/H1/H1b; compare final and best train loss, best validation balanced accuracy (mean +- std over seeds), and the epoch-to-epoch std of validation balanced accuracy over the last 20 epochs.
-
-Owner-run results on Perlmutter (split 0, seeds 0-2, patience 20; 267 train / 80 validation cases):
-
-| Mode | Best val bal acc (seeds 0/1/2) | Mean | Best-epoch val AUC | Lowest train loss |
-| --- | --- | --- | --- | --- |
-| H0 `none` | 0.569 / 0.558 / 0.518 | 0.548 | 0.426 / 0.538 / 0.411 | about 0.65 |
-| H1 `layer` | 0.608 / 0.579 / 0.571 | 0.586 | 0.499 / 0.492 / 0.460 | 0.21 / 0.19 / 0.02 |
-| H1b `zscore` | 0.574 / 0.600 / 0.565 | 0.580 | 0.591 / 0.506 / 0.520 | about 0.0000 |
-
-Raw train features: mean 0.664, mean L2 18.93, no zeros, per-dimension std 0.042 to 0.694 (ratio 16.5), no constant dimensions.
-
-Reading: the optimization half of H1 is confirmed.
-Without normalization the head underfits (train loss stays near 0.65-0.69) and often collapses to predicting one class for the whole validation set.
-Both normalizations let it fit the training set (LayerNorm gradually, z-score memorizes it within about 15 epochs).
-The generalization half is not confirmed.
-The +0.03-0.04 mean validation balanced-accuracy gain is about 3 of 80 cases, within seed spread and the roughly 0.055 binomial standard error, and is a max over many noisy epochs.
-Best-epoch validation AUC stays near 0.5, and validation loss rises from the first few epochs, so the bottleneck is now overfitting / weak signal, not optimization.
-Validation balanced accuracy still swings by 0.1 or more between consecutive epochs.
-
-Follow-up: early stopping is now off by default (`--patience 0` runs all `--epochs`; `--patience N` restores it), still keeping the best-validation epoch.
-
-Not verified: no unit-test output has been reported for `tests/test_train_cnngru.py`, including the new `test_patience_zero_runs_all_epochs`; no full-200-epoch runs exist yet.
-No staging/commit/push in this note.
-
-### 2026-11-05 - CNN-GRU training script `train_cnngru.py` (local)
-
-Added `train_cnngru.py`, which trains the GRU + MLP head on one split with the frozen ResNet-18.
-Every train/validation image is encoded once at startup and the 512-d features are kept in memory only; nothing is written to disk except optional metrics and the checkpoint.
-The test partition is never loaded.
-
-Input fixes:
-- `CNNGRUEncoder` now standardizes `[depth_mm, offset_s]` per channel with training-set mean/std (`set_metadata_stats`), stored as buffers so checkpoints and `infer_cnngru.py` reuse them.
-- `GoalClassifier(dropout=0.3)` applies dropout to the fused 640-d input and the hidden layer.
-- `CNNGRUModel.forward_features` runs the head on cached features; `forward` gives the same output from images.
-
-Training: class-weighted cross-entropy (`n / (2 * count_c)`), AdamW (lr `1e-3`, weight decay `1e-2`), batch 16, gradient clipping at 1.0, up to 200 epochs with early stopping (patience 20) on validation balanced accuracy, ties broken by lower validation loss.
-Each epoch prints train and validation loss, accuracy and balanced accuracy (both in eval mode), plus validation ROC AUC and per-class recall; the best epoch is marked `*best`.
-Every run writes to its own folder `docs/grp1/results/<run-name>/` (default name `cnngru-split<S>-seed<N>-<timestamp>`, or `--run-name`): `train.log`, `metrics.csv`, `summary.json`, `curves.png` and `best_model.pt` (a `CNNGRUModel` state_dict).
-Checkpoints are git-ignored; the other files hold aggregate metrics only, and `summary.json` omits the personal `data_dir` path.
-
-Not verified: invented-input `tests/test_train_cnngru.py` has not been run; no Perlmutter training run or results exist yet.
-No staging/commit/push in this note.
-
-### 2026-11-03 - Full CNN-GRU model in `model_cnngru.py` (local)
-
-Added `model_cnngru.py` with `CNNGRUModel(pretrained=True)`, which composes the existing pieces into one yes / no model.
-`forward(history, depth, offsets, goal)` runs `CNNGRUEncoder` for the `[B, 128]` history summary and `encode_goal(self.encoder.cnn, goal)` for the `[B, 512]` goal features, so history and goal share one frozen ResNet-18.
-`GoalClassifier` then maps the concatenated 640-d vector to `[B, 2]` logits.
-The module docstring records the expected batch layout (output of `prepare_case` plus collate) and the intended training step: `cross_entropy(logits, label)`, prediction by `argmax`.
-
-Supporting changes: added `GoalClassifier` (640 -> 128 -> ReLU -> 2) to `mlp_cnn.py` and removed its MLP TODO; `gru.py` only had a trailing-newline change.
-
-Not verified: no test or forward pass has been run on this model yet, and no training or accuracy results exist.
-No staging/commit/push in this note.
-
-### 2026-11-03 — Goal→ResNet helper in `mlp_cnn.py` (local)
-
-`mlp_cnn.encode_goal` runs the prepared goal through the shared `FrameEncoder` (ResNet-18). Dropped redundant `prepare_goal` (prep already comes from `prepare_case`). Invented-input `tests/test_mlp_cnn.py` passed locally. MLP fusion still pending. No staging/commit/push in this note.
-
-### 2026-11-03 — ResNet→GRU in `gru.py` (local)
-
-`gru.CNNGRUEncoder` runs the images through the shared `FrameEncoder` (ResNet-18).
-
-### 2026-11-03 - Wire-preserving preprocessing and frozen-feature probe (owner-run, ladder stopped early)
-
-**What was built** (branch `andrew/grp1-preprocessing-tickets`, `d063196` to `804c98f`):
-`WirePreprocessor` in `preprocessing.py` crops a square around `goal_xy` at native resolution from the unmarked goal and the six history frames.
-It supports `raw` channels or `enhanced` channels (raw, black top-hat, frame difference), an optional full-view context, a seeded random-center control and training-only channel standardization.
-`cnn.py`, `cnn_diagnostics.py` and Sabrina's `evaluation.py` (imported unchanged, then extended) share one set of preprocessor flags.
-`evaluation.py` gained opt-in controls, and `select_preprocessing.py` chooses settings with episode-grouped inner CV on the training partition only.
-Design and commands are in [CNN.md](CNN.md#wire-preprocessing) and [EVALUATION.md](../EVALUATION.md#preprocessor-options).
-
-**Unit tests (owner-run):** 46 tests passed at `31cbfa9` (T04-T08).
-The suite including the T09-T16 tests was not reported; the real runs below exercised that code without errors.
-
-**Reader, one real case (owner-run):** the new `goal_raw` decoded at 1065 x 1050 RGB and `goal_xy` had two values.
-The notebook check that `goal_raw` has no marker was not reported.
-
-**Static probe, split 0 validation** (80 cases; owner-run on an A100; probe `resnet18:latest_goal`; frozen ImageNet ResNet-18):
-
-| Input preparation | Validation BA | Train BA |
-| --- | ---: | ---: |
-| DINOv2 full frame, 518 (baseline) | 0.547 | 1.000 |
-| Wire raw crop, 256 | 0.515 | 1.000 |
-| Wire raw crop, 512 (selected below) | 0.506 | 0.923 |
-| Metadata only (no images) | 0.547 | 0.580 |
-| Majority class | 0.500 | 0.500 |
-
-The baseline reproduces Sabrina's 0.547 exactly, so the default path is unchanged after the refactors.
-Every image row of every run (latest, goal only, latest + goal, with metadata, mean history) stayed between 0.45 and 0.57.
-One split's 95% interval is about +/-0.11, so none of these differ from chance or from metadata only.
-
-**Selection inside training** (`select_preprocessing.py`, 5-fold episode-grouped inner CV, `latest_goal`, validation not used):
-
-| Configuration | Inner BA mean | Inner BA std |
-| --- | ---: | ---: |
-| raw, crop 192 | 0.459 | 0.058 |
-| raw, crop 256 | 0.485 | 0.088 |
-| raw, crop 384 | 0.503 | 0.058 |
-| **raw, crop 512 (selected)** | **0.597** | **0.052** |
-| raw, crop 640 | 0.547 | 0.039 |
-| raw, crop 768 | 0.550 | 0.078 |
-| enhanced, crop 512, top-hat 7, median difference, standardized | 0.558 | 0.025 |
-
-Enhanced lost at its one tried setting, so difference mode and top-hat size were never searched.
-The selected 0.597 did not hold on validation (0.506), which fits a winner's-curse effect from choosing the best of seven noisy scores.
-
-**Latency** (wire raw 256, `--benchmark`, A100, goal + newest frame, batch one, repeated in-memory case): preparation 9.9 ms median (10.2 p95), encoding 5.9 ms (6.0), total 15.8 ms (16.1).
-Preparation covers all seven crops, since the wire path prepares the whole case.
-Timing for the 512 crop was not reported.
-
-**Reading:** frozen ImageNet ResNet-18 features with a linear probe show no detectable ADVANCE/RETRACT signal on split 0, whether the input is the downscaled full frame or a native-resolution crop of 256 or 512.
-The wire being too small after downscaling is therefore not the whole explanation.
-All probes overfit (train BA 0.92-1.00).
-This is a development result on one split, not a final or test-set result.
-
-**Not run (stopped by the owner on 2026-11-03):**
-
-- the T13 notebook check (top-hat size and crop candidates were not chosen visually);
-- the T15 controls (shuffled labels, random center, channel ablation) and the five-split runs;
-- the wire-mode diagnostics overlays (`cnn_diagnostics.py` ran for DINOv2; its output was not reported);
-- enhanced channels on validation (by design: they lost the selection).
-
-**Code version:** the branch head pulled on Perlmutter for these runs; the exact commit was not reported (the latest pushed was `804c98f`).
-
-**Proposed next steps (not decided):** the ticket ladder's fallback is to train part of the network (conv1 or layer4) or a small CNN on the crops.
-Both raw RETRACT records shared on 2026-11-03 show the wire advancing before the decision, so a temporal model over all six frames plus depths may matter more than a better single frame.
-The preprocessor stays opt-in; `dinov2` remains the default.
-
-### 2026-11-02 — Diagnostics correctness fixes (local)
-
-Updated `cnn_diagnostics.py` / tests / docs without changing `cnn.py` encoder behavior. Fixes: int16 red-mask arithmetic on pre-normalization RGB; empty-mask `unavailable`; multi translated same-shape controls with shared pre-prep replacement; rename to occlusion sensitivity with padding exclusion and original-frame heatmaps; temporal report of signed and absolute depth steps with abs-only correlation and explicit non-claims. Tool-verified: ten invented-input tests OK. Real-case GPU re-run pending. No staging/commit/push.
-
-### 2026-11-02 — One-case GPU diagnostics passed (owner-run; pre-fix code)
-
-Owner-run on Perlmutter with `pytorch/2.13.0`. Invented-input `test_cnn_diagnostics.py`: five tests OK on the login node and again under `srun` on a shared-interactive GPU allocation. An initial diagnostics attempt failed because the scratch dataset copy lacked `cases.jsonl`; after setting `DATA_DIR` to the shared studentdata `shorthorizon2` tree (files present), the real-case run completed on GPU. Public ResNet-18 weights downloaded to the scratch Torch Hub cache. No features or images were saved.
-
-**One training case** (`--split-position 0 --partition train --case-index 0`), device `cuda`, shapes `(6, 512)` / `(512,)`:
-
-- Wire occlusion: score_range `0.246`, score_std `0.078`; per-frame max/median about `1.62`–`1.76`; max L2 about `3.02`–`3.27`. Argmax center often `(0.357, 0.643)` (frame 2 at `(0.500, 0.214)`). Structured sensitivity, but argmax≠wire until preview overlay confirms it.
-- Goal marker: `12465` marker pixels; marker L2 `3.965` vs control `1.344`; marker/control `2.95`. Goal-vs-history L2 mean `2.897`, min `2.437`.
-- Motion (feature math only): mean step L2 `2.474`; first–last L2 `2.931`; first–last cosine distance `0.012`; wire_score first–last delta `-0.016`; feature–depth step corr `-0.226`.
-
-**Reading (pre-fix code only):** goal-marker and non-flat history features looked usable for a GRU trial, with caveats on argmax≠verified wire and weak depth association. Not action-accuracy evidence. Numbers predate the uint8/control/temporal fixes above—re-run before citing them.
-
-### 2026-11-02 — 512-d feature diagnostics added (local)
-
-Implemented `cnn_diagnostics.py` and `tests/test_cnn_diagnostics.py` outside `cnn.py`. Probes score only pooled 512-d outputs: grid occlusion on history frames, red-marker vs equal-area control occlusion on the goal, and direction-style aggregates computed from the history feature sequence / wire scores (optional depth-step correlation). Usage notes are in [CNN_DIAGNOSTICS.md](CNN_DIAGNOSTICS.md).
-
-**Verification:** five invented-input unit tests passed locally (tool-verified; Python 3.9, torch 2.2.2) and later owner-run on Perlmutter. No training or feature saving.
-
-### 2026-11-02 — One-case Perlmutter encoder check passed
-
-Owner-reported: running `cnn.py` on Perlmutter for one real case passed. This confirms preparation, pretrained load, freezing, and goal/history bookkeeping for the inspected case. Device (`cpu`/`cuda`), exact shapes printed, optional `--size` / `--remove-maxpool` usage, and remote HEAD were not reported. No training or feature saving. Visual usefulness, GPU performance measurement, and action accuracy remain unverified. Do not repeat this completed smoke check without a relevant change.
-
-### 2026-10-31 — Frozen ResNet-18 encoder implemented
-
-Replaced the CNN outline with a working `FrameEncoder` in `cnn.py` (`023d125`). Defaults: pretrained ResNet-18, `fc -> Identity`, keep average pooling (512-d features), freeze all backbone weights, force backbone `eval()` even when the parent module trains, encode history `(B, T, 3, H, W)` and goal `(B, 3, H, W)` with shared weights, and optionally replace the stem max-pool with identity. A CLI smoke path loads one split case through the existing preprocessor and asserts finite `(1, 6, 512)` / `(1, 512)` outputs without saving features.
-
-ResNet-18 was chosen over ConvNeXt Tiny and MobileNetV2 as the first backbone because those alternatives were judged too lightweight for the initial capacity target; no comparative guidewire bake-off has been run. Documentation of that choice, architectural decisions, and Perlmutter instructions lives in [cnn.md](cnn.md).
+Real data, derived features, and dataset-dependent verification stay on Perlmutter. The trainer loads only training and validation partitions.

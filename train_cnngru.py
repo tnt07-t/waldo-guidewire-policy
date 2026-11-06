@@ -1,51 +1,20 @@
-"""Train the CNN-GRU policy head on one split and log metrics every epoch.
+"""Train the CNN-GRU head on one split, printing metrics to the terminal.
 
-Pipeline:
-1. Prepare train and validation cases with the shared preprocessor and
-   encode every goal/history image ONCE with the frozen ResNet-18. The
-   features are held in memory only; nothing is written to disk.
-2. Fit depth/offset standardization on the training partition.
-3. Train the GRU + MLP head with class-weighted cross-entropy, AdamW and
-   gradient clipping for all --epochs (early stopping only with
-   --patience N); keep the epoch with the best validation balanced accuracy.
-4. After every epoch, print one line of train and validation metrics
-   (both computed in eval mode, so dropout does not distort the train
-   numbers).
-5. Summarize the run three ways: the best epoch (a max over many noisy
-   validation scores, so optimistic), the final epoch, and the mean/std
-   over the last --summary-window epochs (the less optimistic number).
+The frozen ResNet encodes history and goal images once. The small head
+trains with class-weighted cross-entropy, AdamW (weight decay 1.0 by
+default), fixed MLP dropout 0.3, and optional Gaussian feature noise.
 
---shuffle-train-labels runs the shuffled-label null: training labels are
-permuted across cases (seeded by --seed) so no feature-label association
-is left; validation labels stay real. Its validation scores show what pure
-noise reaches under the same protocol.
+Runs train for the requested epoch count and retain the final weights in
+memory. Metrics are printed each epoch and averaged over the final window.
+No run folders, logs, CSVs, plots, summaries, or checkpoints are saved.
 
-Every run writes to its own folder docs/grp1/results/<run-name>/:
-train.log (the terminal output), metrics.csv (one row per epoch),
-summary.json (settings, best/final epoch, last-window means), curves.png and best_model.pt
-(git-ignored). Results hold aggregate metrics only, no images or
-case identifiers.
-
-H4 regularizers (all off by default; docs/grp1/NEXT_EXPERIMENTS.md):
---feature-noise, --feature-dropout and --frame-dropout act on the frozen
-features in training mode only (see CNNGRUModel); --label-smoothing applies
-to the training loss only, so logged losses stay comparable across runs.
-
---feature-cache DIR saves the frozen ResNet features of each split and
-partition on first use and loads them afterwards, so sweeps skip image
-decoding and encoding. The cache holds features derived from real images:
-keep it on Perlmutter scratch; a directory inside this repository is
-refused. Feature extraction draws no global random numbers, so a run gives
-the same result with or without the cache.
-
-The test partition is never loaded. Real images and features must remain
-on Perlmutter.
+--shuffle-train-labels provides a seeded null control; validation stays real.
+--feature-cache optionally reuses frozen features outside the repository.
+This explicit cache is the only disk output and must stay on Perlmutter.
+The test partition is never loaded. Real images and features stay on Perlmutter.
 """
 
 import argparse
-import copy
-import csv
-import json
 import math
 import os
 import random
@@ -62,9 +31,6 @@ from preprocessing import DINOv2Preprocessor
 
 CLASS_NAMES = ("RETRACT", "ADVANCE")  # label 0, label 1
 REPO_ROOT = Path(__file__).resolve().parent
-RESULTS_DIR = REPO_ROOT / "docs" / "grp1" / "results"
-# Sabrina's frozen ResNet latest+goal logistic probe, split 0 (docs/EVALUATION.md).
-STATIC_PROBE_BAL_ACC = 0.547
 
 
 class PreparedCases(Dataset):
@@ -252,50 +218,37 @@ def evaluate(model, data, weight, batch_size=256):
     return binary_metrics(logits, data["label"], weight)
 
 
-def format_epoch(epoch, epochs, train, val, lr, seconds, best):
+def format_epoch(epoch, epochs, train, val, lr, seconds):
     return (
         "epoch {:>4}/{} | train loss {:.4f} acc {:.3f} bal {:.3f} "
         "| val loss {:.4f} acc {:.3f} bal {:.3f} auc {:.3f} rec R/A {:.2f}/{:.2f} "
-        "| lr {:.1e} {:.1f}s{}".format(
+        "| lr {:.1e} {:.1f}s".format(
             epoch, epochs, train["loss"], train["acc"], train["bal_acc"],
             val["loss"], val["acc"], val["bal_acc"], val["auc"],
             val["recall_retract"], val["recall_advance"],
-            lr, seconds, "  *best" if best else "",
+            lr, seconds,
         )
     )
 
 
 def train_model(model, train, val, *, epochs, batch_size, lr, weight_decay,
-                grad_clip, patience, seed, label_smoothing=0.0, log=print):
-    """Train the head on cached features, optionally with early stopping.
-
-    ``train`` / ``val``: dicts of tensors on the model's device with keys
-    history [N, T, 512], goal [N, 512], depth [N, T], offsets [N, T], label [N].
-    ``patience``: stop after this many epochs without a new best; 0 runs
-    all ``epochs``.
-    ``label_smoothing`` applies to the training loss only; logged losses are
-    plain class-weighted cross-entropy.
-    Selection: highest validation balanced accuracy, ties -> lower val loss.
-    Returns the per-epoch rows, best epoch/metrics and the best state_dict
-    (the model is left holding the best weights).
-    """
+                grad_clip, seed, log=print):
+    """Train all epochs; return in-memory rows and leave final weights in model."""
     weight = class_weights(train["label"].cpu()).to(train["label"].device)
     params = [p for p in model.parameters() if p.requires_grad]
     optimizer = torch.optim.AdamW(params, lr=lr, weight_decay=weight_decay)
     generator = torch.Generator().manual_seed(seed)
     n = len(train["label"])
-
-    rows, best, best_state, stale = [], None, None, 0
+    rows = []
     for epoch in range(1, epochs + 1):
         start = time.perf_counter()
-        model.train()  # FrameEncoder keeps the frozen ResNet in eval mode
+        model.train()  # Frozen ResNet stays in eval mode.
         order = torch.randperm(n, generator=generator).to(train["label"].device)
         for i in range(0, n, batch_size):
             idx = order[i:i + batch_size]
             logits = model.forward_features(train["history"][idx], train["depth"][idx],
                                             train["offsets"][idx], train["goal"][idx])
-            loss = F.cross_entropy(logits, train["label"][idx], weight=weight,
-                                   label_smoothing=label_smoothing)
+            loss = F.cross_entropy(logits, train["label"][idx], weight=weight)
             optimizer.zero_grad(set_to_none=True)
             loss.backward()
             torch.nn.utils.clip_grad_norm_(params, grad_clip)
@@ -303,28 +256,13 @@ def train_model(model, train, val, *, epochs, batch_size, lr, weight_decay,
 
         train_m = evaluate(model, train, weight)
         val_m = evaluate(model, val, weight)
-        improved = best is None or val_m["bal_acc"] > best["val"]["bal_acc"] or (
-            val_m["bal_acc"] == best["val"]["bal_acc"]
-            and val_m["loss"] < best["val"]["loss"])
-        if improved:
-            best = {"epoch": epoch, "train": train_m, "val": val_m}
-            best_state = copy.deepcopy(model.state_dict())
-            stale = 0
-        else:
-            stale += 1
         seconds = time.perf_counter() - start
-        rows.append({"epoch": epoch, "seconds": seconds, "best": improved,
+        rows.append({"epoch": epoch, "seconds": seconds,
                      **{"train_" + k: v for k, v in train_m.items() if k != "confusion"},
                      **{"val_" + k: v for k, v in val_m.items() if k != "confusion"}})
         log(format_epoch(epoch, epochs, train_m, val_m,
-                         optimizer.param_groups[0]["lr"], seconds, improved))
-        if patience and stale >= patience:
-            log("Early stop: no validation balanced-accuracy gain for {} epochs."
-                .format(patience))
-            break
-
-    model.load_state_dict(best_state)
-    return {"rows": rows, "best": best, "best_state": best_state}
+                         optimizer.param_groups[0]["lr"], seconds))
+    return {"rows": rows}
 
 
 def describe_partition(name, data):
@@ -333,25 +271,8 @@ def describe_partition(name, data):
         name, len(data["label"]), counts[0], CLASS_NAMES[0], counts[1], CLASS_NAMES[1])
 
 
-# Regularization settings that differ from these defaults are tagged in the
-# default run name, e.g. cnngru-wd0.1-fn0.5-null-split0-seed0-<timestamp>.
-REGULARIZER_TAGS = (("weight_decay", "wd", 1e-2), ("dropout", "do", 0.3),
-                    ("feature_noise", "fn", 0.0), ("feature_dropout", "fd", 0.0),
-                    ("frame_dropout", "frd", 0.0), ("label_smoothing", "ls", 0.0))
-
-
-def default_run_name(args, timestamp=None):
-    tags = ["{}{:g}".format(tag, getattr(args, name))
-            for name, tag, default in REGULARIZER_TAGS if getattr(args, name) != default]
-    if args.shuffle_train_labels:
-        tags.append("null")
-    return "-".join(["cnngru", *tags, "split{}".format(args.split_position),
-                     "seed{}".format(args.seed),
-                     timestamp or time.strftime("%Y%m%d-%H%M%S")])
-
-
 def parse_args(argv=None):
-    """Parse and validate options; ``argv`` defaults to sys.argv (sweep_h4.py passes a list)."""
+    """Parse options for one terminal-only training run."""
     parser = argparse.ArgumentParser(description=__doc__,
                                      formatter_class=argparse.RawDescriptionHelpFormatter)
     parser.add_argument("--data-dir", default=os.environ.get("DATA_DIR"))
@@ -361,21 +282,11 @@ def parse_args(argv=None):
     parser.add_argument("--size", type=int, default=518,
                         help="Input size; shared preprocessor requires a multiple of 14")
     parser.add_argument("--epochs", type=int, default=200)
-    parser.add_argument("--patience", type=int, default=0,
-                        help="Epochs without validation balanced-accuracy gain before stopping; "
-                             "0 (default) disables early stopping and runs all --epochs")
     parser.add_argument("--batch-size", type=int, default=16)
     parser.add_argument("--lr", type=float, default=1e-3)
-    parser.add_argument("--weight-decay", type=float, default=1e-2)
-    parser.add_argument("--dropout", type=float, default=0.3)
+    parser.add_argument("--weight-decay", type=float, default=1.0)
     parser.add_argument("--feature-noise", type=float, default=0.0,
-                        help="H4: std of Gaussian noise on normalized features (training only)")
-    parser.add_argument("--feature-dropout", type=float, default=0.0,
-                        help="H4: element-wise dropout on normalized features (training only)")
-    parser.add_argument("--frame-dropout", type=float, default=0.0,
-                        help="H4: probability of zeroing each history step (training only)")
-    parser.add_argument("--label-smoothing", type=float, default=0.0,
-                        help="H4: label smoothing of the training loss")
+                        help="Std of Gaussian noise on normalized features (training only)")
     parser.add_argument("--grad-clip", type=float, default=1.0)
     parser.add_argument("--feature-batch-size", type=int, default=8,
                         help="Cases per frozen-ResNet forward during feature extraction")
@@ -389,9 +300,6 @@ def parse_args(argv=None):
                              "(seeded by --seed); validation labels stay real")
     parser.add_argument("--summary-window", type=int, default=20,
                         help="Report mean/std of validation metrics over the last N epochs")
-    parser.add_argument("--run-name",
-                        help="Folder name under docs/grp1/results (default: "
-                             "cnngru[-<regularizers>][-null]-split<S>-seed<N>-<timestamp>)")
     args = parser.parse_args(argv)
 
     if not args.data_dir:
@@ -399,47 +307,15 @@ def parse_args(argv=None):
     for name in ("epochs", "batch_size", "feature_batch_size", "summary_window"):
         if getattr(args, name) <= 0:
             parser.error("--{} must be positive".format(name.replace("_", "-")))
-    if args.patience < 0:
-        parser.error("--patience must be 0 (off) or positive")
-    for name in ("dropout", "feature_dropout", "frame_dropout", "label_smoothing"):
-        if not 0 <= getattr(args, name) < 1:
-            parser.error("--{} must be in [0, 1)".format(name.replace("_", "-")))
-    if args.feature_noise < 0:
-        parser.error("--feature-noise must be non-negative")
+    for name in ("weight_decay", "feature_noise"):
+        if not math.isfinite(getattr(args, name)) or getattr(args, name) < 0:
+            parser.error("--{} must be finite and non-negative".format(name.replace("_", "-")))
     if args.feature_cache:
         try:
             args.feature_cache = str(check_cache_dir(args.feature_cache))
         except ValueError as exc:
             parser.error(str(exc))
-    args.run_name = args.run_name or default_run_name(args)
-    if Path(args.run_name).name != args.run_name or args.run_name in (".", ".."):
-        parser.error("--run-name must be a plain folder name")
-    if (RESULTS_DIR / args.run_name).exists():
-        parser.error("Run folder already exists: {}".format(RESULTS_DIR / args.run_name))
     return args
-
-
-def save_curves(rows, path):
-    """Train vs validation loss and balanced accuracy per epoch, as a PNG."""
-    import matplotlib
-    matplotlib.use("Agg")
-    import matplotlib.pyplot as plt
-
-    epochs = [row["epoch"] for row in rows]
-    fig, axes = plt.subplots(1, 2, figsize=(11, 4))
-    for ax, metric in zip(axes, ("loss", "bal_acc")):
-        for split in ("train", "val"):
-            ax.plot(epochs, [row["{}_{}".format(split, metric)] for row in rows], label=split)
-        ax.set_xlabel("epoch")
-        ax.set_title(metric)
-        ax.grid(alpha=0.3)
-    axes[1].axhline(STATIC_PROBE_BAL_ACC, ls="--", c="gray", lw=1,
-                    label="static probe {:.3f}".format(STATIC_PROBE_BAL_ACC))
-    for ax in axes:
-        ax.legend()
-    fig.tight_layout()
-    fig.savefig(path, dpi=120)
-    plt.close(fig)
 
 
 PARTITIONS = ("train", "validation")
@@ -449,7 +325,7 @@ def load_features(args, cnn, device, log=print):
     """Frozen-ResNet features per partition as CPU tensors, from the cache if possible.
 
     ``cnn=None`` means cache only: a missing cache file is an error instead
-    of an extraction (sweep workers rely on a cache filled beforehand).
+    of an extraction.
     """
     prepare = DINOv2Preprocessor(size=args.size)
     features = {}
@@ -477,40 +353,20 @@ def load_features(args, cnn, device, log=print):
 
 
 def run(args, features=None, echo=True):
-    """Train one configuration and write its run folder; returns summary.json's dict.
+    """Train one configuration without saving results; return the model and metrics.
 
-    ``features`` (from ``load_features`` for the same split and size) lets a
-    sweep reuse CPU features across runs; it is never modified. With
-    ``echo=False`` lines go to train.log only. The random state is set from
-    ``args.seed`` here, so a run gives the same result standalone or inside a
-    sweep. summary.json is written last and marks a finished run.
+    Optional CPU features are copied, so repeated experiments do not mutate
+    the caller's inputs. Each call re-seeds training. ``echo=False`` is silent.
     """
-    run_dir = RESULTS_DIR / args.run_name
-    run_dir.mkdir(parents=True)
-    log_file = (run_dir / "train.log").open("w", encoding="utf-8")
-
     def log(line=""):
-        """Append to train.log (and print unless echo is off)."""
         if echo:
             print(line, flush=True)
-        log_file.write(line + "\n")
-        log_file.flush()
 
-    try:
-        return _train_and_write(args, features, run_dir, log)
-    finally:
-        log_file.close()
-
-
-def _train_and_write(args, features, run_dir, log):
     random.seed(args.seed)
     torch.manual_seed(args.seed)
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-    log("Run folder: {}".format(run_dir.relative_to(REPO_ROOT)))
 
-    model = CNNGRUModel(dropout=args.dropout, feature_noise=args.feature_noise,
-                        feature_dropout=args.feature_dropout,
-                        frame_dropout=args.frame_dropout).to(device)
+    model = CNNGRUModel(feature_noise=args.feature_noise).to(device)
     if features is None:
         features = load_features(args, model.encoder.cnn, device, log)
     else:
@@ -531,10 +387,8 @@ def _train_and_write(args, features, run_dir, log):
     trainable = sum(p.numel() for p in model.parameters() if p.requires_grad)
     log("Device: {} | split {} | seed {}".format(device, args.split_position, args.seed))
     log("Trainable parameters: {:,}".format(trainable))
-    log("Regularization: weight decay {:g} | dropout {:g} | feature noise {:g} | "
-        "feature dropout {:g} | frame dropout {:g} | label smoothing {:g}".format(
-            args.weight_decay, args.dropout, args.feature_noise, args.feature_dropout,
-            args.frame_dropout, args.label_smoothing))
+    log("Regularization: weight decay {:g} | fixed MLP dropout 0.3 | feature noise {:g}"
+        .format(args.weight_decay, args.feature_noise))
     log("Metadata mean [depth_mm, offset_s]: {} std: {}".format(
         [round(v, 3) for v in model.encoder.meta_mean.tolist()],
         [round(v, 3) for v in model.encoder.meta_std.tolist()]))
@@ -547,17 +401,8 @@ def _train_and_write(args, features, run_dir, log):
         model, data["train"], data["validation"],
         epochs=args.epochs, batch_size=args.batch_size, lr=args.lr,
         weight_decay=args.weight_decay, grad_clip=args.grad_clip,
-        patience=args.patience, seed=args.seed,
-        label_smoothing=args.label_smoothing, log=log)
+        seed=args.seed, log=log)
 
-    best = result["best"]
-    log()
-    log("Best epoch {}: train bal {:.3f} | val bal {:.3f} acc {:.3f} auc {:.3f} loss {:.4f}"
-        .format(best["epoch"], best["train"]["bal_acc"], best["val"]["bal_acc"],
-                best["val"]["acc"], best["val"]["auc"], best["val"]["loss"]))
-    log("Validation confusion (rows true, cols pred; RETRACT, ADVANCE):")
-    for name, row in zip(CLASS_NAMES, best["val"]["confusion"]):
-        log("  {:<8} {}".format(name, row))
     final = result["rows"][-1]
     log("Final epoch {}: train bal {:.3f} | val bal {:.3f} auc {:.3f} loss {:.4f}".format(
         final["epoch"], final["train_bal_acc"], final["val_bal_acc"],
@@ -570,32 +415,8 @@ def _train_and_write(args, features, run_dir, log):
                                             "val_auc", "val_loss")
               for stat in ("mean", "std"))))
 
-    with (run_dir / "metrics.csv").open("w", newline="", encoding="utf-8") as handle:
-        writer = csv.DictWriter(handle, fieldnames=list(result["rows"][0]))
-        writer.writeheader()
-        writer.writerows(result["rows"])
-    # data_dir and feature_cache are personal absolute paths; keep them out of
-    # the shareable summary (feature_cache_used records whether one was used).
-    run_args = {key: value for key, value in vars(args).items()
-                if key not in ("data_dir", "feature_cache")}
-    run_args["feature_cache_used"] = bool(args.feature_cache)
-    summary = {"args": run_args, "device": str(device),
-               "trainable_parameters": trainable,
-               "class_weights": weight.tolist(),
-               "meta_mean": model.encoder.meta_mean.tolist(),
-               "meta_std": model.encoder.meta_std.tolist(),
-               "epochs_run": len(result["rows"]), "best": best,
-               "final_epoch": final, "last_window": window}
-    torch.save(result["best_state"], run_dir / "best_model.pt")
-    try:
-        save_curves(result["rows"], run_dir / "curves.png")
-    except ImportError:
-        log("matplotlib not installed; skipped curves.png")
-    log("Wrote train.log, metrics.csv, summary.json, curves.png, best_model.pt to {}"
-        .format(run_dir.relative_to(REPO_ROOT)))
-    # Written last, so its presence marks a complete run folder.
-    (run_dir / "summary.json").write_text(json.dumps(summary, indent=2), encoding="utf-8")
-    return summary
+    return {"model": model, "rows": result["rows"],
+            "final_epoch": final, "last_window": window}
 
 
 def main():
