@@ -54,8 +54,7 @@ class GoalClassifier(nn.Module):
 
     Dropout on the fused input and the hidden layer is the main regularizer
     of the head with ~270 training cases. It is inactive in eval mode.
-    """
-
+    """ 
     def __init__(self, summary_dim, goal_dim, hidden_dim, dropout=0.3):
         super().__init__()
         self.mlp = nn.Sequential(

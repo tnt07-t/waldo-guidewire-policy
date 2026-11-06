@@ -14,9 +14,11 @@ From the repository root in an allocated compute environment with the project de
 python train_cnngru.py --data-dir "$DATA_DIR" --split-position 0 --seed 0 --epochs 200
 ```
 
-To try feature noise, add `--feature-noise 0.25`. Keep `--weight-decay 1.0` (the default) while changing noise. Learning rate defaults to 0.001 and batch size to 16.
+Two stronger presets are available: `--config moderate` uses feature-noise std 1.0 and `--config strict` uses 2.0. Both keep weight decay 1.0 and use 50 epochs; all other training defaults match. The default `--config baseline` retains 200 epochs and noise off. Explicit `--epochs`, `--weight-decay`, and `--feature-noise` override preset values. Compare with `--config baseline --epochs 50` to hold training duration fixed. See [the comparison protocol](NEXT_EXPERIMENTS.md).
 
-Training prints loss, accuracy, balanced accuracy, AUC and class recalls each epoch, then final and last-20 metrics. It runs the requested epoch count and retains final weights in memory. It creates no run directory, log, CSV, JSON summary, plot, or checkpoint. Best-epoch selection and early stopping are removed. `--run-name`, `--patience`, `--dropout`, `--feature-dropout`, `--frame-dropout`, and `--label-smoothing` are no longer accepted.
+Learning rate defaults to 0.001 and batch size to 16. These presets are candidates for reducing overfitting; real-data effectiveness has not been established.
+
+Training prints loss, accuracy, balanced accuracy, AUC and class recalls each epoch, then final and last-20 metrics plus the train/validation balanced-accuracy gap. It runs the requested epoch count and retains final weights in memory. It creates no run directory, log, CSV, JSON summary, plot, or checkpoint. Best-epoch selection and early stopping are removed. `--run-name`, `--patience`, `--dropout`, `--feature-dropout`, `--frame-dropout`, and `--label-smoothing` are no longer accepted.
 
 Optional controls:
 
@@ -24,7 +26,7 @@ Optional controls:
 - `--summary-window N`: change the terminal summary window.
 - `--feature-cache "$PSCRATCH/waldo-feature-cache"`: explicitly cache frozen features outside the repository. This is the only training disk output and must stay on Perlmutter.
 
-In Python, `run(args, features=...)` returns the final model, epoch rows, final metrics, and window metrics in memory. `echo=False` suppresses terminal output. The CLI does not persist trained weights for later inference.
+In Python, `run(args, features=...)` returns the final model, epoch rows, final metrics, window metrics, and the generalization gap in memory. `echo=False` suppresses terminal output. The CLI does not persist trained weights for later inference.
 
 Old Group 1 run artifacts, aggregate exports, sweep/summary tools, and detailed run-history notes have been removed from the working tree at the owner's request. Tracked historical versions remain in Git history. Other groups' experiments and shared dataset/evaluation documentation are separate.
 

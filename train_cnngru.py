@@ -3,6 +3,9 @@
 The frozen ResNet encodes history and goal images once. The small head
 trains with class-weighted cross-entropy, AdamW (weight decay 1.0 by
 default), fixed MLP dropout 0.3, and optional Gaussian feature noise.
+--config moderate or strict selects a 50-epoch budget and feature-noise
+std 1.0 or 2.0 respectively. Both keep weight decay 1.0. The baseline
+default remains 200 epochs with noise off. Explicit flags override presets.
 
 Runs train for the requested epoch count and retain the final weights in
 memory. Metrics are printed each epoch and averaged over the final window.
@@ -31,6 +34,11 @@ from preprocessing import DINOv2Preprocessor
 
 CLASS_NAMES = ("RETRACT", "ADVANCE")  # label 0, label 1
 REPO_ROOT = Path(__file__).resolve().parent
+REGULARIZATION_CONFIGS = {
+    "baseline": {"weight_decay": 1.0, "feature_noise": 0.0, "epochs": 200},
+    "moderate": {"weight_decay": 1.0, "feature_noise": 1.0, "epochs": 50},
+    "strict": {"weight_decay": 1.0, "feature_noise": 2.0, "epochs": 50},
+}
 
 
 class PreparedCases(Dataset):
@@ -279,14 +287,18 @@ def parse_args(argv=None):
     parser.add_argument("--split-position", type=int, required=True,
                         help="Zero-based position in splits.json")
     parser.add_argument("--seed", type=int, default=0)
+    parser.add_argument("--config", choices=REGULARIZATION_CONFIGS, default="baseline",
+                        help="Regularization preset; explicit flags override its defaults")
     parser.add_argument("--size", type=int, default=518,
                         help="Input size; shared preprocessor requires a multiple of 14")
-    parser.add_argument("--epochs", type=int, default=200)
+    parser.add_argument("--epochs", type=int,
+                        help="Epoch budget (baseline 200; moderate/strict 50)")
     parser.add_argument("--batch-size", type=int, default=16)
     parser.add_argument("--lr", type=float, default=1e-3)
-    parser.add_argument("--weight-decay", type=float, default=1.0)
-    parser.add_argument("--feature-noise", type=float, default=0.0,
-                        help="Std of Gaussian noise on normalized features (training only)")
+    parser.add_argument("--weight-decay", type=float,
+                        help="AdamW weight decay (all presets: 1.0)")
+    parser.add_argument("--feature-noise", type=float,
+                        help="Training-only Gaussian std (baseline 0; moderate 1; strict 2)")
     parser.add_argument("--grad-clip", type=float, default=1.0)
     parser.add_argument("--feature-batch-size", type=int, default=8,
                         help="Cases per frozen-ResNet forward during feature extraction")
@@ -301,6 +313,9 @@ def parse_args(argv=None):
     parser.add_argument("--summary-window", type=int, default=20,
                         help="Report mean/std of validation metrics over the last N epochs")
     args = parser.parse_args(argv)
+    for name, value in REGULARIZATION_CONFIGS[args.config].items():
+        if getattr(args, name) is None:
+            setattr(args, name, value)
 
     if not args.data_dir:
         parser.error("Set DATA_DIR or provide --data-dir")
@@ -387,6 +402,8 @@ def run(args, features=None, echo=True):
     trainable = sum(p.numel() for p in model.parameters() if p.requires_grad)
     log("Device: {} | split {} | seed {}".format(device, args.split_position, args.seed))
     log("Trainable parameters: {:,}".format(trainable))
+    log("Config: {} | effective epochs {} | lr {:g} | batch size {}".format(
+        args.config, args.epochs, args.lr, args.batch_size))
     log("Regularization: weight decay {:g} | fixed MLP dropout 0.3 | feature noise {:g}"
         .format(args.weight_decay, args.feature_noise))
     log("Metadata mean [depth_mm, offset_s]: {} std: {}".format(
@@ -414,9 +431,14 @@ def run(args, features=None, echo=True):
             *(window[key][stat] for key in ("train_bal_acc", "val_bal_acc",
                                             "val_auc", "val_loss")
               for stat in ("mean", "std"))))
+    gap = window["train_bal_acc"]["mean"] - window["val_bal_acc"]["mean"]
+    log("Last-window train - validation balanced-accuracy gap: {:+.3f}".format(gap))
+    if args.shuffle_train_labels:
+        log("Null training balanced accuracy (noise fitting): {:.3f}".format(
+            window["train_bal_acc"]["mean"]))
 
     return {"model": model, "rows": result["rows"],
-            "final_epoch": final, "last_window": window}
+            "final_epoch": final, "last_window": window, "generalization_gap": gap}
 
 
 def main():
