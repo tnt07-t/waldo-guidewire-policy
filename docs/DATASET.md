@@ -111,6 +111,8 @@ They cover two records only and cannot confirm the visual facts above.
 
 ## Open questions
 
+The [before-GRU evaluation runner](EVALUATION.md) now consumes one explicitly selected supplied train/validation split and checks episode/row separation against test membership. It does not open test images or evaluate test labels. This development protocol does not resolve the intended five-split final reporting procedure. Private prediction files remain on Perlmutter; no dataset records were accessed for local implementation.
+
 - What do the five splits mean, and which evaluation protocol should the team use?
 - Does “artery map” mean the supplied goal reference?
 - What correction format and review process should the team adopt?

@@ -2,13 +2,40 @@
 
 ## Status and purpose
 
-**Implemented locally — 2026-11-02:** Tran requested setup of the agreed frozen ViT + one-layer, 64-unit GRU + goal + aligned depth/time debugging path. `vit_gru.py`, `vit_gru_debug.py` and synthetic tests now exist in the separate `tran/vit-gru-debug` worktree. The implementation uses the split-0 selection, uncentered training-only scales and bounded optimizer settings below. All 44 local synthetic tests passed, including 11 new GRU checks. No real eight-case run or full training has occurred; this is not a final architecture choice.
+**Implemented locally — 2026-11-02:** Tran requested setup of the agreed frozen ViT + one-layer, 64-unit GRU + goal + aligned depth/time debugging path. `vit_gru.py`, `vit_gru_debug.py` and synthetic tests now exist in the separate `tran/vit-gru-debug` worktree. The implementation uses the split-0 selection, uncentered training-only scales and bounded optimizer settings below. All 44 local synthetic tests passed, including 11 new GRU checks. The real eight-case check subsequently passed on November 3 at `b9d1bdf`; see [the canonical results and current handoff](PROGRESS.md#session-handoff--2026-11-03). No full training or held-out validation has occurred; this is not a final architecture choice.
 
-Read [GRU_DEBUG_HANDOFF.md](GRU_DEBUG_HANDOFF.md) for exact commands, test expectations, report fields, Sabrina's steps and later experiment boundaries. Code is local to the debug branch and shared documentation stays on main; remote publication remains pending. Check each worktree's Git log/status for exact revisions. No remote notebook or dataset was changed. Further manual masking is not required.
+Read [GRU_DEBUG_HANDOFF.md](GRU_DEBUG_HANDOFF.md) for exact commands, test expectations, report fields, static-evaluation coordination steps and later experiment boundaries. Code is published on the debug branch; the full-training runner/tests and explanatory model comments are at `69fd063`. Shared documentation stays on main, with the November 3 result/plan/handoff updates published. Check each worktree's Git log/status for exact revisions. No remote notebook or dataset was changed. Further manual masking is not required.
 
-**Existing work reused:** Sabrina's `static-evaluation` at `070328f` contains frozen-feature logistic probes, including latest image + goal + all historical depth/time values. Its module and tests are copied unchanged into the debug worktree; [EVALUATION.md](../EVALUATION.md) records her reported split-0 GPU run. The tiny GRU runner is separate: scikit-learn fitting and validation-selected regularization do not train a PyTorch GRU. Sabrina's scaler centers/scales individual columns; the GRU divides by one training-derived scale per metadata channel without centering. Agree on the full comparison protocol before treating results as matched.
+**Existing work reused:** The `static-evaluation` branch at `070328f` contains frozen-feature logistic probes, including latest image + goal + all historical depth/time values. Its module and tests are copied unchanged into the debug worktree; [EVALUATION.md](../EVALUATION.md) records the reported split-0 GPU run. The tiny GRU runner is separate: scikit-learn fitting and validation-selected regularization do not train a PyTorch GRU. The static-evaluation scaler centers/scales individual columns; the GRU divides by one training-derived scale per metadata channel without centering. Agree on the full comparison protocol before treating results as matched.
 
-**Agreed sequencing:** first run the eight-case combined-input GRU check only. Start fresh for later full training/validation, compare 64 versus 128 there and prioritize the existing latest-image + goal + matching historical-metadata baseline before expanding comparisons. Full-training schedules, tuning budgets, caching and final evaluation are not authorized by the setup request.
+**Agreed sequencing:** the eight-case combined-input GRU check is complete; do not rerun merely to resume. Start fresh for later full training/validation, compare 64 versus 128 there and prioritize the existing latest-image + goal + matching historical-metadata baseline before expanding comparisons. Full-training schedules, tuning budgets, caching and final evaluation are not authorized by the setup request.
+
+## Agreed first full-training setup — 2026-11-03
+
+Tran approved preparing the full-training/validation runner after discussing candidate batch sizes, learning rates and epoch limits. These settings are a bounded starting experiment, not demonstrated optima. The architecture remains frozen DINOv2 Small/14 plus the existing 64-unit GRU/classifier. The completed eight-case check and masking must not be repeated.
+
+| Setting | Agreed starting value and rationale |
+|---|---|
+| Development data | Split position 0: 267 training / 80 validation cases; test reserved |
+| Initialization | Fresh head and Adam optimizer; seed 0; no tiny-fit continuation |
+| Batch size | 32, retaining the final 11 cases: 9 updates per epoch; middle ground between 16 and 64 |
+| Learning rate | 0.001: effective finite updates in tiny fitting, not established best for validation |
+| Regularization | Adam with zero weight decay; preserve tested optimizer before adding a regularization comparison |
+| Work ceiling | 100 epochs / 900 updates / 120 seconds of training and validation, whichever first |
+| Validation | After each completed epoch; no gradients or weight updates |
+| Selection | Highest balanced accuracy; ties retain the earlier checkpoint |
+| Early stopping | 20 completed epochs without a strict balanced-accuracy improvement; heuristic patience |
+| Extraction | Train/validation only, once: at most 347 cases / 2,429 image encodings; chunk size 1; 300-second cap |
+| Storage | Features in memory only (about 3.56 MiB float32 image vectors, excluding overhead); output capped at 20 MiB including temporary writes |
+| Overall | 600-second supervised process limit plus up to five seconds termination cleanup; proposed operational allocation is 15 minutes, released promptly |
+
+Training and extraction phase clocks are checked between operations; an in-flight encoder call, update, evaluation or checkpoint write can overrun a phase deadline. The parent bounds the entire worker, including imports and weight loading. No automatic retry, extension, hyperparameter sweep, persistent feature cache, test evaluation or GPU allocation is authorized by setup. Finish local checks and remote environment/code readiness before a separately initiated real run.
+
+Implemented in the sibling code worktree and published at `69fd063`: `vit_gru_train.py`, `tests/test_vit_gru_train.py`. The runner saves best/latest fully evaluated epoch checkpoints, metadata scales, configuration, source hashes, revision/dirty state, training/validation history and a private summary. Reload reconstructs the head and verifies best-checkpoint validation predictions. This supports evaluation reload, not exact optimizer/RNG training resumption. A partial epoch does not replace the last evaluated checkpoint; runs with no evaluated epoch are incomplete. A phase-limited run can retain earlier valid checkpoints; always report its stop reason and completed work.
+
+Loss, accuracy, balanced accuracy, class recalls and confusion counts are recorded. Exact score ties predict ADVANCE, matching the static evaluation utility. Metadata scales use training only. Validation is checked for row/episode disjointness; no test dataset is instantiated or decoded. The raw loader still reads the supplied records file containing all record metadata; reserved test examples do not enter fitting, scaling, extraction or evaluation.
+
+See [full-training setup and commands](GRU_DEBUG_HANDOFF.md#full-training-setup--2026-11-03) and [current verification](PROGRESS.md). Later alternatives (batch 16/64, lower learning rate, weight decay, width 128, matched static baseline) require a bounded comparison justified by development evidence; they are not an automatic sweep.
 
 ## Key experimental rationale — 2026-11-02
 
@@ -20,7 +47,7 @@ Prefer a manageable one-layer GRU before adding architectural complexity. Tran a
 
 ## Comparison baselines and later alternatives
 
-A baseline is a reference model used to assess whether a more complex model improves results. Sabrina's static evaluation already implements latest-image + goal classifiers with and without historical metadata. Reuse these for the later comparison after agreeing on a matched protocol; a new nonlinear classifier would be a separate proposed change. These probes are not the previously reported benchmark model or its reported approximately 82% result, whose attribution/setup remain unresolved in [APPROACHES.md](../APPROACHES.md). Coordinate with Group 1's current-input baseline before duplicating work. The following four-model design remains a later experiment; only the combined-input, 64-unit GRU debugging implementation is ready.
+A baseline is a reference model used to assess whether a more complex model improves results. The static evaluation already implements latest-image + goal classifiers with and without historical metadata. Reuse these for the later comparison after agreeing on a matched protocol; a new nonlinear classifier would be a separate proposed change. These probes are not the previously reported benchmark model or its reported approximately 82% result, whose attribution/setup remain unresolved in [APPROACHES.md](../APPROACHES.md). Coordinate with Group 1's current-input baseline before duplicating work. The following four-model design remains a later experiment; only the combined-input, 64-unit GRU debugging implementation is ready.
 
 Proposed later comparisons, all using the same frozen image encoder and goal reference:
 
@@ -47,7 +74,7 @@ A one-layer GRU is a manageable starting point; six steps alone do not establish
 4. **Test whether history helps.** A later, matched comparison against latest-image-plus-goal inputs is needed to establish temporal usefulness. The eight-case check and a single trained model cannot establish this.
 5. **Final evaluation.** Use reserved test data only after architecture and model-selection choices are fixed. Agree on the team's reporting protocol before this stage.
 
-The working-code stage passed local synthetic verification. The real eight-case check and all later training/evaluation stages remain unrun for this GRU.
+The real eight-case check passed on November 3. Full-training setup is now implemented; real full training and validation remain unrun.
 
 ## Implemented debugging split and budget
 
@@ -101,6 +128,24 @@ For this one-layer, unidirectional GRU with default biases, input width `I=386` 
 
 These counts exclude the frozen encoder. Parameter shapes are documented in [PyTorch's GRU reference](https://docs.pytorch.org/docs/main/generated/torch.nn.GRU.html). The count is a capacity consideration, not a proof that 128 will overfit or 64 will generalize. With 267 training cases, including related cases within episodes, 64 is a conservative starting suggestion. It may also discard useful information; 128 remains reasonable. Six steps alone does not determine the required width. If comparing widths, use the same split and comparable training/model-selection budgets, and decide using validation rather than training fit or test scores. Do not make a broad width sweep the next priority.
 
+### When to try 128 — decision rule recorded 2026-11-03
+
+128 is a common configurable width, not a standard or required GRU size. Start with 64; the completed tiny fit establishes learning plumbing, not the best full-training width. The following observations would guide a separately budgeted comparison, not trigger automatic execution.
+
+| Observed full-run pattern | Interpretation and next step |
+|---|---|
+| Training and validation performance both remain weak and flatten, with little gap, after useful learning and stable finite updates | Possible underfitting: 64 may not have enough capacity. First inspect optimization, inputs and labels using existing evidence; if no concrete fault explains the plateau, prioritize a 128-unit comparison. Frozen features or label ambiguity could also be limiting, so this is not proof of insufficient width. |
+| Training is strong but validation is substantially worse, or training loss keeps falling while validation loss rises | Possible overfitting. Prioritize checkpoint/regularization and episode-level error review; increasing capacity is not the first response. |
+| Training and validation are still improving when the work/time ceiling is reached | Run is budget-limited; do not infer that 64 lacks capacity. Discuss a bounded training-duration experiment before widening. No automatic extension or checkpoint resume. |
+| Loss is unstable, gradients fail, or training never improves | Investigate optimization or implementation/data alignment first; do not use 128 to hide a failure. Do not repeat the completed tiny check or masking without a new, specific justification and authorization. |
+| 64 yields useful, stable validation results | 128 remains a reasonable planned capacity comparison, but is not required to repair the model. Keep the matched static baseline a priority for testing whether history helps. |
+
+Judge these patterns from curves across epochs, both class recalls and confusion counts, not a single loss/accuracy threshold. No evidence currently supports a rule such as “below 80% means use 128.” Evaluate training and validation at the same checkpoint when comparing their gap. The dataset-wide class proportion is not a split-specific baseline.
+
+**Fair comparison:** freshly initialize each width; keep split 0, frozen encoder/preparation, metadata scales, batch size, optimizer/learning rate, regularization, checkpoint metric/tie rule and stopping policy matched. Change GRU width 64→128 and the required classifier input 448→512, retaining its 64-unit intermediate layer. Record actual epochs/updates/runtime and whether either model was cut short by the time cap; unequal completed work limits conclusions about width. Agree on extraction/reuse/storage and run budgets before execution; the current runner supports 64 only and must be extended/tested before a 128 run.
+
+**Evidence favoring 128:** improved validation balanced accuracy with class recalls/confusion counts and validation loss inspected for tradeoffs; improved training alone is insufficient. A small gain on 80 related validation cases is tentative. A separately agreed matched-seed repeat can check initialization variability before choosing a width, but does not establish uncertainty across unseen episodes. Keep 64 if 128 only memorizes training better, worsens validation, or adds cost without a convincing validation benefit. Test remains reserved.
+
 ## Metadata and extraction boundaries
 
 The implemented first version divides each channel by its population standard deviation across all training steps, with scale 1 for a constant channel and without shifting zero. Save those scales with model configuration and reuse unchanged for validation/test. Preserve signs, frame ordering and supplied zero endpoints. Do not normalize each case independently or fit scales on validation/test data.
@@ -111,10 +156,10 @@ Dataset-wide extraction/caching is not authorized by this proposal. Discuss whet
 
 ## Implementation and verification sequence
 
-1. **Complete locally:** separate head and bounded entry point on `tran/vit-gru-debug`; existing loader/preprocessor/encoder unchanged; 44 synthetic tests pass. Sabrina's published static work was inspected and reused. Coordinate any unpublished overlap before parallel extensions.
-2. **Next:** review/share the code through an explicitly authorized handoff, preserve remote notebook edits before updating a Perlmutter clone, then follow [the test/run guide](GRU_DEBUG_HANDOFF.md). Code is not yet published; a pull alone cannot retrieve it.
-3. **Pending on Perlmutter:** one eight-case learning check within the implemented caps. Keep private selection/scales and all derived artifacts there; record permitted aggregate evidence in Group 2 progress.
-4. **Later, separately scoped:** fresh full training with validation-only selection; compare widths and Sabrina's matched-metadata latest-image baseline before expanding experiments. Agree on full-training budgets, checkpoint selection, seeds and latency measurement. Never tune on test results.
+1. **Complete locally:** separate head and bounded entry point on `tran/vit-gru-debug`; existing loader/preprocessor/encoder unchanged; 44 synthetic tests pass. Published static work was inspected and reused. Coordinate any unpublished overlap before parallel extensions.
+2. **Completed for tiny setup:** code publication and the real check. Full-training runner changes are now published at `69fd063`; preserve remote notebook edits before an authorized Perlmutter update and confirm that revision before execution.
+3. **Complete on Perlmutter:** eight-case learning check at `b9d1bdf`. Do not repeat it; real full-training execution is pending.
+4. **Later, separately scoped:** fresh full training with validation-only selection; compare widths and the matched-metadata latest-image baseline before expanding experiments. Agree on full-training budgets, checkpoint selection, seeds and latency measurement. Never tune on test results.
 
 ## Freeze versus fine-tune
 

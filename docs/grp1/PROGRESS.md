@@ -9,6 +9,8 @@ The classifier returns probabilities in class order `[RETRACT, ADVANCE]`.
 Training and evaluation pass `return_logits=True` for class-weighted
 cross-entropy. Softmax is not an overfitting remedy.
 
+The shared frozen-feature evaluation (scikit-learn probe on detached ResNet features, CNN kept frozen) is recorded in [EVALUATION.md](../EVALUATION.md); it does not verify this GRU path.
+
 ## Regularization comparison and CSV recording
 
 The trainer now provides a true unregularized `baseline` (weight decay, dropout

@@ -1,29 +1,29 @@
+__pycache__/
+*.py[cod]
+.venv*/
+venv/
+evaluation_runs/
+*.npz
+*.npy
+*.pt
+*.pth
+*.log
+.ipynb_checkpoints/
+shorthorizon2/
+data/
+checkpoints/
+cases.jsonl
+manifest.json
+splits.json
+validation_predictions.private.json
+attention-setup.zip
+
 # personal training docs
 docs/andrew
 docs/tran
 docs/suhani
 docs/sabrina
 
-# env installments
-.venv/
-venv/
-
-# cache
-cat >> .gitignore <<'EOF'
-__pycache__/
-*.pyc
-*.pt
-*.pth
-*.npy
-*.npz
-*.log
-data/
-checkpoints/
-.ipynb_checkpoints/
-EOF
-
 # Local experiment artifacts are not part of the incremental training setup.
 docs/grp1/results/
 docs/grp1/analysis/
-
-
