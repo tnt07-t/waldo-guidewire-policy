@@ -7,8 +7,8 @@ from unittest.mock import patch
 
 import torch
 
-from preprocessing import CHECKPOINT, MEAN, STD
-from vit import DINOv2Encoder
+from guidewire.data.preprocessing import CHECKPOINT, MEAN, STD
+from guidewire.encoders.vit import DINOv2Encoder
 
 
 # Echo image markers as features to test wiring without real weights.

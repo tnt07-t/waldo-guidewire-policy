@@ -17,8 +17,8 @@ from sklearn.pipeline import make_pipeline
 from sklearn.preprocessing import StandardScaler
 from sklearn.metrics import roc_auc_score
 
-from temporal_evaluation import tensors, assess, probabilities, metadata_scale, write_json
-from temporal_models import FeatureHead
+from guidewire.temporal.evaluation import tensors, assess, probabilities, metadata_scale, write_json
+from guidewire.temporal.models import FeatureHead
 
 
 def stages(head, data):
@@ -265,19 +265,19 @@ def main(argv=None):
                        classifier_activation=cfg.get('classifier_activation','relu'),
                        feature_normalization=cfg.get('feature_normalization','none')).to(args.device)
     head.load_state_dict(saved['head_state']); head.eval()
-    from dataset import GuidewireDataset
-    from cnn import FrameEncoder
-    from preprocessing import DINOv2Preprocessor
-    from evaluation import collect, check_partitions
+    from guidewire.data.dataset import GuidewireDataset
+    from guidewire.encoders.cnn import FrameEncoder
+    from guidewire.data.preprocessing import DINOv2Preprocessor
+    from guidewire.evaluation.probes import collect, check_partitions
     datasets = {p:GuidewireDataset(args.data_dir,split_position=cfg['split_position'],partition=p)
                 for p in ('train','validation','test')}
     check_partitions(datasets)
     encoder = FrameEncoder().to(args.device).eval()
     if args.spatial_case_index is not None and not 0 <= args.spatial_case_index < len(datasets['train']):
         parser.error('Spatial index must select one training case')
-    from cnn_attention_debug import freeze_and_snapshot, verify_frozen
+    from guidewire.diagnostics.cnn_attention import freeze_and_snapshot, verify_frozen
     snapshot = freeze_and_snapshot(encoder.backbone)
-    from temporal_evaluation import collect_static_images
+    from guidewire.temporal.evaluation import collect_static_images
     def extract(dataset):
         if head.kind in ('latest_goal_mlp','goal_metadata_mlp','latest_mlp'):
             return collect_static_images(dataset,DINOv2Preprocessor(),encoder,'resnet18',
@@ -305,8 +305,9 @@ def main(argv=None):
     report.update(partition=args.partition, cases=len(data[3]), checkpoint_sha256=hashlib.sha256(args.checkpoint.read_bytes()).hexdigest(),
                   checkpoint_epoch=saved.get('checkpoint_epoch',saved.get('best_epoch')),
                   checkpoint_role=saved.get('checkpoint_role','selected'), checkpoint_config=cfg,
-                  source_sha256={p:hashlib.sha256((Path(__file__).parent/p).read_bytes()).hexdigest()
-                                 for p in ('temporal_diagnostics.py','temporal_models.py','temporal_evaluation.py','evaluation.py','cnn.py','preprocessing.py','dataset.py')},
+                  source_sha256={p:hashlib.sha256((Path(__file__).resolve().parents[2]/p).read_bytes()).hexdigest()
+                                 for p in ('guidewire/diagnostics/temporal.py','guidewire/temporal/models.py','guidewire/temporal/evaluation.py',
+                                          'guidewire/evaluation/probes.py','guidewire/encoders/cnn.py','guidewire/data/preprocessing.py','guidewire/data/dataset.py')},
                   torch_version=str(torch.__version__), device=args.device)
     report['kind'] = saved['kind']
     report['feature_normalization'] = cfg.get('feature_normalization','none')

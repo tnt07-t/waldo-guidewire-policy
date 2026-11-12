@@ -1,14 +1,14 @@
 # Before-GRU evaluation milestone
 
-**Historical main-branch import context — 2026-11-02:** this reference was copied from the static-evaluation `static-evaluation` branch at `070328f`. Its reported results and historical handoff below describe her work. Tran's separate `tran/vit-gru-debug` worktree now contains unchanged copies of `evaluation.py` and its tests; shared documentation remains on main. The original branch's dependency list is [requirements-eval.txt](https://github.com/tnt07-t/waldo-guidewire-policy/blob/070328fa11f1ed914771c140bfd1aae09d4fd6bb/requirements-eval.txt); it was not copied into main or the debug worktree. Importing this reference does not authorize rerunning its full-partition commands. Follow the [current Group 2 handoff](grp2/PROGRESS.md#session-handoff--2026-11-02) and [bounded GRU plan](grp2/GRU_TRIAL.md) for Tran's next work.
+**Historical main-branch import context — 2026-11-02:** this reference was copied from the static-evaluation `static-evaluation` branch at `070328f`. Its reported results and historical handoff below describe her work. Tran's separate `tran/vit-gru-debug` worktree now contains unchanged copies of `guidewire/evaluation/probes.py` and its tests; shared documentation remains on main. The original branch's dependency list is [requirements-eval.txt](https://github.com/tnt07-t/waldo-guidewire-policy/blob/070328fa11f1ed914771c140bfd1aae09d4fd6bb/requirements-eval.txt); it was not copied into main or the debug worktree. Importing this reference does not authorize rerunning its full-partition commands. Follow the [current Group 2 handoff](grp2/PROGRESS.md#session-handoff--2026-11-02) and [bounded GRU plan](grp2/GRU_TRIAL.md) for Tran's next work.
 
 ## Scope and rationale — 2026-11-01
 
 The project owner requested implementation of the immediate frozen-encoder evaluation milestone, with priority on evaluation and diagnosing model limitations. This authorizes the local evaluation implementation and documentation; it does not establish team-wide protocol adoption or authorize publishing data. Existing raw loading, image preparation, and encoder interfaces are unchanged. No GRU or encoder fine-tuning is added.
 
-`evaluation.py` trains small, L2-regularized logistic classifiers on fixed image features. This separates visual representation quality from sequence-model complexity. DINOv2 uses its current 384-value class-token summary; ResNet-18 uses its 512-value pooled summary. Both use the existing RGB, full-view, padded 518-square preparation, retain their pretrained weights, and encode the goal separately. This is a controlled shared-input comparison, not a claim that this resolution is optimal for either architecture.
+`guidewire/evaluation/probes.py` trains small, L2-regularized logistic classifiers on fixed image features. This separates visual representation quality from sequence-model complexity. DINOv2 uses its current 384-value class-token summary; ResNet-18 uses its 512-value pooled summary. Both use the existing RGB, full-view, padded 518-square preparation, retain their pretrained weights, and encode the goal separately. This is a controlled shared-input comparison, not a claim that this resolution is optimal for either architecture.
 
-**What is frozen and what learns:** ResNet-18 in `cnn.py` is unchanged by this evaluation: its pretrained weights remain frozen and BatchNorm stays in evaluation mode. Images are encoded under inference mode; detached NumPy features go to a separate scikit-learn logistic-regression classifier in `evaluation.py`. Only that classifier's coefficients/intercept and training-set scaling statistics are fitted. No trainable classification head is added inside the CNN, and no gradient flows back to it. DINOv2 weights also remain unchanged. High training balanced accuracy describes the probe's fit, not encoder fine-tuning. The probe is an evaluation baseline, not the eventual GRU policy.
+**What is frozen and what learns:** ResNet-18 in `guidewire/encoders/cnn.py` is unchanged by this evaluation: its pretrained weights remain frozen and BatchNorm stays in evaluation mode. Images are encoded under inference mode; detached NumPy features go to a separate scikit-learn logistic-regression classifier in `guidewire/evaluation/probes.py`. Only that classifier's coefficients/intercept and training-set scaling statistics are fitted. No trainable classification head is added inside the CNN, and no gradient flows back to it. DINOv2 weights also remain unchanged. High training balanced accuracy describes the probe's fit, not encoder fine-tuning. The probe is an evaluation baseline, not the eventual GRU policy.
 
 **Current preference confirmed by The project owner:** keep the CNN frozen for the coming experiments. Fine-tuning entries below are possible future research directions, not the next planned action or implemented changes. Continue frozen-feature evaluation first.
 
@@ -51,7 +51,7 @@ python -m pip show scikit-learn numpy Pillow timm torch torchvision
 python -m unittest discover -s tests -v
 
 # Example explicit development split; use a fresh run directory each time.
-python evaluation.py \
+python -m guidewire.evaluation.probes \
   --split-position 0 \
   --encoders dinov2 resnet18 \
   --device cuda \
@@ -60,6 +60,83 @@ python evaluation.py \
 ```
 
 The runner requires data/output beneath personal `$PSCRATCH`, rejects existing output directories, and has no test-evaluation option. It holds train/validation features in memory for reuse across heads; it does not save a persistent feature cache or model checkpoint. Public pretrained weights may download; no image upload is performed.
+
+### Preprocessor options
+
+Group 1 brought `guidewire/evaluation/probes.py`, its tests and `requirements-eval.txt` onto `andrew/grp1-preprocessing-tickets` unchanged from `070328f` (with approval), then added preprocessor selection.
+The probe takes the same input flags as `guidewire/encoders/cnn.py` (listed in [grp1/CNN.md](grp1/CNN.md#preprocessor-options)), one preprocessor configuration per run.
+Without them it runs the default `dinov2` full-view preparation, and every default, metric, C selection and bootstrap is unchanged, so results stay comparable with the first run below.
+
+- `--preprocessor wire` needs `--encoders resnet18`; the DINOv2 encoder is only accepted with the `dinov2` preprocessor.
+- `--context-size` is rejected, since the probe only encodes the crops.
+- `--standardize-channels` (with `--channels enhanced`) standardizes the top-hat and difference channels to zero mean and unit std, using stats fitted on each split's training cases only (no labels).
+  Without it those channels enter the ResNet in 0-1 pixel units while channel 0 is ImageNet-normalized.
+  The stats are recorded per split in `metrics.json`, and the controls inherit them.
+  `guidewire/evaluation/select_preprocessing.py` takes the same flag and adds it to its confirm command.
+- `metrics.json` records the preprocessor's own `preparation` settings (crop size, channels, top-hat size, difference mode, normalization), without per-case geometry.
+- With `--benchmark`, wire timing prepares the whole case, because the difference channel needs all six frames; `prepared_images_per_case` says how many images were prepared.
+
+```sh
+# Run on Perlmutter, in a GPU allocation; use a fresh run directory each time.
+python -m guidewire.evaluation.probes \
+  --split-position 0 \
+  --encoders resnet18 \
+  --preprocessor wire \
+  --crop-size 256 \
+  --device cuda \
+  --output-dir "$PSCRATCH/waldo-evaluation/wire-raw-256-01"
+```
+
+### Controls
+
+With 80 validation cases one split's balanced accuracy has a 95% interval of about +/-0.11, so a gain needs controls before it means anything.
+Each control is opt-in, runs on the same `--split-position`, and is written to the run's `metrics.json` under `controls` and as one line per result under "Controls" in `summary.md`, next to the normal result.
+
+| Flag | What it does | A real gain looks like |
+| --- | --- | --- |
+| `--shuffled-labels [--permutations 20]` | Refits each encoder's `latest_goal` probe on permuted training labels (class counts kept, seeded by `--control-seed`), selecting C the same way | Real BA clearly above the permuted max |
+| `--random-center` | `wire` only: crops every image around a seeded random point at least `crop_size / 2` from the goal and inside the image; the preparation record keeps the point | Lower BA than goal-centered crops |
+| `--ablate-channels 1 2` | `wire --channels enhanced` only: zeroes the top-hat (1) or difference (2) channel for training and validation, then refits | Lower BA; if nothing changes, drop that channel |
+| `--all-splits` | Runs the same configuration on split positions 0-4 (instead of `--split-position`) | Gain on most splits, not one |
+
+`--all-splits` reports each split's validation BA and their plain mean; cases are never pooled across splits, since the splits overlap.
+It cannot be combined with the other controls, so runtime stays bounded; run the controls on split 0.
+
+```sh
+# Run on Perlmutter, in a GPU allocation.
+python -m guidewire.evaluation.probes --split-position 0 --encoders resnet18 \
+  --preprocessor wire --crop-size 256 --channels enhanced \
+  --shuffled-labels --random-center --ablate-channels 1 2 \
+  --device cuda --output-dir "$PSCRATCH/waldo-evaluation/wire-controls-01"
+python -m guidewire.evaluation.probes --all-splits --encoders resnet18 \
+  --preprocessor wire --crop-size 256 --channels enhanced \
+  --device cuda --output-dir "$PSCRATCH/waldo-evaluation/wire-all-splits-01"
+```
+
+### Preprocessing selection inside training
+
+Comparing about ten configurations on the same 80 validation cases would inflate the winner's score.
+`guidewire/evaluation/select_preprocessing.py` instead scores each `WirePreprocessor` configuration with episode-grouped 5-fold CV inside the training partition (`GroupKFold` by `episode`); validation and test images are never encoded.
+In each rotation, C is chosen by a further grouped CV over the four fitting folds only, then the probe is scored once on the held-out fold.
+
+Parameters are searched one at a time, keeping the others at their current best:
+
+1. crop size (`--crop-sizes`, from the notebook tally);
+2. channel mode, raw vs enhanced;
+3. difference mode, median vs previous (only if enhanced wins);
+4. top-hat size (only if `--tophat-sizes` lists more than one value).
+
+Within one standard deviation of the best, the cheaper configuration wins (smaller crop, raw before enhanced).
+The context view is not searched, because the static probe does not use it.
+The script writes `selection.json` and a `summary.md` table of configuration, mean and std inner balanced accuracy, plus the one `guidewire/evaluation/probes.py` command that confirms the selection on validation.
+Run that command once; do not go back and re-select after seeing validation.
+
+```sh
+# Run on Perlmutter, in a GPU allocation.
+python -m guidewire.evaluation.select_preprocessing --split-position 0 \
+  --crop-sizes 192 256 384 --tophat-sizes 11 \
+  --device cuda --output-dir "$PSCRATCH/waldo-evaluation/select-01"
+```
 
 ### Compute allocation and cache troubleshooting
 
@@ -142,7 +219,7 @@ All 23 invented-data tests pass locally, including seven new evaluation checks. 
 ## Teammate handoff — resume here
 
 - Branch: `static-evaluation`. Evaluation implementation starts at `5ddb566`; this documentation handoff records the subsequent owner-run evidence. Exact Perlmutter run HEAD was not captured; inspect its `metrics.json` before attributing results to an exact revision.
-- Completed: frozen-encoder probes, 23 passing synthetic tests locally and on Perlmutter, one split-0 A100 development run, aggregate score/timing review, scratch-cache recovery guidance. CNN/ViT weights were not updated; `cnn.py` and `vit.py` are unchanged by this milestone.
+- Completed: frozen-encoder probes, 23 passing synthetic tests locally and on Perlmutter, one split-0 A100 development run, aggregate score/timing review, scratch-cache recovery guidance. CNN/ViT weights were not updated; `guidewire/encoders/cnn.py` and `guidewire/encoders/vit.py` are unchanged by this milestone.
 - Private evidence remains under each owner's scratch run directory, including `metrics.json` and `validation_predictions.private.json`. The reported run used relative scratch path `waldo-evaluation/dev-static-01`. These files are not in GitHub, and other accounts may not have access. Aggregate findings are recorded above.
 - First next task: review existing episode uncertainty, confusion matrices and regularization candidates, then inspect matched errors on Perlmutter. Keep the encoders frozen. Agree on a bounded stronger-regularization/fusion experiment before adding complexity; use episode-grouped inner training validation for an expanded search where feasible.
 - Still open: five-split final reporting policy, detailed spatial/reference diagnostics, full-policy latency, and GRU integration. No final-test predictions, new weight updates or follow-up experiment are included in this handoff.

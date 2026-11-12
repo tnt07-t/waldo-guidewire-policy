@@ -1,6 +1,6 @@
 # CNN 512-d feature diagnostics
 
-`cnn_diagnostics.py` probes whether the **pooled ResNet-18 512-d vectors** a later GRU would receive change under controlled edits. It is separate from `cnn.py`: no localization heads, no direction/action head, no training, and no held-out tuning.
+`guidewire/diagnostics/cnn.py` probes whether the **pooled ResNet-18 512-d vectors** a later GRU would receive change under controlled edits. It is separate from `guidewire/encoders/cnn.py`: no localization heads, no direction/action head, no training, and no held-out tuning.
 
 These checks do **not** measure ADVANCE/RETRACT accuracy, wire detection, or target understanding. Optional overlays under `--output-dir` are for on-Perlmutter visual verification only; keep them off shared docs and off your laptop.
 
@@ -41,7 +41,7 @@ OUT="${PSCRATCH:?}/waldo-cnn-diagnostics/case0"
 mkdir -p "$OUT"
 
 python3 -m unittest discover -s tests -p 'test_cnn_diagnostics.py' -v
-python3 cnn_diagnostics.py \
+python3 -m guidewire.diagnostics.cnn \
   --data-dir "$DATA_DIR" \
   --split-position 0 \
   --partition train \
@@ -49,7 +49,30 @@ python3 cnn_diagnostics.py \
   --output-dir "$OUT"
 ```
 
-Optional: `--patch` / `--stride`, `--size`, `--remove-maxpool`.
+Optional: `--patch` / `--stride`, `--remove-maxpool`, and the shared preprocessor flags (`--size`, `--preprocessor`, `--crop-size`, `--channels`, ...) listed in [CNN.md](CNN.md#preprocessor-options).
+
+### Wire preprocessor
+
+With `--preprocessor wire`, two probes adapt to the goal-centered crop:
+
+- **Occlusion:** the 74-pixel patch and stride were sized for 518 inputs.
+  For wire crops they default to crop size / 8 (32 for a 256 crop); the printed `patch/stride` line shows the values used.
+  `argmax_original_xy` maps back through the crop box, so it stays in original-image pixels.
+- **Goal marker:** the probe needs the marker, so it runs on the **marked** goal cropped with the same box, never on the unmarked goal the model sees.
+  The report prints `input: marked goal cropped with the wire box`.
+  Translated controls stay inside that crop.
+
+```sh
+# Run on Perlmutter (GPU session recommended), after the DINOv2 run above.
+python3 -m guidewire.diagnostics.cnn \
+  --data-dir "$DATA_DIR" \
+  --split-position 0 \
+  --partition train \
+  --case-index 0 \
+  --preprocessor wire \
+  --crop-size 256 \
+  --output-dir "$OUT-wire"
+```
 
 Share only permitted printed aggregates. Keep overlay PNGs on Perlmutter. Do not transfer images, masks, feature vectors, or sensitive errors off the machine.
 

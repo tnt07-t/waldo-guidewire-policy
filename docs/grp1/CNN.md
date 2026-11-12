@@ -1,10 +1,12 @@
 # CNN encoder trial — ResNet-18
 
-`cnn.py` implements a frozen ImageNet-pretrained ResNet-18 frame encoder for Group 1. It turns prepared goal and history images into 512-dimensional feature vectors. GRU/LSTM fusion, depth/time use, training, and action prediction are not part of this file.
+`guidewire/encoders/cnn.py` implements a frozen ImageNet-pretrained ResNet-18 frame encoder for Group 1. It turns prepared goal and history images into 512-dimensional feature vectors. GRU/LSTM fusion, depth/time use, training, and action prediction are not part of this file.
 
 Owner-run one-case smoke check on Perlmutter passed (2026-11-02). Exact printed device, shapes, optional flags, and remote HEAD were not supplied; do not repeat the completed default check without a relevant change. Real images, tensors, and feature values must stay on Perlmutter. Passing this check does not measure action accuracy.
 
-To test whether those 512-d vectors change under occlusion / marker-region / temporal probes useful for a later GRU, use the separate [CNN_DIAGNOSTICS.md](CNN_DIAGNOSTICS.md) / `cnn_diagnostics.py` path. Those probes do not claim wire detection or action recognition. Do not fold them into `cnn.py`.
+`guidewire/cnn_gru/goal_classifier.py` runs the prepared goal through the same frozen ResNet as history (`encode_goal` → `[512]`), then `guidewire/cnn_gru/model.py` projects history and goal features to 64-d and the MLP fuses the GRU `[64]` summary with the projected goal `[64]`. Prep is `prepare_case` / `prepared["goal"]`; do not treat the goal as a seventh history step.
+
+To test whether those 512-d vectors change under occlusion / marker-region / temporal probes useful for a later GRU, use the separate [CNN_DIAGNOSTICS.md](CNN_DIAGNOSTICS.md) / `guidewire/diagnostics/cnn.py` path. Those probes do not claim wire detection or action recognition. Do not fold them into `guidewire/encoders/cnn.py`.
 
 ## Why ResNet-18 instead of ConvNeXt Tiny or MobileNetV2
 
@@ -19,7 +21,7 @@ Relevant project context, not a completed bake-off:
 
 No guidewire accuracy or latency comparison among these three has been run. Keep the encoder swappable; replacing ResNet-18 later should reuse the raw reader and most of the preparation path, with normalization and input size rechecked.
 
-## Architectural decisions in `cnn.py`
+## Architectural decisions in `guidewire/encoders/cnn.py`
 
 | Decision | Choice | Why |
 | --- | --- | --- |
@@ -32,7 +34,7 @@ No guidewire accuracy or latency comparison among these three has been run. Keep
 | Depth / time | Not consumed here | Stay aligned with history in the reader; fusion belongs in the temporal policy. |
 | Preparation | Reuse `DINOv2Preprocessor` | Same RGB, proportional bicubic resize, centered mean-color pad, and ImageNet mean/std. The preprocessor's DINOv2 checkpoint label describes preparation provenance only, not this backbone. |
 | Default trial size | 518 (multiple of 14) | Reuses the existing full-view trial tensors. ResNet adaptive pooling accepts non-224 inputs; 224 remains available when divisible by 14. Neither size is a final training decision. |
-| Smoke entrypoint | `python cnn.py ...` | One real case, shape and finite checks only; no training, scoring, or feature writes. |
+| Smoke entrypoint | `python -m guidewire.encoders.cnn ...` | One real case, shape and finite checks only; no training, scoring, or feature writes. |
 
 Remaining encoder follow-ups recorded in code: visual inspection of prepared wire/target visibility, temporal models and goal fusion, frozen-baseline training, then optional layer4 fine-tuning with a smaller backbone learning rate.
 
@@ -59,7 +61,7 @@ export DATA_DIR="${PSCRATCH:?PSCRATCH must be set}/CS5470_FinalProject/shorthori
 test -d "$DATA_DIR"
 
 cd "${REPO_DIR:?Set REPO_DIR to your waldo-guidewire-policy clone}"
-python3 cnn.py --split-position 0 --partition train
+python3 -m guidewire.encoders.cnn --split-position 0 --partition train
 ```
 
 Expected textual outcome only: device name, history feature shape `(1, 6, 512)`, goal feature shape `(1, 512)`, and `Frozen encoder check passed.` Share only those permitted aggregates. Do not copy images, tensors, feature values, or sensitive errors off Perlmutter.
@@ -68,11 +70,58 @@ Optional variants:
 
 ```sh
 # Same check without the early ResNet max-pool.
-python3 cnn.py --split-position 0 --partition train --remove-maxpool
+python3 -m guidewire.encoders.cnn --split-position 0 --partition train --remove-maxpool
 
 # Alternate square size accepted by the shared preprocessor (multiple of 14).
-python3 cnn.py --split-position 0 --partition train --size 224
+python3 -m guidewire.encoders.cnn --split-position 0 --partition train --size 224
 ```
+
+### Preprocessor options
+
+`guidewire/encoders/cnn.py`, `guidewire/diagnostics/cnn.py` and `guidewire/evaluation/probes.py` share one set of input flags (`add_preprocessor_arguments` and `build_preprocessor` in `guidewire/data/preprocessing.py`).
+Without them the default `dinov2` full-view preparation runs exactly as before.
+
+| Flag | Applies to | Default |
+| --- | --- | --- |
+| `--preprocessor {dinov2,wire}` | both | `dinov2` |
+| `--size` | `dinov2` only | 518 |
+| `--crop-size` | `wire` only | 256 |
+| `--channels {raw,enhanced}` | `wire` only | `raw` |
+| `--tophat-size` | `wire --channels enhanced` | 11 |
+| `--difference {median,previous}` | `wire --channels enhanced` | `median` |
+| `--context-size` | `wire` only | off |
+
+A flag given for the other preprocessor is rejected with an error, not ignored; for example `--size` with `wire`.
+`wire` crops a square around `goal_xy` at native resolution from the unmarked goal and the six history frames.
+
+```sh
+# Run on Perlmutter, in a GPU allocation: compare old and new paths on one case.
+export TORCH_HOME="${PSCRATCH:?}/model-cache/torch"
+python3 -m guidewire.encoders.cnn --split-position 0 --partition train
+python3 -m guidewire.encoders.cnn --split-position 0 --partition train --preprocessor wire --crop-size 256
+python3 -m guidewire.encoders.cnn --split-position 0 --partition train --preprocessor wire --crop-size 256 --channels enhanced
+```
+
+Each run prints the device, `(1, 6, 512)`, `(1, 512)` and `Frozen encoder check passed.`
+
+## Wire preprocessing
+
+**Why:** `DINOv2Preprocessor` shrinks the whole 1065 x 1050 frame to 518, so the dark 3-4 px guidewire becomes about 1.5-2 px before the ResNet stem and is averaged away by global pooling.
+
+**Design** (`WirePreprocessor` in `guidewire/data/preprocessing.py`):
+
+- one square box around `goal_xy` (rounded half up) is cropped at native resolution from the unmarked goal (`goal_raw`) and all six history frames, since the view is fixed within a case;
+- outside the image the box repeats edge pixels; the crop size must be a multiple of 32;
+- `raw` repeats the gray crop to three channels with ImageNet normalization, as the frozen ResNet expects;
+- `enhanced` uses raw, a black top-hat (thin dark structures) and a frame difference (median or previous frame); the goal's difference channel is zero, and `--standardize-channels` fits the extra channels' scale on training cases;
+- optional `context_size` adds a downscaled full view; `random_center_seed` and `zero_channels` exist for controls.
+
+**Chosen parameters:** none are adopted yet; `dinov2` stays the default.
+Training-only selection preferred a raw 512 crop (inner BA 0.597), but it scored 0.506 on split 0 validation against 0.547 for the full-frame baseline.
+The visual check of top-hat size and crop size (T13 notebook cells) was not run.
+Results, latency and limits are recorded once in [the 2026-11-03 progress entry](PROGRESS.md#2026-11-03---wire-preserving-preprocessing-and-frozen-feature-probe-owner-run-ladder-stopped-early).
+
+**Commands:** the flags are in [Preprocessor options](#preprocessor-options); the probe, controls and selection commands are in [EVALUATION.md](../EVALUATION.md#preprocessor-options).
 
 Weights download or cache access must work on Perlmutter. Keeping Torch Hub caches under scratch is recommended before constructing the encoder if home-quota limits appear:
 
@@ -84,4 +133,14 @@ export TORCH_HOME="${PSCRATCH:?}/model-cache/torch"
 
 Passing shapes and finite checks shows that preparation, pretrained load, freezing, and goal/history bookkeeping work for the inspected case. It does not show that the features preserve wire location, that history helps, or that ADVANCE/RETRACT prediction will beat the baseline.
 
-Next Group 1 steps: re-run fixed diagnostics with overlays on Perlmutter, agree on GRU versus LSTM and depth/time fusion, then implement only the approved temporal stage. See [CNN_DIAGNOSTICS.md](CNN_DIAGNOSTICS.md) and [progress](PROGRESS.md).
+### Goal → ResNet — `guidewire/cnn_gru/goal_classifier.py`
+
+```python
+from mlp_cnn import encode_goal
+
+# prepared["goal"] already went through DINOv2Preprocessor (same as history).
+goal_features = encode_goal(model.cnn, prepared["goal"])   # ResNet -> [512]
+# guidewire/cnn_gru/model.py: concat(gru_summary [64], projected goal [64]) -> MLP 128 -> 64 -> 2
+```
+
+The full CNN-GRU head is in `guidewire/cnn_gru/model.py`. See [progress](PROGRESS.md).

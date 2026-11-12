@@ -10,9 +10,9 @@ from types import SimpleNamespace
 import torch
 from torch import nn
 
-from temporal_models import FeatureHead, FrozenPolicy
-from temporal_evaluation import metadata_scale, tensors, fit, probabilities, main, benchmark, experiment_variants
-from compare_runs import summarize
+from guidewire.temporal.models import FeatureHead, FrozenPolicy
+from guidewire.temporal.evaluation import metadata_scale, tensors, fit, probabilities, main, benchmark, experiment_variants
+from guidewire.evaluation.compare_runs import summarize
 
 
 class TemporalTests(unittest.TestCase):
@@ -155,7 +155,7 @@ class TemporalTests(unittest.TestCase):
                                                          "validation": list(range(8, 12)), "test": list(range(12, 16))}]))
             output = root / 'run'
             with patch.dict(os.environ, {"PSCRATCH": str(root)}), patch.dict(
-                    'sys.modules', {"cnn": SimpleNamespace(FrameEncoder=Encoder)}):
+                    'sys.modules', {"guidewire.encoders.cnn": SimpleNamespace(FrameEncoder=Encoder)}):
                 main(['--data-dir', str(data), '--output-dir', str(output), '--split-position', '0',
                       '--device', 'cpu', '--epochs', '2', '--patience', '1', '--attention-sweep'])
             report = json.loads((output / 'metrics.json').read_text())

@@ -13,14 +13,33 @@ The approach is open-ended: explore specialized smaller models that exceed the b
 - [Static evaluation](docs/EVALUATION.md): frozen-feature classifiers and reported development results; evaluation code/tests are imported into the separate `tran/vit-gru-debug` worktree for reuse.
 - [Raw case loader](docs/LOADER.md): usage; six synthetic tests, one real-case decode, and goal/history display passed on Perlmutter. Visual/semantic assessment remains open; the raw reader itself applies no preprocessing.
 - [Initial ViT preparation](docs/grp2/VIT_TRIAL.md): full-view DINOv2 tensors and inference-only encoder; initial CPU checks and the first GPU development evaluation passed on Perlmutter.
-- `cnn.py` implements a frozen pretrained ResNet-18 feature encoder (512 values/image). Its first GPU evaluation is recorded in the evaluation guide; only a separate logistic-regression probe was trained. `data_inspect.ipynb` includes original-image inspection cells with no saved outputs.
+- `guidewire/encoders/cnn.py` implements a frozen pretrained ResNet-18 feature encoder (512 values/image). Its first GPU evaluation is recorded in the evaluation guide; only a separate logistic-regression probe was trained. `notebooks/data_inspect.ipynb` includes original-image inspection cells with no saved outputs.
 - [Before-GRU evaluation](docs/EVALUATION.md): first split-0 GPU run completed; aggregate results show large training/validation gaps. The guide records all comparisons, component timing, caveats and improvement hypotheses. No final-test evaluation or fine-tuning has been done.
 - [ViT feature diagnostics](docs/grp2/VIT_DIAGNOSTICS.md): bounded inspection of whether extracted ViT features look usable before temporal-model work.
-- [CNN encoder trial](docs/grp1/CNN.md): frozen ResNet-18 frame features in `cnn.py`; owner-run one-case Perlmutter smoke check passed.
-- [CNN 512-d diagnostics](docs/grp1/CNN_DIAGNOSTICS.md): separate occlusion/marker/temporal probes on the vectors a GRU would see; owner-run one-case GPU diagnostics passed, then correctness fixes were applied (Perlmutter re-run pending). `data_inspect.ipynb` includes original-image inspection cells, with no saved outputs.
+- [CNN encoder trial](docs/grp1/CNN.md): frozen ResNet-18 frame features in `guidewire/encoders/cnn.py`; owner-run one-case Perlmutter smoke check passed. An opt-in goal-centered wire preprocessor was evaluated with a frozen-feature probe and did not beat the full-frame baseline on split 0 (2026-11-03).
+- [CNN–GRU regularization experiments](docs/grp1/NEXT_EXPERIMENTS.md): unregularized baseline plus light, medium and heavy weight decay, matched seed sweeps, and CSV logging of training/validation accuracy and loss.
+- [CNN 512-d diagnostics](docs/grp1/CNN_DIAGNOSTICS.md): separate occlusion/marker/temporal probes on the vectors a GRU would see; owner-run one-case GPU diagnostics passed, then correctness fixes were applied (Perlmutter re-run pending). `notebooks/data_inspect.ipynb` includes original-image inspection cells, with no saved outputs.
 - Group progress: [Group 1 — Andrew and Suhani](docs/grp1/PROGRESS.md) and [Group 2 — Transformer models](docs/grp2/PROGRESS.md). Shared contracts stay in the approach notes; each group records its own plans and outcomes.
 
 Project objectives and example deliverables were supplied on November 3; see [the requirements record](docs/APPROACHES.md#supplied-project-objectives-and-deliverables--2026-11-03). They specify single-GPU per-decision inference latency, but no training-GPU count or training-time limit. A complete grading rubric has not been supplied. Team proposals and unapproved suggestions are not course requirements.
+
+## Code layout
+
+All code lives in the `guidewire` package.
+Run entry points from the repository root with `python -m`, for example `python -m guidewire.cnn_gru.train`.
+
+```
+guidewire/
+  data/         dataset, preprocessing, label counts
+  encoders/     frozen feature encoders (cnn.py ResNet-18, vit.py DINOv2)
+  cnn_gru/      CNN-GRU policy: model, history_encoder, goal_classifier, train, infer
+  temporal/     temporal heads (models) and their training run (evaluation)
+  evaluation/   static probes, preprocessing selection, run comparison
+  diagnostics/  cnn, cnn_attention and temporal diagnostics
+tests/          unittest suite, run with python -m unittest discover -s tests
+notebooks/      data inspection notebook
+docs/           notes and per-group progress
+```
 
 ## Where work runs
 
@@ -99,7 +118,7 @@ conda env update -n final_project_env -f environment.yml --prune
 conda activate final_project_env
 ```
 
-==If you have install a new package, don't simply run conda install. Also run the following command to update the packages.`conda env export --from-history | grep -v '^prefix:' > environment.ym`==
+If you have installed a new package, don't simply run conda install, add it to the pip list for environment.yml.
 
 ## Lightweight collaboration
 
@@ -110,4 +129,4 @@ Teammates and AI assistants should start with the [documentation guide](docs/REA
 - Before parallel implementation, agree on input/output interfaces, preprocessing, and evaluation. Individual ownership is still open.
 - Keep sensitive data and derived sensitive artifacts on Perlmutter. Never put credentials in documentation.
 
-The repository includes shared notes, group progress directories, a raw-case reader (`dataset.py`), and synthetic loader tests. Raw loading, initial preparation previews, and pretrained DINOv2 CPU extraction for one and two cases have passed owner-run checks on Perlmutter. Group 2 ran a one-frame feature-sensitivity check; its inconclusive task-level result is recorded in the group log. The [frozen ViT–GRU debugging setup](docs/grp2/GRU_DEBUG_HANDOFF.md) is now implemented in the separate debug worktree and passed all 44 synthetic tests. The real eight-case check passed at `b9d1bdf` on November 3. The separate full-training/validation runner is published on `tran/vit-gru-debug` at `69fd063`; see Group 2 progress for agreed limits and verification. Real full training remains pending; do not repeat tiny fitting. Notebook CUDA availability is confirmed; explicit diagnostic device and inference memory/runtime measurements remain unreported. Separate static development results are recorded in the evaluation reference; they do not establish GRU performance or full-policy comparative latency.
+The repository includes shared notes, group progress directories, a raw-case reader (`guidewire/data/dataset.py`), and synthetic loader tests. Raw loading, initial preparation previews, and pretrained DINOv2 CPU extraction for one and two cases have passed owner-run checks on Perlmutter. Group 2 ran a one-frame feature-sensitivity check; its inconclusive task-level result is recorded in the group log. The [frozen ViT–GRU debugging setup](docs/grp2/GRU_DEBUG_HANDOFF.md) is now implemented in the separate debug worktree and passed all 44 synthetic tests. The real eight-case check passed at `b9d1bdf` on November 3. The separate full-training/validation runner is published on `tran/vit-gru-debug` at `69fd063`; see Group 2 progress for agreed limits and verification. Real full training remains pending; do not repeat tiny fitting. Notebook CUDA availability is confirmed; explicit diagnostic device and inference memory/runtime measurements remain unreported. Separate static development results are recorded in the evaluation reference; they do not establish GRU performance or full-policy comparative latency.

@@ -42,7 +42,7 @@ but untested. No additional experiment is queued.
 
 **Handoff:** implementation is on `static-evaluation`; the aggregate review and [teammate resume checklist](../EVALUATION.md#teammate-handoff--resume-here) document what is complete and what to inspect next. Keep CNN/ViT frozen. Private uncertainty/error evidence is next; no baseline rerun is needed just to resume.
 
-**Update — 2026-11-01:** The project owner authorized the before-GRU evaluation milestone and ongoing documentation. `evaluation.py` compares fixed ResNet/DINOv2 features using separate regularized linear probes. Implementation, synthetic verification and the first real development run are complete. Earlier pending-execution or limited-authorization statements in dated entries describe historical stages. GRU and encoder fine-tuning remain outside this implementation.
+**Update — 2026-11-01:** The project owner authorized the before-GRU evaluation milestone and ongoing documentation. `guidewire/evaluation/probes.py` compares fixed ResNet/DINOv2 features using separate regularized linear probes. Implementation, synthetic verification and the first real development run are complete. Earlier pending-execution or limited-authorization statements in dated entries describe historical stages. GRU and encoder fine-tuning remain outside this implementation.
 
 
 
@@ -112,7 +112,7 @@ Following Tran's explicit setup request, implemented the 115,650-parameter head,
 
 At Tran's request, created `tran/vit-gru-debug` and then moved it to a separate sibling worktree, keeping shared documentation on `main`. Rechecked live remote tips: `main` at `0f77490`, `static-evaluation` at `070328f`. Fast-forwarded local main from `0c4cbee` to `0f77490`, preserving every local documentation edit through a backed-up three-way reconciliation. The untracked GRU plan is preserved; `.DS_Store` files remain excluded. No staging, new commit or push occurred.
 
-Inspected the static-evaluation evaluation implementation (`5ddb566`) and handoff (`070328f`). Imported `evaluation.py` and `tests/test_evaluation.py` unchanged into the debug worktree; brought the evaluation reference into main's documentation. Existing latest-image/goal/metadata probes, metrics and partition checks can support later comparisons. The scikit-learn optimizer, centered feature scaling, validation-selected regularization and full-partition runner do not implement the proposed tiny GRU check. No baseline rerun, GRU implementation, full training, data extraction or remote notebook update occurred. Current verification is recorded in the session handoff below.
+Inspected the static-evaluation evaluation implementation (`5ddb566`) and handoff (`070328f`). Imported `guidewire/evaluation/probes.py` and `tests/test_evaluation.py` unchanged into the debug worktree; brought the evaluation reference into main's documentation. Existing latest-image/goal/metadata probes, metrics and partition checks can support later comparisons. The scikit-learn optimizer, centered feature scaling, validation-selected regularization and full-partition runner do not implement the proposed tiny GRU check. No baseline rerun, GRU implementation, full training, data extraction or remote notebook update occurred. Current verification is recorded in the session handoff below.
 
 ### 2026-11-02 — Feature check completed; temporal-model design next
 
@@ -150,7 +150,7 @@ Implemented and shared the inference-only DINOv2 encoder (`2834bb8`), followed b
 
 ### 2026-10-31 — Full-view DINOv2 preparation verified
 
-Tran approved a bounded DINOv2 Small/14 trial, after discussing DINO, DINOv2, DINOv3, and DeiT III. Implemented `preprocessing.py` and shared it in `a4d47a9`: RGB, proportional bicubic resize to fit 518×518, centered mean-color padding, checkpoint normalization, no cropping or random augmentation. Goal remains separate from six ordered history frames; metadata and originals are preserved. This is a trial configuration, not a final training decision. Usage and geometry are in [VIT_TRIAL.md](VIT_TRIAL.md).
+Tran approved a bounded DINOv2 Small/14 trial, after discussing DINO, DINOv2, DINOv3, and DeiT III. Implemented `guidewire/data/preprocessing.py` and shared it in `a4d47a9`: RGB, proportional bicubic resize to fit 518×518, centered mean-color padding, checkpoint normalization, no cropping or random augmentation. Goal remains separate from six ordered history frames; metadata and originals are preserved. This is a trial configuration, not a final training decision. Usage and geometry are in [VIT_TRIAL.md](VIT_TRIAL.md).
 
 **Verification:** all 11 local invented-data checks passed (six loader and five preparation tests), using an isolated temporary environment with Python 3.14.6, torch 2.15.0, and Pillow 13.0.0. An optional NumPy warning did not affect checks. Tran-run Perlmutter preparation tests passed all five checks in 1.398 seconds after selecting the module environment; an earlier system-Python/PIL discovery failure was resolved. Tests cover geometry/edge retention, RGB/scaling, unchanged originals, separation/order, aligned metadata, repeatability, and invalid sizes.
 

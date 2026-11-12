@@ -11,7 +11,7 @@ Each case contains a separate marked goal reference, six chronological images,
 and aligned relative depth/time. Real data and private artifacts stay on Perlmutter.
 The runner checks row/episode separation and never evaluates the test partition.
 
-The attention path in `temporal_models.py` is:
+The attention path in `guidewire/temporal/models.py` is:
 
 1. Frozen ImageNet ResNet-18 encodes each history image and the goal separately
    into 512 values. Full-view RGB preparation uses 518-square resize/padding.
@@ -54,7 +54,7 @@ module load pytorch/2.13.0
 # Activate the existing scratch evaluation environment if required.
 python3 -B -c "import torch, torchvision, PIL, numpy, sklearn; print('Dependencies available')"
 python3 -B -m unittest discover -s tests -v
-python3 -B temporal_evaluation.py --help
+python3 -B guidewire/temporal/evaluation.py --help
 ```
 
 Windows synthetic checks use `.venv-eval/Scripts/python.exe` instead of `python3`.
@@ -78,11 +78,11 @@ git rev-parse HEAD
 ```
 
 Use a new output directory for each run. The completed eight-case check used
-`cnn_attention_debug.py`; repeat only after changes requiring integration checks.
+`guidewire/diagnostics/cnn_attention.py`; repeat only after changes requiring integration checks.
 The functioning standardized reference is reproduced with:
 
 ```sh
-python3 -B temporal_evaluation.py --split-position 0 --device cuda \
+python3 -B guidewire/temporal/evaluation.py --split-position 0 --device cuda \
   --models latest_goal_mlp --width 64 --classifier-width 64 \
   --classifier-activation leaky_relu --feature-normalization standard \
   --seeds 0 --batch-size 32 --epochs 100 --patience 15 \
@@ -103,7 +103,7 @@ When finished, exit the compute shell and allocation shell, then check
 
 ## Diagnostics and outputs
 
-`temporal_diagnostics.py --help` lists checkpoint-inspection options. Inspect
+`guidewire/diagnostics/temporal.py --help` lists checkpoint-inspection options. Inspect
 selected and final checkpoints separately: the final epoch is a learning diagnostic,
 not a replacement for validation selection. Attention weights show frame routing;
 mean-input replacements measure fixed-checkpoint sensitivity, not retrained ablations.
@@ -120,7 +120,7 @@ mean-input replacements measure fixed-checkpoint sensitivity, not retrained abla
 
 Checkpoints omit encoder weights and optimizer state. Reviewed aggregate summaries
 may be shared; full reports and case-level outputs remain on Perlmutter.
-`compare_runs.py` combines explicitly selected static/neural reports into a ledger;
+`guidewire/evaluation/compare_runs.py` combines explicitly selected static/neural reports into a ledger;
 different inputs, tuning budgets and selection protocols must remain visible.
 
 `--benchmark` times one decoded training case with five warm-ups and 20 synchronized

@@ -1,7 +1,7 @@
 """Development comparison on frozen features. Real data stays on Perlmutter.
 
 No test predictions. Features live in RAM only; reports/checkpoints stay in a
-new private scratch directory. Existing evaluation.py remains unchanged.
+new private scratch directory. Existing evaluation/probes.py remains unchanged.
 """
 
 import argparse
@@ -20,8 +20,8 @@ import numpy as np
 import torch
 from torch import nn
 
-from evaluation import check_partitions, collect, metrics, episode_interval
-from temporal_models import FeatureHead
+from guidewire.evaluation.probes import check_partitions, collect, metrics, episode_interval
+from guidewire.temporal.models import FeatureHead
 
 
 def metadata_scale(metadata):
@@ -292,17 +292,17 @@ def main(argv=None):
         parser.error("Models/seeds must be unique")
     if args.device == "cuda" and not torch.cuda.is_available():
         parser.error("CUDA unavailable; use an allocated compute node")
-    from dataset import GuidewireDataset
-    from preprocessing import DINOv2Preprocessor
+    from guidewire.data.dataset import GuidewireDataset
+    from guidewire.data.preprocessing import DINOv2Preprocessor
     datasets = {p: GuidewireDataset(args.data_dir, split_position=args.split_position, partition=p)
                 for p in ("train", "validation", "test")}
     check_partitions(datasets)
     if args.encoder == "resnet18":
-        from cnn import FrameEncoder
+        from guidewire.encoders.cnn import FrameEncoder
         encoder = FrameEncoder().to(args.device).eval()
         backbone, feature_dim = encoder.backbone, 512
     else:
-        from vit import DINOv2Encoder
+        from guidewire.encoders.vit import DINOv2Encoder
         encoder = DINOv2Encoder(device=args.device)
         backbone, feature_dim = encoder.backbone, 384
     backbone.requires_grad_(False)
@@ -331,7 +331,7 @@ def main(argv=None):
                   metadata_scaling="train-only population std; no centering",
                   metadata_scale=scale.cpu().tolist(), preparation="RGB full-view 518 bicubic mean padding",
                   encoder_weights="ResNet18_Weights.DEFAULT" if args.encoder == "resnet18" else "vit_small_patch14_dinov2.lvd142m")
-    source_dir = Path(__file__).resolve().parent
+    source_dir = Path(__file__).resolve().parents[2]
     git = subprocess.run(["git", "rev-parse", "HEAD"], cwd=source_dir, capture_output=True, text=True)
     dirty = subprocess.run(["git", "status", "--porcelain"], cwd=source_dir, capture_output=True, text=True)
     import importlib.metadata
@@ -348,7 +348,8 @@ def main(argv=None):
               "gpu": torch.cuda.get_device_name() if args.device == "cuda" else None,
               "partition_counts": {p: len(d) for p, d in datasets.items()},
               "source_hashes": {p: hashlib.sha256((source_dir / p).read_bytes()).hexdigest()
-                                for p in ("temporal_models.py", "temporal_evaluation.py", "evaluation.py", "cnn.py", "vit.py", "preprocessing.py", "dataset.py")},
+                                for p in ("guidewire/temporal/models.py", "guidewire/temporal/evaluation.py", "guidewire/evaluation/probes.py",
+                                          "guidewire/encoders/cnn.py", "guidewire/encoders/vit.py", "guidewire/data/preprocessing.py", "guidewire/data/dataset.py")},
               "extraction_seconds": extraction_seconds, "results": {}}
     predictions = {k: val_features[args.encoder][k].tolist() for k in ("case_id", "episode", "row_index", "y")}
     predictions["advance_probabilities"] = {}

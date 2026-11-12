@@ -1,12 +1,17 @@
 __pycache__/
 *.py[cod]
 .venv*/
+venv/
 evaluation_runs/
 *.npz
+*.npy
 *.pt
 *.pth
+*.log
 .ipynb_checkpoints/
 shorthorizon2/
+/data/
+checkpoints/
 cases.jsonl
 manifest.json
 splits.json
@@ -19,6 +24,6 @@ docs/tran
 docs/suhani
 docs/sabrina
 
-# env installments
-
-# cache
+# Local experiment artifacts are not part of the incremental training setup.
+docs/grp1/results/
+docs/grp1/analysis/

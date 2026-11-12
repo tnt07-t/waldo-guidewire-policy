@@ -83,10 +83,19 @@ class GuidewireDataset:
         time = record["history_offsets_s"]
         if len(depth) != 6 or len(time) != 6:
             raise ValueError("Expected six aligned depths and time offsets")
+        clean_paths = record["clean_paths"]
+        if len(clean_paths) != 7:
+            raise ValueError("Expected goal plus six history clean paths")
+        goal_xy = record["goal_xy"]
+        if len(goal_xy) != 2:
+            raise ValueError("Expected goal_xy to hold two coordinates")
         # paths[0] is the marked goal; paths[1:] are oldest-to-newest history.
         images = [self._read_image(path, row_index) for path in paths]
         return {
             "goal": images[0],
+            # clean_paths[0] is the same goal frame without the target marking.
+            "goal_raw": self._read_image(clean_paths[0], row_index),
+            "goal_xy": list(goal_xy),
             "history": images[1:],
             "depth_relative_mm": list(depth),
             "history_offsets_s": list(time),

@@ -9,9 +9,9 @@ from unittest.mock import patch
 import torch
 from torch import nn
 
-from cnn_attention_debug import (training_inputs, select_eight, fit_head,
+from guidewire.diagnostics.cnn_attention import (training_inputs, select_eight, fit_head,
                                  freeze_and_snapshot, verify_frozen, run_worker, main)
-from temporal_models import FeatureHead
+from guidewire.temporal.models import FeatureHead
 
 
 class TinyAttentionTests(unittest.TestCase):
@@ -73,7 +73,7 @@ class TinyAttentionTests(unittest.TestCase):
                                                         'validation':[],'test':[]}]))
             out=root/'out'; out.mkdir()
             args=SimpleNamespace(device='cpu',data_dir=data,output_dir=out,max_updates=2,head_seconds=120)
-            with patch.dict('sys.modules', {'cnn':SimpleNamespace(FrameEncoder=Encoder)}), patch(
+            with patch.dict('sys.modules', {'guidewire.encoders.cnn':SimpleNamespace(FrameEncoder=Encoder)}), patch(
                     'importlib.metadata.version', return_value='synthetic-test'):
                 self.assertEqual(run_worker(args),0)
             report=json.loads((out/'debug_summary.json').read_text())

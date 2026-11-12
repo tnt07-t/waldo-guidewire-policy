@@ -9,9 +9,9 @@ Tran requested implementation of the planned eight-case setup. The code now exis
 | `vit_gru.py` | One-layer, 64-unit PyTorch GRU and goal-fusion classifier; 115,650 trainable parameters |
 | `vit_gru_debug.py` | Fresh eight-case selection, training-only scaling, frozen extraction, bounded training and private report |
 | `tests/test_vit_gru.py` | Synthetic wiring, gradients, freezing, selection/scaling and timeout checks |
-| `evaluation.py`, `tests/test_evaluation.py` | Unchanged copies of the static evaluation at `070328f`; later comparison utilities |
+| `guidewire/evaluation/probes.py`, `tests/test_evaluation.py` | Unchanged copies of the static evaluation at `070328f`; later comparison utilities |
 
-Existing `dataset.py`, `preprocessing.py`, `vit.py` and the notebook are unchanged. No new project configuration/instruction files were added. Real data, features and outputs remain on Perlmutter. Current test evidence and Git state are recorded in [PROGRESS.md](PROGRESS.md#session-handoff--2026-11-03).
+Existing `guidewire/data/dataset.py`, `guidewire/data/preprocessing.py`, `guidewire/encoders/vit.py` and the notebook are unchanged. No new project configuration/instruction files were added. Real data, features and outputs remain on Perlmutter. Current test evidence and Git state are recorded in [PROGRESS.md](PROGRESS.md#session-handoff--2026-11-03).
 
 ## Implemented experiment
 
@@ -27,7 +27,7 @@ Existing `dataset.py`, `preprocessing.py`, `vit.py` and the notebook are unchang
 ## Static evaluation reuse and coordination
 
 1. Read this handoff and the [GRU trial rationale](GRU_TRIAL.md). Check for any unpublished overlapping GRU/trainer work before making parallel edits. Tran is preparing this ViT–GRU path; your existing static evaluation is retained.
-2. Keep `evaluation.py` as the static comparison tool. Its `latest_goal_metadata` mode already supplies latest image + goal + all historical depth/time values. Do not rebuild that baseline or rerun the completed static experiment merely to resume.
+2. Keep `guidewire/evaluation/probes.py` as the static comparison tool. Its `latest_goal_metadata` mode already supplies latest image + goal + all historical depth/time values. Do not rebuild that baseline or rerun the completed static experiment merely to resume.
 3. Your feature-role conventions and metric helpers remain useful for later evaluation. Your logistic-regression optimizer does not train the GRU. Its per-column centered scaler and validation-selected regularization also differ from this debugging run. Agree on the matched full-training protocol before comparing results.
 4. The tiny runner deliberately does not call the full static-evaluation runner: it must not extract whole train/validation image partitions or select settings using validation. It uses only torch/Pillow/timm for real extraction/training; NumPy and scikit-learn are also needed to run the imported evaluation tests.
 5. After the code has been explicitly reviewed and shared, run the synthetic checks below in your Perlmutter environment, then one bounded real-data check. Keep private reports on your account; report permitted aggregates to the team. One account's success does not verify another account's environment.
