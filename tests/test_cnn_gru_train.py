@@ -12,8 +12,8 @@ from unittest import mock
 
 import torch
 
-from model_cnngru import CNNGRUModel
-from train_cnngru import (REPO_ROOT, binary_metrics, cache_metadata, cache_path,
+from guidewire.cnn_gru.model import CNNGRUModel
+from guidewire.cnn_gru.train import (REPO_ROOT, binary_metrics, cache_metadata, cache_path,
                           check_cache_dir, class_weights, evaluate, parse_args, run,
                           load_cached_features, roc_auc, save_cached_features,
                           shuffled_labels, train_model, window_summary, csv_logger,
@@ -162,7 +162,7 @@ class RunTests(unittest.TestCase):
             args = parse_args(["--data-dir", "/invented", "--split-position", "0",
                                "--config", "medium", "--epochs", "2", "--weight-decay", "0.2",
                                "--dropout", "0.15", "--metrics-csv", str(path)])
-            with mock.patch("train_cnngru.CNNGRUModel",
+            with mock.patch("guidewire.cnn_gru.train.CNNGRUModel",
                             functools.partial(CNNGRUModel, pretrained=False)):
                 result = run(args, features, echo=False)
                 saved = path.read_text()
@@ -199,9 +199,9 @@ class RunTests(unittest.TestCase):
             output = Path(root) / "sweep"
             args = parse_args(["--data-dir", "/invented", "--split-position", "0", "--sweep",
                                "--output-dir", str(output), "--seeds", "2", "3", "--epochs", "2"])
-            with mock.patch("train_cnngru.CNNGRUModel",
+            with mock.patch("guidewire.cnn_gru.train.CNNGRUModel",
                             functools.partial(CNNGRUModel, pretrained=False)), \
-                    mock.patch("train_cnngru.load_features", side_effect=AssertionError("No data reads")):
+                    mock.patch("guidewire.cnn_gru.train.load_features", side_effect=AssertionError("No data reads")):
                 summaries = run_sweep(args, features, echo=False)
                 with self.assertRaises(FileExistsError):
                     run_sweep(args, features, echo=False)
@@ -274,7 +274,7 @@ class RunTests(unittest.TestCase):
         self.assertEqual(args.weight_decay, 1.0)
         features = {"train": invented_features(16), "validation": invented_features(8, seed=1)}
         snapshot = {p: {k: v.clone() for k, v in data.items()} for p, data in features.items()}
-        with mock.patch("train_cnngru.CNNGRUModel", functools.partial(CNNGRUModel, pretrained=False)), \
+        with mock.patch("guidewire.cnn_gru.train.CNNGRUModel", functools.partial(CNNGRUModel, pretrained=False)), \
                 mock.patch("torch.save") as save, \
                 mock.patch.object(Path, "mkdir") as mkdir, \
                 mock.patch("builtins.open", side_effect=AssertionError("Unexpected disk access")):

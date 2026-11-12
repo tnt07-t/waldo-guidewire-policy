@@ -2,7 +2,7 @@
 
 import unittest
 
-from select_preprocessing import confirm_command, search, select_within_one_std
+from guidewire.evaluation.select_preprocessing import confirm_command, search, select_within_one_std
 
 
 def entry(config, mean, std=0.02):

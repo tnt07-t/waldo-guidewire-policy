@@ -10,7 +10,7 @@ evaluation_runs/
 *.log
 .ipynb_checkpoints/
 shorthorizon2/
-data/
+/data/
 checkpoints/
 cases.jsonl
 manifest.json

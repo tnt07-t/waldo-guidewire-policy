@@ -1,7 +1,7 @@
 """Diagnostics for frozen ResNet-18 512-d features (not part of the policy CNN).
 
 Probes whether pooled vectors a later GRU would receive change under controlled
-edits. They do not train, do not add heads to ``cnn.py``, and do not claim wire
+edits. They do not train, do not add heads to ``encoders/cnn.py``, and do not claim wire
 detection, target understanding, or advance/retract recognition.
 
 Probes (all scored with L2 distance in 512-d space):
@@ -26,7 +26,7 @@ from pathlib import Path
 import torch
 from PIL import Image, ImageDraw
 
-from preprocessing import MEAN, STD, WirePreprocessor, goal_crop
+from guidewire.data.preprocessing import MEAN, STD, WirePreprocessor, goal_crop
 
 
 # Red-marker thresholds on uint8 RGB in [0, 255], before ImageNet normalization.
@@ -735,9 +735,9 @@ def _print_report(report):
 def main():
     # Real-data entrypoint only: keep top-level imports free of torchvision so
     # invented-input unit tests can run without the CNN dependency stack.
-    from cnn import FrameEncoder
-    from dataset import GuidewireDataset
-    from preprocessing import add_preprocessor_arguments, build_preprocessor
+    from guidewire.encoders.cnn import FrameEncoder
+    from guidewire.data.dataset import GuidewireDataset
+    from guidewire.data.preprocessing import add_preprocessor_arguments, build_preprocessor
 
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--data-dir", default=os.environ.get("DATA_DIR"))

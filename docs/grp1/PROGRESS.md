@@ -28,7 +28,7 @@ these settings do not describe the new unregularized control.
 Run on Perlmutter inside an allocation with `DATA_DIR` configured:
 
 ```sh
-python train_cnngru.py --data-dir "$DATA_DIR" --split-position 0 \
+python -m guidewire.cnn_gru.train --data-dir "$DATA_DIR" --split-position 0 \
   --sweep --seeds 0 1 2 \
   --output-dir "${PSCRATCH:?PSCRATCH must be set}/waldo-regularization/split0-trial1"
 ```
@@ -55,7 +55,7 @@ partitions. Real data, derived features and experiment outputs stay on Perlmutte
 Use synthetic inputs without accessing the private dataset or downloading weights:
 
 ```sh
-python -m unittest discover -s tests -p 'test_train_cnngru.py' -v
+python -m unittest discover -s tests -p 'test_cnn_gru_train.py' -v
 ```
 
 All 35 synthetic training tests passed locally. Tests cover effective presets, CSV accuracy and interruption handling, matched

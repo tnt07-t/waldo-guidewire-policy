@@ -29,12 +29,12 @@ import torch
 from torch.nn import functional as F
 from torch.utils.data import DataLoader, Dataset
 
-from dataset import GuidewireDataset
-from model_cnngru import CNNGRUModel
-from preprocessing import DINOv2Preprocessor
+from guidewire.data.dataset import GuidewireDataset
+from guidewire.cnn_gru.model import CNNGRUModel
+from guidewire.data.preprocessing import DINOv2Preprocessor
 
 CLASS_NAMES = ("RETRACT", "ADVANCE")  # label 0, label 1
-REPO_ROOT = Path(__file__).resolve().parent
+REPO_ROOT = Path(__file__).resolve().parents[2]
 REGULARIZATION_CONFIGS = {
     "baseline": {"weight_decay": 0.0, "dropout": 0.0, "feature_noise": 0.0, "epochs": 200},
     "light": {"weight_decay": 0.01, "dropout": 0.0, "feature_noise": 0.0, "epochs": 200},

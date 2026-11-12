@@ -20,7 +20,7 @@ standardized.
 The small head uses a shared Linear(512 -> 64) projection, a one-layer
 GRU (hidden 64), and an MLP mapping 128 -> 64 -> 2: 67,586 trainable parameters.
 
-The ResNet is frozen, so training (train_cnngru.py) encodes every image
+The ResNet is frozen, so training (train.py) encodes every image
 once and then calls ``forward_features(return_logits=True)`` on cached vectors
 for cross-entropy training. Default outputs apply Softmax over the two classes.
 ``forward`` gives identical outputs from raw prepared images.
@@ -31,9 +31,9 @@ Prediction: probabilities.argmax(dim=-1)  # 0 = RETRACT, 1 = ADVANCE
 import torch
 from torch import nn
 
-from cnn import FrameEncoder
-from gru import CNNGRUEncoder
-from mlp_cnn import GoalClassifier, encode_goal
+from guidewire.encoders.cnn import FrameEncoder
+from guidewire.cnn_gru.history_encoder import CNNGRUEncoder
+from guidewire.cnn_gru.goal_classifier import GoalClassifier, encode_goal
 
 PROJECTION_DIM = 64
 GRU_HIDDEN = 64

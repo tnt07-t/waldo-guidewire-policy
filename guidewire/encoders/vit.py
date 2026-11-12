@@ -2,7 +2,7 @@
 
 import torch
 
-from preprocessing import CHECKPOINT
+from guidewire.data.preprocessing import CHECKPOINT
 
 
 class DINOv2Encoder:
@@ -22,11 +22,11 @@ class DINOv2Encoder:
             backbone = timm.create_model(CHECKPOINT, pretrained=True, num_classes=0)
             # Check that the loaded weights expect our preparation settings.
             config = timm.data.resolve_model_data_config(backbone)
-            from preprocessing import MEAN, STD
+            from guidewire.data.preprocessing import MEAN, STD
 
             if (tuple(config["input_size"]) != (3, 518, 518)
                     or tuple(config["mean"]) != MEAN or tuple(config["std"]) != STD):
-                raise ValueError("Loaded checkpoint preparation differs from preprocessing.py")
+                raise ValueError("Loaded checkpoint preparation differs from data/preprocessing.py")
         self.device = torch.device(device)
         self.backbone = backbone.to(self.device).eval()
         if self.backbone.num_features != 384:

@@ -3,7 +3,7 @@
 import torch
 from torch import nn
 
-from cnn import FrameEncoder
+from guidewire.encoders.cnn import FrameEncoder
 
 
 class CNNGRUEncoder(nn.Module):

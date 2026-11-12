@@ -8,7 +8,7 @@ import torch
 from torch import nn
 from PIL import Image
 
-from cnn_diagnostics import (
+from guidewire.diagnostics.cnn import (
     content_bounds,
     cosine_distance,
     default_occlusion_size,
@@ -28,7 +28,7 @@ from cnn_diagnostics import (
     temporal_feature_diagnostics,
     translated_control_masks,
 )
-from preprocessing import DINOv2Preprocessor, WirePreprocessor
+from guidewire.data.preprocessing import DINOv2Preprocessor, WirePreprocessor
 
 
 class BrightnessEncoder(nn.Module):
@@ -236,7 +236,7 @@ class DiagnosticsTests(unittest.TestCase):
         self.assertIsNone(pearson_corr([1.0], [1.0]))
 
     def test_distances_and_eval_encode(self):
-        from cnn_diagnostics import encode_image
+        from guidewire.diagnostics.cnn import encode_image
 
         encoder = BrightnessEncoder()
         encoder.train()

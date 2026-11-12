@@ -1,11 +1,11 @@
-"""Invented-input checks for mlp_cnn goal→ResNet encode helper."""
+"""Invented-input checks for goal_classifier goal→ResNet encode helper."""
 
 import unittest
 
 import torch
 from torch import nn
 
-from mlp_cnn import GOAL_FEATURE_DIM, encode_goal
+from guidewire.cnn_gru.goal_classifier import GOAL_FEATURE_DIM, encode_goal
 
 
 class FakeEncoder(nn.Module):

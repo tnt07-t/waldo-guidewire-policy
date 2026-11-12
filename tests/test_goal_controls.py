@@ -10,9 +10,9 @@ import unittest
 import torch
 from torch import nn
 
-from temporal_models import FeatureHead, FrozenPolicy
-from temporal_evaluation import main
-from temporal_diagnostics import main as diagnostic_main
+from guidewire.temporal.models import FeatureHead, FrozenPolicy
+from guidewire.temporal.evaluation import main
+from guidewire.diagnostics.temporal import main as diagnostic_main
 from test_temporal_diagnostics import injected_cnn
 
 

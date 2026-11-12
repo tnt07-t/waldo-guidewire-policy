@@ -3,7 +3,7 @@
 Reads only cases.jsonl and splits.json. Run on Perlmutter with DATA_DIR set.
 
 Example:
-  python3 count_labels.py --split-position 0
+  python3 -m guidewire.data.count_labels --split-position 0
 """
 
 import argparse

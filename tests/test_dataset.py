@@ -7,7 +7,7 @@ from pathlib import Path
 
 from PIL import Image
 
-from dataset import GuidewireDataset
+from guidewire.data.dataset import GuidewireDataset
 
 
 class DatasetTests(unittest.TestCase):

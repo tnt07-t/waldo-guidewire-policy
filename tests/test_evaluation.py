@@ -5,9 +5,9 @@ import unittest
 
 import numpy as np
 
-from evaluation import (check_partitions, design_matrix, episode_interval,
+from guidewire.evaluation.probes import (check_partitions, design_matrix, episode_interval,
                         benchmark_encoders, collect, diagnostic_notes, evaluate, fit_probe, metrics)
-from evaluation import (all_splits_summary, control_lines, grouped_fold_index, inner_cv,
+from guidewire.evaluation.probes import (all_splits_summary, control_lines, grouped_fold_index, inner_cv,
                         label_permutations, shuffled_label_control)
 
 
@@ -193,9 +193,9 @@ class WirePreprocessorEvaluationTests(unittest.TestCase):
 
     def test_collect_with_wire_preprocessor_and_frame_encoder(self):
         import torch
-        from cnn import FrameEncoder
-        from evaluation import static_images
-        from preprocessing import WirePreprocessor
+        from guidewire.encoders.cnn import FrameEncoder
+        from guidewire.evaluation.probes import static_images
+        from guidewire.data.preprocessing import WirePreprocessor
 
         cases = [self.wire_case(0), self.wire_case(1)]
         encoder = FrameEncoder(pretrained=False).eval()

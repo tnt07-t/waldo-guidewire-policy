@@ -63,7 +63,7 @@ model choices are fixed.
 From the repository root inside an allocation, with `DATA_DIR` set:
 
 ```sh
-python train_cnngru.py --data-dir "$DATA_DIR" --split-position 0 \
+python -m guidewire.cnn_gru.train --data-dir "$DATA_DIR" --split-position 0 \
   --sweep --seeds 0 1 2 --epochs 200 --summary-window 20 \
   --feature-cache "${PSCRATCH:?PSCRATCH must be set}/waldo-feature-cache" \
   --output-dir "${PSCRATCH:?PSCRATCH must be set}/waldo-regularization/split0-trial1"
@@ -99,7 +99,7 @@ Keep all real-data experiment outputs and caches on Perlmutter.
 For an individual run:
 
 ```sh
-python train_cnngru.py --data-dir "$DATA_DIR" --split-position 0 --seed 0 \
+python -m guidewire.cnn_gru.train --data-dir "$DATA_DIR" --split-position 0 --seed 0 \
   --config light --metrics-csv "${PSCRATCH:?PSCRATCH must be set}/waldo-regularization/light-trial2.csv"
 ```
 

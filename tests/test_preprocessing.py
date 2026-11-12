@@ -8,7 +8,7 @@ import unittest
 from PIL import Image, ImageDraw
 import torch
 
-from preprocessing import (CHECKPOINT, CONTEXT_FILL, MEAN, STD, DINOv2Preprocessor,
+from guidewire.data.preprocessing import (CHECKPOINT, CONTEXT_FILL, MEAN, STD, DINOv2Preprocessor,
                            WirePreprocessor, add_preprocessor_arguments, black_tophat,
                            build_preprocessor, channel_stats, goal_crop,
                            standardize_wire_channels)
@@ -372,7 +372,7 @@ class WirePreprocessorTests(unittest.TestCase):
             self.assertEqual(self.case[key], value)
 
     def test_frame_encoder_accepts_output(self):
-        from cnn import FrameEncoder  # needs torchvision, so imported only here
+        from guidewire.encoders.cnn import FrameEncoder  # needs torchvision, so imported only here
         result = WirePreprocessor().prepare_case(self.case)
         encoder = FrameEncoder(pretrained=False)
         with torch.no_grad():

@@ -270,7 +270,7 @@ def collect(dataset, prepare, encoders):
 def static_images(prepare, case):
     """Goal and latest-frame tensors [2,3,H,W] plus how many images were prepared."""
     import torch
-    from preprocessing import WirePreprocessor
+    from guidewire.data.preprocessing import WirePreprocessor
 
     if isinstance(prepare, WirePreprocessor):
         # Wire crops need goal_xy, and the enhanced difference channel needs
@@ -284,7 +284,7 @@ def static_images(prepare, case):
 
 def preparation_record(prepare, case):
     """Preparation settings for metrics.json, without per-image geometry."""
-    from preprocessing import CHECKPOINT, DINOv2Preprocessor, MEAN, STD
+    from guidewire.data.preprocessing import CHECKPOINT, DINOv2Preprocessor, MEAN, STD
 
     if isinstance(prepare, DINOv2Preprocessor):
         return {"size": prepare.size, "mean": MEAN, "std": STD,
@@ -429,7 +429,7 @@ def main():
     parser.add_argument("--standardize-channels", action="store_true",
                         help="Fit top-hat/difference standardization on each split's training "
                              "cases (wire --channels enhanced)")
-    from preprocessing import (add_preprocessor_arguments, build_preprocessor,
+    from guidewire.data.preprocessing import (add_preprocessor_arguments, build_preprocessor,
                                standardize_wire_channels)
     add_preprocessor_arguments(parser)
     args = parser.parse_args()
@@ -466,7 +466,7 @@ def main():
         parser.error("Output directory already exists; choose a new run directory")
 
     import torch
-    from dataset import GuidewireDataset
+    from guidewire.data.dataset import GuidewireDataset
 
     if args.device == "cuda" and not torch.cuda.is_available():
         parser.error("CUDA unavailable; use an allocated GPU node or explicitly choose cpu")
@@ -479,10 +479,10 @@ def main():
         check_partitions(split_datasets[position])
     encoders = {}
     if "dinov2" in args.encoders:
-        from vit import DINOv2Encoder
+        from guidewire.encoders.vit import DINOv2Encoder
         encoders["dinov2"] = DINOv2Encoder(device=args.device)
     if "resnet18" in args.encoders:
-        from cnn import FrameEncoder
+        from guidewire.encoders.cnn import FrameEncoder
         encoders["resnet18"] = FrameEncoder().to(args.device).eval()
     split_prepare = {}
     for position in positions:

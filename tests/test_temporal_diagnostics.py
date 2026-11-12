@@ -13,28 +13,28 @@ import numpy as np
 import torch
 from torch import nn
 
-from temporal_models import FeatureHead
-from temporal_evaluation import fit, assess
-from temporal_evaluation import main as train_main
-from temporal_diagnostics import (stages, routing_summary, interventions,
+from guidewire.temporal.models import FeatureHead
+from guidewire.temporal.evaluation import fit, assess
+from guidewire.temporal.evaluation import main as train_main
+from guidewire.diagnostics.temporal import (stages, routing_summary, interventions,
                                   representation_stats, metadata_recoverability,
                                   spatial_sensitivity, classifier_health)
-from temporal_diagnostics import main as diagnostic_main
+from guidewire.diagnostics.temporal import main as diagnostic_main
 
 
 @contextmanager
 def injected_cnn(encoder):
     # Restore only this fake module. Restoring the entire sys.modules mapping
     # can unload lazily imported torch modules while leaving native registrations.
-    previous = sys.modules.get('cnn')
-    sys.modules['cnn'] = SimpleNamespace(FrameEncoder=encoder)
+    previous = sys.modules.get('guidewire.encoders.cnn')
+    sys.modules['guidewire.encoders.cnn'] = SimpleNamespace(FrameEncoder=encoder)
     try:
         yield
     finally:
         if previous is None:
-            del sys.modules['cnn']
+            del sys.modules['guidewire.encoders.cnn']
         else:
-            sys.modules['cnn'] = previous
+            sys.modules['guidewire.encoders.cnn'] = previous
 
 
 class DiagnosticTests(unittest.TestCase):

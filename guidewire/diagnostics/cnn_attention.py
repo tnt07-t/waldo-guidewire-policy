@@ -18,6 +18,8 @@ import subprocess
 import sys
 import time
 
+REPO_ROOT = Path(__file__).resolve().parents[2]
+
 
 class CNNAdapter:
     """Keep shared CNN unchanged; extract separate goal/history one image at a time."""
@@ -189,10 +191,10 @@ def run_worker(args):
     import hashlib
     import importlib.metadata
     import torch
-    from dataset import GuidewireDataset
-    from preprocessing import DINOv2Preprocessor
-    from cnn import FrameEncoder
-    from temporal_models import FeatureHead
+    from guidewire.data.dataset import GuidewireDataset
+    from guidewire.data.preprocessing import DINOv2Preprocessor
+    from guidewire.encoders.cnn import FrameEncoder
+    from guidewire.temporal.models import FeatureHead
 
     start = time.monotonic()
     torch.set_num_threads(2)
@@ -220,9 +222,9 @@ def run_worker(args):
     result = fit_head(head, history, goal, metadata[indices].to(device), labels[indices].to(device),
                       max_updates=args.max_updates, head_seconds=args.head_seconds)
     verify_frozen(encoder.backbone, snapshot)
-    git = subprocess.run(["git", "rev-parse", "HEAD"], cwd=Path(__file__).parent,
+    git = subprocess.run(["git", "rev-parse", "HEAD"], cwd=REPO_ROOT,
                          capture_output=True, text=True)
-    dirty = subprocess.run(["git", "status", "--porcelain"], cwd=Path(__file__).parent,
+    dirty = subprocess.run(["git", "status", "--porcelain"], cwd=REPO_ROOT,
                            capture_output=True, text=True)
     report = {
         "status": "completed" if result["updates"] else "no_updates",
@@ -245,8 +247,9 @@ def run_worker(args):
         "peak_cuda_allocated_bytes": torch.cuda.max_memory_allocated(device) if device.type == "cuda" else None,
         "gpu": torch.cuda.get_device_name(device) if device.type == "cuda" else None,
         "git_commit": git.stdout.strip(), "git_dirty": bool(dirty.stdout.strip()),
-        "code_sha256": {name: hashlib.sha256((Path(__file__).parent / name).read_bytes()).hexdigest()
-                        for name in ("dataset.py", "preprocessing.py", "cnn.py", "temporal_models.py", "cnn_attention_debug.py")},
+        "code_sha256": {name: hashlib.sha256((REPO_ROOT / name).read_bytes()).hexdigest()
+                        for name in ("guidewire/data/dataset.py", "guidewire/data/preprocessing.py", "guidewire/encoders/cnn.py",
+                         "guidewire/temporal/models.py", "guidewire/diagnostics/cnn_attention.py")},
         "python": sys.version.split()[0],
         "versions": {name: importlib.metadata.version(name) for name in ("torch", "torchvision", "Pillow")},
         **result,
@@ -264,9 +267,9 @@ def write_report(directory, report):
     temporary.replace(path)
 
 
-def supervise(command, *, seconds=600):
+def supervise(command, *, seconds=600, cwd=REPO_ROOT):
     """Bound even a worker stuck in native code/download; stop its process group."""
-    process = subprocess.Popen(command, start_new_session=True)
+    process = subprocess.Popen(command, cwd=cwd, start_new_session=True)
     def stop():
         try:
             os.killpg(process.pid, signal.SIGTERM)
@@ -316,7 +319,7 @@ def main(argv=None):
     if args.output_dir.exists():
         parser.error("Output directory already exists; choose a new run directory")
     args.output_dir.mkdir(parents=True, exist_ok=False, mode=0o700)
-    command = [sys.executable, str(Path(__file__).resolve()), "--worker",
+    command = [sys.executable, "-m", "guidewire.diagnostics.cnn_attention", "--worker",
                "--data-dir", str(args.data_dir), "--output-dir", str(args.output_dir),
                "--device", args.device, "--max-updates", str(args.max_updates),
                "--head-seconds", str(args.head_seconds)]

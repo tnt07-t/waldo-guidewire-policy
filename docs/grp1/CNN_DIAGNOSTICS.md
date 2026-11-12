@@ -1,6 +1,6 @@
 # CNN 512-d feature diagnostics
 
-`cnn_diagnostics.py` probes whether the **pooled ResNet-18 512-d vectors** a later GRU would receive change under controlled edits. It is separate from `cnn.py`: no localization heads, no direction/action head, no training, and no held-out tuning.
+`guidewire/diagnostics/cnn.py` probes whether the **pooled ResNet-18 512-d vectors** a later GRU would receive change under controlled edits. It is separate from `guidewire/encoders/cnn.py`: no localization heads, no direction/action head, no training, and no held-out tuning.
 
 These checks do **not** measure ADVANCE/RETRACT accuracy, wire detection, or target understanding. Optional overlays under `--output-dir` are for on-Perlmutter visual verification only; keep them off shared docs and off your laptop.
 
@@ -41,7 +41,7 @@ OUT="${PSCRATCH:?}/waldo-cnn-diagnostics/case0"
 mkdir -p "$OUT"
 
 python3 -m unittest discover -s tests -p 'test_cnn_diagnostics.py' -v
-python3 cnn_diagnostics.py \
+python3 -m guidewire.diagnostics.cnn \
   --data-dir "$DATA_DIR" \
   --split-position 0 \
   --partition train \
@@ -64,7 +64,7 @@ With `--preprocessor wire`, two probes adapt to the goal-centered crop:
 
 ```sh
 # Run on Perlmutter (GPU session recommended), after the DINOv2 run above.
-python3 cnn_diagnostics.py \
+python3 -m guidewire.diagnostics.cnn \
   --data-dir "$DATA_DIR" \
   --split-position 0 \
   --partition train \

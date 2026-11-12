@@ -2,8 +2,8 @@
 import unittest
 import torch
 
-from temporal_models import FeatureHead
-from temporal_evaluation import fit
+from guidewire.temporal.models import FeatureHead
+from guidewire.temporal.evaluation import fit
 
 
 class FeatureNormalizationTests(unittest.TestCase):

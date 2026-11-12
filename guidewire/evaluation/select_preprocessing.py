@@ -5,7 +5,7 @@ on the training partition; validation and test images are never encoded.
 Parameters are searched one at a time in a fixed order, keeping the others
 at their current best. Within one standard deviation of the best, the cheaper
 configuration wins. The selected configuration is then confirmed ONCE on
-validation with ``evaluation.py``; this script prints that command.
+validation with ``guidewire.evaluation.probes``; this script prints that command.
 
 Real data and outputs stay on Perlmutter, under personal PSCRATCH.
 """
@@ -17,7 +17,7 @@ import os
 from pathlib import Path
 import subprocess
 
-from evaluation import MODES, check_partitions, collect, inner_cv
+from guidewire.evaluation.probes import MODES, check_partitions, collect, inner_cv
 
 
 def select_within_one_std(scored):
@@ -77,7 +77,7 @@ def confirm_command(config, split_position, standardize=False):
                                        for key, value in config.items()]
     if standardize and config["channels"] == "enhanced":
         flags.append("--standardize-channels")
-    return ("python evaluation.py --split-position {} --encoders resnet18 {} "
+    return ("python -m guidewire.evaluation.probes --split-position {} --encoders resnet18 {} "
             "--device cuda --output-dir \"$PSCRATCH/waldo-evaluation/<new-run>\"".format(
                 split_position, " ".join(flags)))
 
@@ -113,9 +113,9 @@ def main():
         parser.error("--folds must be at least 2")
 
     import torch
-    from cnn import FrameEncoder
-    from dataset import GuidewireDataset
-    from preprocessing import WirePreprocessor, standardize_wire_channels
+    from guidewire.encoders.cnn import FrameEncoder
+    from guidewire.data.dataset import GuidewireDataset
+    from guidewire.data.preprocessing import WirePreprocessor, standardize_wire_channels
 
     if args.device == "cuda" and not torch.cuda.is_available():
         parser.error("CUDA unavailable; use an allocated GPU node or explicitly choose cpu")
@@ -166,7 +166,7 @@ def main():
               "inner_folds": args.folds, "training_cases": len(datasets["train"]),
               "standardize_channels": args.standardize_channels,
               "selection_rule": "one parameter at a time; cheapest within one std of the best",
-              "validation_note": "Validation and test were not encoded; confirm the selection once with evaluation.py",
+              "validation_note": "Validation and test were not encoded; confirm the selection once with guidewire.evaluation.probes",
               "configurations": list(cache.values()), "stages": stages,
               "selected": selected, "confirm_command": command}
     args.output_dir.mkdir(parents=True)

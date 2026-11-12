@@ -3,10 +3,10 @@
 Goal path (this file):
   prepared goal [B, 3, H, W]  --FrameEncoder (ResNet-18)-->  goal_features [B, 512]
 
-History path (gru.py):
+History path (history_encoder.py):
   history + depth/time  --CNNGRUEncoder-->  gru_summary [B, 64]
 
-model_cnngru.py projects history and goal features to 64-d, then
+model.py projects history and goal features to 64-d, then
 GoalClassifier maps concat([gru_summary, goal_projection]) [B, 128] -> class probabilities.
 """
 

@@ -34,8 +34,8 @@ import torch
 from torch import nn
 from torchvision.models import ResNet18_Weights, resnet18
 
-from dataset import GuidewireDataset
-from preprocessing import add_preprocessor_arguments, build_preprocessor
+from guidewire.data.dataset import GuidewireDataset
+from guidewire.data.preprocessing import add_preprocessor_arguments, build_preprocessor
 
 
 class FrameEncoder(nn.Module):

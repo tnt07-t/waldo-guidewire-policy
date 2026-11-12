@@ -1,6 +1,6 @@
 # Original-resolution case loader
 
-`dataset.py` provides the first data-reading layer. It opens original images without resizing, cropping, color conversion, normalization, augmentation, or tensor conversion. Only Pillow and Python's standard library are needed. A shared ML environment has not yet been adopted; dependency versions are not pinned.
+`guidewire/data/dataset.py` provides the first data-reading layer. It opens original images without resizing, cropping, color conversion, normalization, augmentation, or tensor conversion. Only Pillow and Python's standard library are needed. A shared ML environment has not yet been adopted; dependency versions are not pinned.
 
 Real data access runs only on Perlmutter. The laptop tests use entirely invented images and records.
 
@@ -62,7 +62,7 @@ The laptop files must first be transferred through the owner's authorized Git ha
 Once the code is present, use an environment where `python3` can import Pillow. The owner already confirmed Python 3.12.13 and Pillow 12.3.0 after loading `pytorch/2.13.0`; full ML compatibility remains unverified. From the Perlmutter repository root, with the existing `DATA_DIR` set:
 
 ```sh
-python3 dataset.py --split-position 0 --partition train --count 1
+python3 -m guidewire.data.dataset --split-position 0 --partition train --count 1
 ```
 
 This decodes one selected case through the new loader and reports image sizes/modes and metadata lengths. It does not repeat full dataset validation, choose an evaluation protocol, or display sensitive records. Successful output should report seven images, six depths, and six time offsets. Original dimensions are `(1065, 1050)`; the inspected case returned RGB images. Other cases' modes have not been checked through this reader. The split position is an inspection example, not an evaluation decision.

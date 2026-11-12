@@ -13,9 +13,9 @@ import os
 
 import torch
 
-from dataset import GuidewireDataset
-from model_cnngru import CNNGRUModel
-from preprocessing import DINOv2Preprocessor
+from guidewire.data.dataset import GuidewireDataset
+from guidewire.cnn_gru.model import CNNGRUModel
+from guidewire.data.preprocessing import DINOv2Preprocessor
 
 
 def collate(cases, device):
